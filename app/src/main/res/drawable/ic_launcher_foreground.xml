@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Solid amber tile; the launcher rounds it via the adaptive mask.
+         Foreground art stays inside the 66dp safe zone (centered). -->
+    <path
+        android:fillColor="#E8A44C"
+        android:pathData="M0,0h108v108h-108z" />
+    <!-- Bold "A" glyph with triangular counter, near-black -->
+    <path
+        android:fillColor="#14100C"
+        android:pathData="M54,30 L73,78 L64,78 L59.6,66 L48.4,66 L44,78 L35,78 Z M54,44.5 L51,62 L57,62 Z" />
+    <!-- Equalizer bars under the A, echoing the playback identity -->
+    <path
+        android:fillColor="#14100C"
+        android:pathData="M44,84h3v6h-3z M52.5,82h3v8h-3z M61,84h3v6h-3z" />
+</vector>

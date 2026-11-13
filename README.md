@@ -80,6 +80,13 @@ scripts/       adb install/deploy helpers
 - Coil decodes artwork as RGB_565 with a 20% memory cache; palette extraction uses a
   96px bitmap. TV hardware is CPU-starved — bench on release builds, not debug.
 
+## AI usage
+
+This project was built with AI assistance — the AI agent wrote essentially all
+of the code under iterative direction and testing by the author. Full details
+in [AI_USAGE.md](AI_USAGE.md). Use accordingly: it works on the author's
+hardware, but has had no security review.
+
 ## License
 
-Personal project. All rights reserved.
+MIT — see [LICENSE](LICENSE).

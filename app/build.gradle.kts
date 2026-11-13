@@ -1,3 +1,12 @@
+import java.util.Properties
+
+// Secrets (API keys etc.) live in a root-level .env (gitignored, KEY=VALUE lines)
+// and are surfaced as BuildConfig fields. See .env.example.
+val envFile = rootProject.file(".env")
+val envProps = Properties().apply {
+    if (envFile.exists()) envFile.inputStream().use { load(it) }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -36,6 +45,13 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+    defaultConfig {
+        // Each .env entry becomes e.g. BuildConfig.MY_API_KEY
+        for ((key, value) in envProps) {
+            buildConfigField("String", key.toString(), "\"$value\"")
+        }
     }
 }
 

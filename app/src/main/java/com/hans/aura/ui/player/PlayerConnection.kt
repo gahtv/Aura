@@ -87,6 +87,12 @@ class PlayerConnection(
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 syncItem(c, mediaItem?.mediaId)
                 _queueIndex.value = c.currentMediaItemIndex
+                // The ticker only runs every 500ms; without this, positionMs
+                // (and durationMs) still hold the previous track's values for
+                // up to half a second after the item changes, which consumers
+                // like the lyrics pane read as a stale time into the new song.
+                _positionMs.value = 0
+                _durationMs.value = 0
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {

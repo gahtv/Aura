@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +21,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
@@ -46,6 +53,33 @@ import com.hans.aura.ui.theme.TextSecondary
  */
 private const val PAGE_SIZE = 60
 
+/** Server-side sort fields (Jellyfin SortBy). Random pages independently, so
+ *  consecutive pages under Random may overlap or miss items — accepted. */
+enum class SortMode(val label: String, val sortBy: String, val defaultDesc: Boolean) {
+    TITLE("Title", "SortName", false),
+    ALBUM("Album", "Album", false),
+    ALBUM_ARTIST("Album artist", "AlbumArtist", false),
+    DATE_ADDED("Date added", "DateCreated", true),
+    LENGTH("Length", "Runtime", true),
+    PLAY_COUNT("Most played", "PlayCount", true),
+    RANDOM("Random", "Random", false)
+}
+
+private fun sortModesFor(kind: String): List<SortMode> = when (kind) {
+    "Artists" -> listOf(SortMode.TITLE, SortMode.DATE_ADDED, SortMode.PLAY_COUNT, SortMode.RANDOM)
+    "Albums" -> listOf(SortMode.TITLE, SortMode.ALBUM_ARTIST, SortMode.DATE_ADDED, SortMode.LENGTH, SortMode.PLAY_COUNT, SortMode.RANDOM)
+    "Tracks" -> listOf(SortMode.TITLE, SortMode.ALBUM, SortMode.ALBUM_ARTIST, SortMode.DATE_ADDED, SortMode.LENGTH, SortMode.PLAY_COUNT, SortMode.RANDOM)
+    else -> listOf(SortMode.TITLE, SortMode.DATE_ADDED, SortMode.RANDOM) // Playlists
+}
+
+/** Session-scoped: the chosen sort survives navigating away and back. */
+private object LibrarySortPrefs {
+    private val byKind = mutableMapOf<String, SortMode>()
+    fun get(kind: String): SortMode =
+        byKind[kind] ?: sortModesFor(kind).first()
+    fun set(kind: String, mode: SortMode) { byKind[kind] = mode }
+}
+
 @Composable
 fun LibraryScreen(
     app: AuraApp,
@@ -57,7 +91,11 @@ fun LibraryScreen(
     onOpenArtist: (JellyfinItem) -> Unit
 ) {
     val session = app.jellyfin.auth.session!!
-    val cacheKey = "lib_${kind.lowercase()}:${session.userId}"
+    var sort by remember { mutableStateOf(LibrarySortPrefs.get(kind)) }
+    var desc by remember { mutableStateOf(sort.defaultDesc) }
+    // Sort-specific keys: switching sort reloads fresh and BACK restores the
+    // exact list + scroll of the sort that was active.
+    val cacheKey = "lib_${kind.lowercase()}:${session.userId}:${sort.sortBy}:$desc"
     var items by remember { mutableStateOf<List<JellyfinItem>>(emptyList()) }
     var initialized by remember { mutableStateOf(false) }
     var total by remember { mutableStateOf(Int.MAX_VALUE) }
@@ -76,23 +114,25 @@ fun LibraryScreen(
         if (loading || items.size >= total) return
         loading = true
         runCatching {
+            val order = if (desc) "Descending" else "Ascending"
             val result = when (kind) {
                 "Artists" -> app.jellyfin.api.getAlbumArtists(
-                    userId = session.userId, limit = PAGE_SIZE, startIndex = items.size
+                    userId = session.userId, sortBy = sort.sortBy, sortOrder = order,
+                    limit = PAGE_SIZE, startIndex = items.size
                 )
                 "Albums" -> app.jellyfin.api.getItems(
                     userId = session.userId, includeItemTypes = "MusicAlbum",
-                    recursive = true, sortBy = "SortName",
+                    recursive = true, sortBy = sort.sortBy, sortOrder = order,
                     limit = PAGE_SIZE, startIndex = items.size
                 )
                 "Tracks" -> app.jellyfin.api.getItems(
                     userId = session.userId, includeItemTypes = "Audio",
-                    recursive = true, sortBy = "Album,ParentIndexNumber,IndexNumber,SortName",
+                    recursive = true, sortBy = sort.sortBy, sortOrder = order,
                     limit = PAGE_SIZE, startIndex = items.size
                 )
                 "Playlists" -> app.jellyfin.api.getItems(
                     userId = session.userId, includeItemTypes = "Playlist",
-                    recursive = true, sortBy = "SortName",
+                    recursive = true, sortBy = sort.sortBy, sortOrder = order,
                     limit = PAGE_SIZE, startIndex = items.size
                 )
                 else -> error("Unknown kind $kind")
@@ -164,7 +204,35 @@ fun LibraryScreen(
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
 
-    Box(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
+        // Sort pills: UP from the grid reaches them; the ACTIVE pill toggles
+        // its direction on click (Random has no direction).
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 32.dp, end = 32.dp, top = 6.dp, bottom = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            sortModesFor(kind).forEach { mode ->
+                val active = mode == sort
+                SortPill(
+                    label = if (active && mode != SortMode.RANDOM) {
+                        mode.label + if (desc) " \u25BC" else " \u25B2"
+                    } else mode.label,
+                    selected = active,
+                    onClick = {
+                        if (active && mode != SortMode.RANDOM) desc = !desc
+                        else if (!active) {
+                            sort = mode
+                            desc = mode.defaultDesc
+                            LibrarySortPrefs.set(kind, mode)
+                        }
+                    }
+                )
+            }
+        }
+    Box(Modifier.fillMaxSize().weight(1f)) {
         when {
             error != null && items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text("Library error: $error", color = TextPrimary)
@@ -242,5 +310,40 @@ fun LibraryScreen(
                 }
             }
         }
+        }
+    }
+}
+
+/** Sort pill: active = filled amber, focused = thick outline. Clicking the
+ *  active pill (see call site) flips its direction. */
+@Composable
+private fun SortPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+    val bg = when {
+        selected && focused -> androidx.compose.ui.graphics.Color(0x66E8A44C)
+        selected -> androidx.compose.ui.graphics.Color(0xFFE8A44C)
+        focused -> androidx.compose.ui.graphics.Color(0xFF3A322A)
+        else -> androidx.compose.ui.graphics.Color.Transparent
+    }
+    Box(
+        Modifier
+            .clip(shape)
+            .background(bg)
+            .border(
+                width = if (focused) 3.dp else 0.dp,
+                color = if (focused) androidx.compose.ui.graphics.Color(0xFFE8A44C)
+                else androidx.compose.ui.graphics.Color.Transparent,
+                shape = shape
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 7.dp)
+    ) {
+        androidx.tv.material3.Text(
+            label,
+            fontSize = 13.sp,
+            color = if (selected) androidx.compose.ui.graphics.Color(0xFF191410) else TextPrimary
+        )
     }
 }

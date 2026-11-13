@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -175,7 +176,9 @@ private fun NowPlayingPill(player: PlayerConnection, current: Screen, onOpen: ()
                     .background(Surface)
             )
         }
-        Column(Modifier.padding(start = 12.dp)) {
+        // Cap the pill width so a long title can't push Search/Settings
+        // off the right edge of the top bar.
+        Column(Modifier.padding(start = 12.dp).widthIn(max = 340.dp)) {
             androidx.tv.material3.Text(
                 playing.name,
                 color = TextPrimary, fontSize = 14.sp,

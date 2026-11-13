@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -249,7 +249,10 @@ fun LyricsPane(
     val item by player.current.collectAsState()
     val position by player.positionMs.collectAsState()
     var lines by remember(item?.id) { mutableStateOf<List<LyricLine>?>(null) }
-    val listState = rememberLazyListState()
+    // Fresh scroll state per track: without keying on the item id, a track
+    // change keeps the previous song's scroll offset until the new song's
+    // first line fires a scroll, so the pane lingers at the old end position.
+    val listState = remember(item?.id) { LazyListState() }
 
     LaunchedEffect(item?.id) {
         val id = item?.id ?: return@LaunchedEffect
@@ -260,11 +263,17 @@ fun LyricsPane(
         computeCurrentLine(lines, position)
     }
 
-    LaunchedEffect(currentLineIndex) {
+    LaunchedEffect(lines, currentLineIndex) {
         if (currentLineIndex >= 0) {
+            // Place the current line's top at the vertical middle of the list
+            // (minus half a line height) so it sits centered, never off-screen.
+            // In Compose, negative scrollOffset scrolls the item DOWN from the
+            // viewport top; positive would push it off the top edge.
+            val viewport = listState.layoutInfo.viewportSize.height
+            val centerOffset = if (viewport > 0) -(viewport / 2 - 80) else -500
             listState.animateScrollToItem(
-                index = currentLineIndex.coerceAtLeast(0),
-                scrollOffset = -400
+                index = currentLineIndex,
+                scrollOffset = centerOffset
             )
         }
     }

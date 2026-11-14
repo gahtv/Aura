@@ -68,7 +68,10 @@ interface JellyfinApi {
     @POST("Playlists/{playlistId}/Items")
     suspend fun addToPlaylist(
         @retrofit2.http.Path("playlistId") playlistId: String,
-        @Query("Ids") ids: String
+        @Query("Ids") ids: String,
+        // Passed explicitly: Jellyfin resolves playlist permissions from this,
+        // and omitting it made some adds silently no-op.
+        @Query("UserId") userId: String? = null
     ): retrofit2.Response<Unit>
 
     @DELETE("Playlists/{playlistId}/Items")

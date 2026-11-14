@@ -272,10 +272,24 @@ fun PlaylistPickerDialog(
                                     .clickable {
                                         scope.launch {
                                             runCatching {
-                                                app.jellyfin.api.addToPlaylist(
+                                                val resp = app.jellyfin.api.addToPlaylist(
                                                     playlistId = pl.id,
-                                                    ids = tracksToAdd.joinToString(",") { it.id }
+                                                    ids = tracksToAdd.joinToString(",") { it.id },
+                                                    userId = app.jellyfin.auth.session!!.userId
                                                 )
+                                                // Retrofit's Response<T> does NOT throw on
+                                                // 4xx/5xx — without this check a rejected
+                                                // add looked identical to success and the
+                                                // dialog just closed.
+                                                android.util.Log.d(
+                                                    "AURA_MENU",
+                                                    "picker add -> HTTP ${resp.code()} for \"${pl.name}\"" +
+                                                        (resp.errorBody()?.string()?.take(160)?.let { " body=$it" } ?: "")
+                                                )
+                                                if (!resp.isSuccessful) {
+                                                    throw IllegalStateException("HTTP ${resp.code()}")
+                                                }
+                                                resp
                                             }.onSuccess {
                                                 android.util.Log.d(
                                                     "AURA_MENU",

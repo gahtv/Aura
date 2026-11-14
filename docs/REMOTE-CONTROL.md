@@ -156,7 +156,8 @@ lyrics view exactly when the TV shows it.
 
 Notes:
 
-- No authentication, LAN only, no state is written outside the app.
+- No state is written outside the app, and calls are LAN-only — but the link is **not** open: every
+  endpoint except `/health` and `/pair/request` requires the pairing token (see below).
 - It is a foreground-only service: when Aura is closed the port is closed, which is also how a controller
   can tell the app is not running.
 - The protocol is deliberately one-way-cheap: poll `/state` at 1–2 Hz; there is no push channel.

@@ -10,6 +10,8 @@ import com.hans.aura.ui.theme.AuraTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // LAN mirror link: /state + /navigate for remote controls (ui/MirrorLink.kt).
+        com.hans.aura.ui.MirrorLink.start()
         // Debug deep links: adb am start --es aura_debug_screen <name>
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             intent.getStringExtra("aura_debug_screen")?.let {

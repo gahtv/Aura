@@ -100,6 +100,37 @@ Aura reports the resulting state back, so a UI can mirror it by reading
 
 ---
 
+## 2b. Mirror link (shared screen state)
+
+Aura runs a tiny HTTP server on port 8099 while it is in the foreground (`ui/MirrorLink.kt`). It exists so a
+remote can draw its own native version of the screen Aura is on, and so the remote can move the TV.
+
+```
+GET  http://<tv>:8099/state
+     {"screen":"collection","itemId":"…","title":null,"lyrics":false}
+
+POST http://<tv>:8099/navigate?screen=collection&itemId=…
+     204
+```
+
+`screen` is one of `home`, `artists`, `albums`, `tracks`, `playlists`, `search`, `settings`, `nowplaying`,
+`queue`, `collection`, `artist`. `itemId` is set for `collection` and `artist`. `lyrics` is true only while
+the Now Playing screen is showing lyrics rather than artwork — that flag is what lets a remote mirror the
+lyrics view exactly when the TV shows it.
+
+Notes:
+
+- No authentication, LAN only, no state is written outside the app.
+- It is a foreground-only service: when Aura is closed the port is closed, which is also how a controller
+  can tell the app is not running.
+- The protocol is deliberately one-way-cheap: poll `/state` at 1–2 Hz; there is no push channel.
+- Names are the remote's vocabulary. `collection`/`artist` are published, never the internal stack keys.
+
+The Aura Remote bridge proxies both endpoints so a browser can reach them same-origin:
+`GET /api/aura/state`, `POST /api/aura/navigate {screen, itemId}`.
+
+---
+
 ## 3. Android TV surface (Aura Remote bridge)
 
 When a controller must do more than playback — wake the TV, launch Aura, press D-pad keys, or read what is

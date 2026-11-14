@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -90,6 +91,13 @@ fun NowPlayingScreen(
     val position by player.positionMs.collectAsState()
     val duration by player.durationMs.collectAsState()
     var showLyrics by remember { mutableStateOf(false) }
+
+    // Tell the mirror link which face of this screen is up, so a remote shows
+    // its own lyrics view exactly when the TV does.
+    LaunchedEffect(showLyrics) { com.hans.aura.ui.MirrorLink.publishLyrics(showLyrics) }
+    DisposableEffect(Unit) {
+        onDispose { com.hans.aura.ui.MirrorLink.publishLyrics(false) }
+    }
     val queueState by player.queue.collectAsState()
 
     // Jump targets: stub items (id + name + type) are enough — the album and

@@ -323,6 +323,65 @@ fun AppRoot() {
         )
     }
 
+    // Mirror link (ui/MirrorLink.kt): publish where we are so a remote can draw
+    // its own native version of this screen, and honour the navigation it asks
+    // for — remote opens album -> Aura opens the album.
+    LaunchedEffect(top) {
+        // Published names are the remote's vocabulary, not Screen.key()'s
+        // internals ("col:<id>" would leak as "col").
+        val (kind, itemId) = when (top) {
+            is Screen.Collection -> "collection" to top.item.id
+            is Screen.Artist -> "artist" to top.item.id
+            is Screen.Home -> "home" to null
+            is Screen.Artists -> "artists" to null
+            is Screen.Albums -> "albums" to null
+            is Screen.Tracks -> "tracks" to null
+            is Screen.Playlists -> "playlists" to null
+            is Screen.Search -> "search" to null
+            is Screen.Settings -> "settings" to null
+            is Screen.NowPlaying -> "nowplaying" to null
+            is Screen.Queue -> "queue" to null
+        }
+        MirrorLink.publish(kind, itemId)
+    }
+
+    LaunchedEffect(Unit) {
+        MirrorLink.nav.collect { nav ->
+            val userId = app.jellyfin.auth.session?.userId
+            val tab = when (nav.screen) {
+                "home" -> Screen.Home
+                "artists" -> Screen.Artists
+                "albums" -> Screen.Albums
+                "tracks" -> Screen.Tracks
+                "playlists" -> Screen.Playlists
+                "search" -> Screen.Search
+                "settings" -> Screen.Settings
+                else -> null
+            }
+            when {
+                tab != null -> {
+                    stack.value = if (tab == Screen.Home) listOf(tab) else listOf(Screen.Home, tab)
+                    pendingFocus = true
+                    focusTick++
+                }
+                nav.screen == "nowplaying" -> push(Screen.NowPlaying)
+                nav.screen == "queue" -> push(Screen.Queue)
+                (nav.screen == "collection" || nav.screen == "artist") && userId != null && nav.itemId != null -> {
+                    runCatching { app.jellyfin.api.getItem(userId, nav.itemId!!) }
+                        .onSuccess { item ->
+                            stack.value = listOf(
+                                Screen.Home,
+                                if (nav.screen == "artist") Screen.Artist(item) else Screen.Collection(item)
+                            )
+                            pendingFocus = true
+                            focusTick++
+                        }
+                        .onFailure { android.util.Log.w("AURA_MIRROR", "nav fetch failed: $it") }
+                }
+            }
+        }
+    }
+
     // Debug deep links (adb extras, see MainActivity): jump straight to a
     // screen; optional autoplay queues one random track first, which also
     // triggers the auto-push into Now Playing.

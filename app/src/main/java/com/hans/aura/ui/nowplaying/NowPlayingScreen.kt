@@ -1,6 +1,7 @@
 package com.hans.aura.ui.nowplaying
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,6 +39,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -114,6 +116,18 @@ fun NowPlayingScreen(
     val playPauseFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, playPauseFocus)
 
+    // The auto-push into Now Playing does not always set pendingFocus, so the
+    // screen could open with NOTHING focused — no ring anywhere and the D-pad
+    // felt dead until the first press — or with focus parked on Back (pressing
+    // OK immediately left the screen). Always claim play/pause on entry.
+    LaunchedEffect(Unit) {
+        delay(250)
+        repeat(6) {
+            if (runCatching { playPauseFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+            delay(100)
+        }
+    }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -147,31 +161,28 @@ fun NowPlayingScreen(
                     ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                androidx.tv.material3.Button(onClick = onBack) { androidx.tv.material3.Text("Back") }
+                NpControlButton(label = "Back", onClick = onBack)
                 Spacer(Modifier.weight(1f))
-                if (isAtmos(item)) AtmosBadge()
+                if (isAtmos(item)) AtmosBadge(color = dynAccent)
                 Spacer(Modifier.weight(1f))
-                androidx.tv.material3.Button(onClick = onOpenQueue) {
-                    androidx.tv.material3.Text("Queue")
-                }
+                NpControlButton(label = "Queue", onClick = onOpenQueue)
                 Spacer(Modifier.width(12.dp))
-                androidx.tv.material3.Button(
+                NpControlButton(
+                    label = "Add to playlist",
                     enabled = item != null,
                     onClick = { item?.let { ContextMenuHost.openPicker(listOf(it)) } }
-                ) {
-                    androidx.tv.material3.Text("Add to playlist")
-                }
+                )
                 Spacer(Modifier.width(12.dp))
-                androidx.tv.material3.Button(
+                NpControlButton(
+                    label = "Save queue as playlist",
                     enabled = queueState.isNotEmpty(),
                     onClick = { ContextMenuHost.openPicker(queueState) }
-                ) {
-                    androidx.tv.material3.Text("Save queue as playlist")
-                }
+                )
                 Spacer(Modifier.width(12.dp))
-                androidx.tv.material3.Button(onClick = { showLyrics = !showLyrics }) {
-                    androidx.tv.material3.Text(if (showLyrics) "Track" else "Lyrics")
-                }
+                NpControlButton(
+                    label = if (showLyrics) "Track" else "Lyrics",
+                    onClick = { showLyrics = !showLyrics }
+                )
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -245,11 +256,12 @@ private fun JumpText(tag: String, text: String, accent: Color, onClick: () -> Un
                 color = if (focused) accent else Color.Transparent,
                 shape = RoundedCornerShape(6.dp)
             )
-            .clickable(onClickLabel = tag) { onClick() }
+            // Before the focus target, like every other focusable in the app.
             .onFocusChanged {
                 android.util.Log.d("AURA_NAV", "jump focus $tag focused=${it.isFocused}")
                 focused = it.isFocused
             }
+            .clickable(onClickLabel = tag) { onClick() }
             .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
         androidx.tv.material3.Text(text, fontSize = 18.sp, color = TextSecondary)
@@ -428,7 +440,7 @@ private fun TransportIconButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val plate = when {
-        focused -> accent.copy(alpha = 0.30f)
+        focused -> accent.copy(alpha = 0.34f)
         active -> accent.copy(alpha = 0.18f)
         filled -> Color(0x22FFFFFF)
         else -> Color.Transparent
@@ -437,18 +449,28 @@ private fun TransportIconButton(
         if (active || focused || filled) accent else TextPrimary,
         label = "transportTint"
     )
+    // Focus grows the glyph (~15%) as well as ringing it: on a dark 10-foot
+    // screen a 3dp accent ring alone was too easy to miss.
+    val grow by animateFloatAsState(if (focused) 1.15f else 1f, label = "transportGrow")
     Box(
         modifier
             .size(iconSize + 40.dp)
+            .graphicsLayer {
+                scaleX = grow
+                scaleY = grow
+            }
             .clip(CircleShape)
             .background(plate)
             .border(
                 width = if (focused) 3.dp else 0.dp,
-                color = if (focused) accent else Color.Transparent,
+                color = if (focused) Color(0xFFD6CCBE) else Color.Transparent,
                 shape = CircleShape
             )
-            .clickable(onClickLabel = label) { onClick() }
-            .onFocusChanged { focused = it.isFocused },
+            // onFocusChanged must sit BEFORE the focus target (clickable):
+            // placed after it, it observes the un-focusable layout child and
+            // never reports focus, so the ring/scale never rendered.
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClickLabel = label) { onClick() },
         contentAlignment = Alignment.Center
     ) {
         androidx.compose.material3.Icon(
@@ -634,6 +656,46 @@ fun AtmosBadge(color: Color = Accent) {
             "DD+ \u2022 ATMOS",
             color = color, fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+/**
+ * Top-row control on Now Playing. The tv-material Button's focused state is a
+ * barely-visible tint on a dark screen, so these draw the app's cursor language
+ * explicitly: light grey outline + lifted fill, and the border thickens the
+ * moment focus lands.
+ */
+@Composable
+private fun NpControlButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    val bg by animateColorAsState(
+        when {
+            !enabled -> Color(0x14FFFFFF)
+            focused -> Color(0xFF3E362D)
+            else -> Color(0xFF2A2620)
+        },
+        label = "npControlBg"
+    )
+    Box(
+        Modifier
+            .clip(shape)
+            .background(bg)
+            .border(
+                width = if (focused) 3.dp else 0.dp,
+                color = if (focused) Color(0xFFD6CCBE) else Color.Transparent,
+                shape = shape
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(enabled = enabled, onClickLabel = label) { onClick() }
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+    ) {
+        androidx.tv.material3.Text(
+            label,
+            color = if (enabled) TextPrimary else TextSecondary,
+            fontSize = 15.sp,
+            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Normal
         )
     }
 }

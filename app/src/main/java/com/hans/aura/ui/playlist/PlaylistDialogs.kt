@@ -2,7 +2,10 @@
 package com.hans.aura.ui.playlist
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +16,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,6 +34,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
@@ -66,6 +82,56 @@ fun PlaylistPickerDialog(
     var creatingName by remember { mutableStateOf<String?>(null) }
     var newName by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
+
+    // The name field grabs every D-pad key, so without explicit focus routing
+    // DOWN never reached Create and a new playlist could never be made (the
+    // user could type a name and then sit there: "doesn't actually add a new
+    // playlist"). DOWN/UP jump to the buttons, and the remote's OK submits via
+    // the IME Done action as well.
+    val createFocus = remember { FocusRequester() }
+    val fieldFocus = remember { FocusRequester() }
+    var creating by remember { mutableStateOf(false) }
+    val submitNew: () -> Unit = {
+        val name = newName.trim()
+        if (name.isNotBlank()) {
+            creating = true
+            scope.launch {
+                runCatching {
+                    app.jellyfin.api.createPlaylist(
+                        name = name,
+                        ids = tracksToAdd.joinToString(",") { it.id },
+                        userId = app.jellyfin.auth.session!!.userId,
+                        body = com.hans.aura.data.PlaylistRequest(
+                            name = name,
+                            ids = tracksToAdd.map { it.id },
+                            userId = app.jellyfin.auth.session!!.userId
+                        )
+                    )
+                }.onSuccess { created ->
+                    android.util.Log.d(
+                        "AURA_MENU",
+                        "picker created playlist \"$name\" (${created.id}) with ${tracksToAdd.size} track(s)"
+                    )
+                    LibraryCache.evict("home_playlists:${app.jellyfin.auth.session!!.userId}")
+                    onDismiss()
+                }.onFailure { e ->
+                    android.util.Log.w("AURA_MENU", "create playlist failed: ${e.message}")
+                    status = "Could not create playlist: ${e.message}"
+                    creating = false
+                }
+            }
+        }
+    }
+    // Put the cursor in the name field as soon as create mode opens.
+    LaunchedEffect(creatingName) {
+        if (creatingName != null) {
+            kotlinx.coroutines.delay(120)
+            repeat(5) {
+                if (runCatching { fieldFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+                kotlinx.coroutines.delay(100)
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         runCatching {
@@ -116,35 +182,48 @@ fun PlaylistPickerDialog(
                     onValueChange = { newName = it },
                     placeholder = { androidx.compose.material3.Text("Playlist name") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    enabled = !creating,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    // OK on the remote submits even while the field owns focus.
+                    keyboardActions = KeyboardActions(onDone = { submitNew() }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(fieldFocus)
+                        // Route D-pad out of the text field to the buttons; the
+                        // field otherwise swallows every direction key.
+                        .focusProperties { down = createFocus }
+                        // focusProperties alone is not enough: the text field
+                        // consumes arrow keys for caret movement before focus
+                        // search runs, so the remote could never reach Create.
+                        // Intercept in the preview pass: DOWN jumps to Create,
+                        // OK/ENTER submits the name.
+                        .onPreviewKeyEvent { e ->
+                            if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            when (e.key) {
+                                Key.DirectionDown -> {
+                                    createFocus.requestFocus()
+                                    true
+                                }
+                                Key.DirectionCenter, Key.Enter -> {
+                                    submitNew()
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     androidx.tv.material3.Button(
-                        enabled = newName.isNotBlank(),
-                        onClick = {
-                            scope.launch {
-                                runCatching {
-                                    app.jellyfin.api.createPlaylist(
-                                        name = newName.trim(),
-                                        ids = tracksToAdd.joinToString(",") { it.id },
-                                        userId = app.jellyfin.auth.session!!.userId,
-                                        body = com.hans.aura.data.PlaylistRequest(
-                                            name = newName.trim(),
-                                            ids = tracksToAdd.map { it.id },
-                                            userId = app.jellyfin.auth.session!!.userId
-                                        )
-                                    )
-                                }.onSuccess {
-                                    LibraryCache.evict(
-                                        "home_playlists:${app.jellyfin.auth.session!!.userId}"
-                                    )
-                                    onDismiss()
-                                }.onFailure { e -> status = "Failed: ${e.message}" }
-                            }
-                        }
-                    ) { androidx.tv.material3.Text("Create") }
-                    androidx.tv.material3.Button(onClick = { creatingName = null }) {
+                        enabled = newName.isNotBlank() && !creating,
+                        onClick = submitNew,
+                        modifier = Modifier.focusRequester(createFocus)
+                    ) { androidx.tv.material3.Text(if (creating) "Creating\u2026" else "Create") }
+                    androidx.tv.material3.Button(onClick = {
+                        creatingName = null
+                        newName = ""
+                        status = null
+                    }) {
                         androidx.tv.material3.Text("Cancel")
                     }
                 }
@@ -169,12 +248,27 @@ fun PlaylistPickerDialog(
                         Modifier
                             .fillMaxWidth()
                             .height(360.dp)
+                            // Scrollable: the fixed 360dp box silently clipped
+                            // everything past the ~6th playlist.
+                            .verticalScroll(rememberScrollState())
                             .background(Border.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
                     ) {
                         playlists!!.forEach { pl ->
+                            var rowFocused by remember(pl.id) { mutableStateOf(false) }
                             Box(
                                 Modifier
                                     .fillMaxWidth()
+                                    .background(
+                                        if (rowFocused) Color(0xFF3E362D) else Color.Transparent
+                                    )
+                                    .border(
+                                        width = if (rowFocused) 2.dp else 0.dp,
+                                        color = if (rowFocused) Color(0xFFD6CCBE)
+                                        else Color.Transparent,
+                                        shape = RoundedCornerShape(4.dp)
+                                    )
+                                    // Must precede the focus target.
+                                    .onFocusChanged { rowFocused = it.isFocused }
                                     .clickable {
                                         scope.launch {
                                             runCatching {
@@ -185,21 +279,39 @@ fun PlaylistPickerDialog(
                                             }.onSuccess {
                                                 android.util.Log.d(
                                                     "AURA_MENU",
-                                                    "picker added ${tracksToAdd.size} track(s) to \"${pl.name}\""
+                                                    "picker added ${tracksToAdd.size} track(s) to \"${pl.name}\" (${pl.id})"
                                                 )
                                                 LibraryCache.evict("col:${pl.id}")
                                                 LibraryCache.evict(
                                                     "home_playlists:${app.jellyfin.auth.session!!.userId}"
                                                 )
                                                 onDismiss()
-                                            }.onFailure { e -> status = "Failed: ${e.message}" }
+                                            }.onFailure { e ->
+                                                android.util.Log.w(
+                                                    "AURA_MENU",
+                                                    "add to \"${pl.name}\" failed: ${e.message}"
+                                                )
+                                                status = "Could not add: ${e.message}"
+                                            }
                                         }
                                     }
                                     .padding(horizontal = 20.dp, vertical = 14.dp)
                             ) {
-                                androidx.tv.material3.Text(
-                                    pl.name, color = TextPrimary, fontSize = 17.sp
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    androidx.tv.material3.Text(
+                                        pl.name,
+                                        color = TextPrimary,
+                                        fontSize = 17.sp,
+                                        fontWeight = if (rowFocused) FontWeight.SemiBold
+                                        else FontWeight.Normal
+                                    )
+                                    Spacer(Modifier.width(12.dp))
+                                    androidx.tv.material3.Text(
+                                        "${tracksToAdd.size} track" +
+                                            if (tracksToAdd.size == 1) "" else "s",
+                                        color = TextSecondary, fontSize = 12.sp
+                                    )
+                                }
                             }
                         }
                     }

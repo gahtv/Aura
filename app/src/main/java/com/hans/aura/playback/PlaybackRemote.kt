@@ -71,7 +71,7 @@ class PlaybackRemote(
             .url("$serverUrl/Sessions/Capabilities/Full")
             .header(
                 "Authorization",
-                "MediaBrowser Client=\"$APP_NAME\", Device=\"Android TV\", " +
+                "MediaBrowser Client=\"$APP_NAME\", Device=\"${com.hans.aura.data.DeviceNames.get()}\", " +
                     "DeviceId=\"$deviceId\", Version=\"$APP_VERSION\", Token=\"$token\""
             )
             .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), body))
@@ -106,7 +106,7 @@ class PlaybackRemote(
             .replace("https://", "wss://")
             .replace("http://", "ws://")
             .trimEnd('/') + "/socket?api_key=$token&deviceId=$deviceId"
-        val auth = "MediaBrowser Client=\"$APP_NAME\", Device=\"Android TV\", " +
+        val auth = "MediaBrowser Client=\"$APP_NAME\", Device=\"${com.hans.aura.data.DeviceNames.get()}\", " +
             "DeviceId=\"$deviceId\", Version=\"$APP_VERSION\", Token=\"$token\""
         // Reuse one client so reconnects don't pile up connection pools/threads.
         if (client == null) {

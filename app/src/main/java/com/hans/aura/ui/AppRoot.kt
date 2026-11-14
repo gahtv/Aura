@@ -285,7 +285,11 @@ fun AppRoot() {
     var signedIn by remember { mutableStateOf(app.jellyfin.auth.isSignedIn) }
 
     if (!signedIn) {
-        LoginScreen(app = app, onSignedIn = { signedIn = true })
+        Box(Modifier.fillMaxSize()) {
+            LoginScreen(app = app, onSignedIn = { signedIn = true })
+            // A remote can pair before anyone signs in on the TV.
+            MirrorPairingHost()
+        }
         return
     }
 
@@ -669,6 +673,10 @@ fun AppRoot() {
         }
         // Long-press context menus + their playlist picker, always on top.
         com.hans.aura.ui.common.ContextMenuHosts(app)
+
+        // Pairing consent (USB-debugging style): drawn last so nothing can sit
+        // over it, and it owns focus while it is up.
+        MirrorPairingHost()
     }
 }
 

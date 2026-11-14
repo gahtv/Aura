@@ -45,7 +45,7 @@ class AuthStore(context: Context) {
          * scheme; the legacy X-Emby-Authorization header is rejected (HTTP 400).
          */
         fun authHeader(session: Session?, deviceId: String, appName: String, version: String): String {
-            val base = "MediaBrowser Client=\"$appName\", Device=\"Android TV\", " +
+            val base = "MediaBrowser Client=\"$appName\", Device=\"${com.hans.aura.data.DeviceNames.get()}\", " +
                 "DeviceId=\"$deviceId\", Version=\"$version\""
             return session?.accessToken?.let { "$base, Token=\"$it\"" } ?: base
         }

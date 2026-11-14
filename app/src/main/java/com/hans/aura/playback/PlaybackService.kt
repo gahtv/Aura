@@ -125,7 +125,7 @@ class PlaybackService : MediaSessionService() {
             .setDefaultRequestProperties(
                 mapOf(
                     "Authorization" to
-                        "MediaBrowser Client=\"Aura\", Device=\"Android TV\", " +
+                        "MediaBrowser Client=\"Aura\", Device=\"${com.hans.aura.data.DeviceNames.get()}\", " +
                             "DeviceId=\"playback\", Version=\"$APP_VERSION\"" +
                             (session?.accessToken?.let { ", Token=\"$it\"" } ?: "")
                 )

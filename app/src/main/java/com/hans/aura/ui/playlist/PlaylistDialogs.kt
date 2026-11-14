@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 package com.hans.aura.ui.playlist
 
 import androidx.compose.foundation.background
@@ -23,6 +24,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
@@ -45,6 +49,19 @@ fun PlaylistPickerDialog(
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    // BACK dismisses the dialog; without this it pops the screen underneath.
+    androidx.activity.compose.BackHandler { onDismiss() }
+    // Pull focus INTO the dialog immediately and trap it here — otherwise the
+    // button that opened the dialog keeps focus and OK keeps hitting it.
+    val firstFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
+        repeat(5) {
+            val ok = runCatching { firstFocus.requestFocus() }.isSuccess
+            if (ok) return@LaunchedEffect
+            kotlinx.coroutines.delay(100)
+        }
+    }
     var playlists by remember { mutableStateOf<List<JellyfinItem>?>(null) }
     var creatingName by remember { mutableStateOf<String?>(null) }
     var newName by remember { mutableStateOf("") }
@@ -75,6 +92,7 @@ fun PlaylistPickerDialog(
                 .widthIn(max = 720.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Surface)
+                .focusProperties { exit = { FocusRequester.Cancel } }
                 .padding(32.dp)
         ) {
             androidx.tv.material3.Text(
@@ -84,7 +102,10 @@ fun PlaylistPickerDialog(
             Spacer(Modifier.height(20.dp))
 
             // Create-new row (inline for "save queue as" flow too)
-            androidx.tv.material3.Button(onClick = { creatingName = "" }) {
+            androidx.tv.material3.Button(
+                onClick = { creatingName = "" },
+                modifier = Modifier.focusRequester(firstFocus)
+            ) {
                 androidx.tv.material3.Text("New playlist\u2026")
             }
             Spacer(Modifier.height(16.dp))

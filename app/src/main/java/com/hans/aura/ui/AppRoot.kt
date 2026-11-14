@@ -537,7 +537,9 @@ fun AppRoot() {
                         app = app,
                         player = player,
                         onBack = pop,
-                        onOpenQueue = { push(Screen.Queue) }
+                        onOpenQueue = { push(Screen.Queue) },
+                        onOpenAlbum = { push(Screen.Collection(it)) },
+                        onOpenArtist = { push(Screen.Artist(it)) }
                     )
 
                     Screen.Queue -> QueueScreen(player = player, onBack = pop, initialFocus = pendingFocus)

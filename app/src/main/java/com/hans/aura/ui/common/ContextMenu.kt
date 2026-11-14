@@ -129,7 +129,10 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
     // any remaining key repeats) would land on the focused first action and
     // click it. Ignore OK for a grace window after opening.
     val openedAt = remember { android.os.SystemClock.uptimeMillis() }
-    val okGraceMillis = 500L
+    // Long enough to outlast the held key's release (long-press fires ~500ms
+    // in; holds routinely release at 700-900ms), so only a deliberate SECOND
+    // press reaches the focused action.
+    val okGraceMillis = 1000L
     val swallowOk = Modifier.onPreviewKeyEvent { event ->
         val k = event.key
         val withinGrace = android.os.SystemClock.uptimeMillis() - openedAt < okGraceMillis

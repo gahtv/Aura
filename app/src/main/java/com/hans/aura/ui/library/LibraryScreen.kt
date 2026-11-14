@@ -103,10 +103,10 @@ fun LibraryScreen(
     var error by remember { mutableStateOf<String?>(null) }
     val current by player.current.collectAsState()
 
-    // Album Atmos badges (Albums tab only): whole-library scan, cached per session.
+    // Atmos badges (Albums grid + Tracks rows): whole-library scan, cached per session.
     var atmosAlbumIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     LaunchedEffect(cacheKey, refreshKey) {
-        if (kind != "Albums") return@LaunchedEffect
+        if (kind != "Albums" && kind != "Tracks") return@LaunchedEffect
         atmosAlbumIds = com.hans.aura.data.AtmosCatalog.albumIds(app.jellyfin.api, session.userId)
     }
 
@@ -256,6 +256,7 @@ fun LibraryScreen(
                         index = i + 1,
                         track = track,
                         isCurrent = track.id == current?.id,
+                        atmos = track.albumId != null && track.albumId in atmosAlbumIds,
                         onClick = { player.playQueue(items, i) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedId = it }

@@ -71,6 +71,11 @@ fun CollectionScreen(
     var overview by remember { mutableStateOf<String?>(null) }
     var showBio by remember { mutableStateOf(false) }
     val currentId by player.current.collectAsState()
+    // Playlist rows sit outside album context, so they carry per-track Atmos
+    // chips (album detail pages derive their badge in the header instead).
+    val atmosAlbumIds = if (collection.type == "Playlist") {
+        com.hans.aura.ui.common.rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
+    } else emptySet()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     // Dynamic color wash from the album art. Kept dark for text contrast;
@@ -247,6 +252,7 @@ fun CollectionScreen(
                         index = i + 1,
                         track = track,
                         isCurrent = track.id == currentId?.id,
+                        atmos = track.albumId != null && track.albumId in atmosAlbumIds,
                         onClick = { player.playQueue(tracks!!, i) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedTrackId = it },

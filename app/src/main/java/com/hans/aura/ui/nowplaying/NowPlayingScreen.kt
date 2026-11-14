@@ -48,8 +48,7 @@ import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
-import com.hans.aura.ui.theme.darken
-import com.hans.aura.ui.theme.rememberDynamicColor
+import com.hans.aura.ui.theme.rememberDynamicColors
 
 @Composable
 fun NowPlayingScreen(
@@ -68,11 +67,18 @@ fun NowPlayingScreen(
     var playlistDialogTracks by remember { mutableStateOf<List<com.hans.aura.data.JellyfinItem>?>(null) }
     val queueState by player.queue.collectAsState()
 
-    // Dynamic color wash from the playing track's album art.
+    // Dynamic color wash from the playing track's album art: darkened dominant
+    // as the background, a distinct lighter swatch as the lyric highlight.
     val dynArtUrl = item?.primaryImageTag?.let {
         AuthStore.imageUrl(session.serverUrl, item!!.id, it, maxWidth = 480)
     }
-    val dyn = rememberDynamicColor(dynArtUrl)
+    val dyn = rememberDynamicColors(dynArtUrl)
+    val dynBg = dyn?.primary ?: Surface
+    val dynAccent = dyn?.secondary ?: Accent
+
+    // BACK on the lyrics view returns to the regular now-playing view; only
+    // BACK on the track view continues up the stack (pop via onBack).
+    androidx.activity.compose.BackHandler(enabled = showLyrics) { showLyrics = false }
 
     val playPauseFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, playPauseFocus)
@@ -83,7 +89,7 @@ fun NowPlayingScreen(
             .background(
                 androidx.compose.ui.graphics.Brush.verticalGradient(
                     listOf(
-                        dyn?.let { darken(it, 0.30f) } ?: Surface,
+                        dynBg,
                         com.hans.aura.ui.theme.Canvas
                     )
                 )
@@ -141,7 +147,7 @@ fun NowPlayingScreen(
         }
 
         if (showLyrics) {
-            LyricsPane(app, player, onUserInteraction = { controlsVisible = true })
+            LyricsPane(app, player, highlightColor = dynAccent, onUserInteraction = { controlsVisible = true })
         } else {
             Row(Modifier.fillMaxSize()) {
                 item?.primaryImageTag?.let { tag ->
@@ -243,6 +249,7 @@ private fun TransportBar(player: PlayerConnection, position: Long, duration: Lon
 fun LyricsPane(
     app: AuraApp,
     player: PlayerConnection,
+    highlightColor: Color = Accent,
     onUserInteraction: () -> Unit = {}
 ) {
     val session = app.jellyfin.auth.session!!
@@ -264,7 +271,11 @@ fun LyricsPane(
     }
 
     LaunchedEffect(lines, currentLineIndex) {
-        if (currentLineIndex >= 0) {
+        if (lines.isNullOrEmpty()) return@LaunchedEffect
+        // Before the first synced line's timestamp (currentLineIndex == -1)
+        // the list sits unscrolled with its leading spacer, which reads as
+        // "lyrics start at the bottom" — center the FIRST line instead.
+        val target = if (currentLineIndex >= 0) currentLineIndex else 0
             // Place the current line's top at the vertical middle of the list
             // (minus half a line height) so it sits centered, never off-screen.
             // In Compose, negative scrollOffset scrolls the item DOWN from the
@@ -272,10 +283,9 @@ fun LyricsPane(
             val viewport = listState.layoutInfo.viewportSize.height
             val centerOffset = if (viewport > 0) -(viewport / 2 - 80) else -500
             listState.animateScrollToItem(
-                index = currentLineIndex,
+                index = target,
                 scrollOffset = centerOffset
             )
-        }
     }
 
     Box(
@@ -338,7 +348,7 @@ fun LyricsPane(
                         val isCurrent = i == currentLineIndex
                         val color by animateColorAsState(
                             when {
-                                isCurrent -> Accent
+                                isCurrent -> highlightColor
                                 currentLineIndex in 0 until i -> TextSecondary
                                 else -> TextPrimary
                             },
@@ -347,7 +357,10 @@ fun LyricsPane(
                         Box(
                             Modifier
                                 .fillMaxWidth()
-                                .background(if (isCurrent) Color(0x22E8A44C) else Color.Transparent)
+                                .background(
+                                    if (isCurrent) highlightColor.copy(alpha = 0.13f)
+                                    else Color.Transparent
+                                )
                                 .clickable(enabled = line.isSynced) { player.seekTo(line.startMs) }
                                 .padding(vertical = 10.dp)
                         ) {

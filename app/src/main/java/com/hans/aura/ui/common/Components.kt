@@ -1,11 +1,17 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package com.hans.aura.ui.common
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -156,6 +162,7 @@ fun TrackRow(
     track: JellyfinItem,
     isCurrent: Boolean,
     onClick: () -> Unit,
+    atmos: Boolean = false,
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
     onRemove: (() -> Unit)? = null
@@ -204,13 +211,20 @@ fun TrackRow(
             modifier = Modifier.width(36.dp)
         )
         androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-            androidx.tv.material3.Text(
-                track.name,
-                color = if (isCurrent) com.hans.aura.ui.theme.Accent else TextPrimary,
-                fontSize = 15.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.tv.material3.Text(
+                    track.name,
+                    color = if (isCurrent) com.hans.aura.ui.theme.Accent else TextPrimary,
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (atmos) {
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                    AtmosChip()
+                }
+            }
             if (track.artistNames.isNotBlank()) {
                 androidx.tv.material3.Text(
                     track.artistNames,
@@ -301,4 +315,94 @@ fun InitialFocusOnPush(shouldFocus: Boolean, requester: androidx.compose.ui.focu
 fun formatDuration(ms: Long): String {
     val total = ms / 1000
     return "${total / 60}:${(total % 60).toString().padStart(2, '0')}"
+}
+
+/** Small ATMOS marker used on rows (the card equivalent is ArtworkCard's badge). */
+@Composable
+fun AtmosChip() {
+    androidx.tv.material3.Text(
+        "ATMOS",
+        color = com.hans.aura.ui.theme.Accent,
+        fontSize = 9.sp,
+        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+        modifier = Modifier
+            .background(Color(0xCC14100C), RoundedCornerShape(3.dp))
+            .padding(horizontal = 5.dp, vertical = 2.dp)
+    )
+}
+
+/** Loads (session-cached) the set of album ids containing an Atmos track. */
+@Composable
+fun rememberAtmosAlbumIds(
+    api: com.hans.aura.data.JellyfinApi,
+    userId: String
+): Set<String> {
+    var ids by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(userId) {
+        ids = runCatching {
+            com.hans.aura.data.AtmosCatalog.albumIds(api, userId)
+        }.getOrDefault(emptySet())
+    }
+    return ids
+}
+
+/**
+ * Horizontal home-style shelf: title inset, cards bleed edge-to-edge with the
+ * resting inset carried by spacers INSIDE the scroll row (Column padding would
+ * clip the row and kill the bleed).
+ */
+@Composable
+fun ItemShelf(
+    title: String,
+    items: List<JellyfinItem>?,
+    serverUrl: String,
+    focusKeeper: FocusKeeper,
+    onFocused: (String) -> Unit,
+    onOpen: (JellyfinItem, Int) -> Unit,
+    size: Dp = 180.dp,
+    showLoading: Boolean = true,
+    badgeFor: ((JellyfinItem) -> String?)? = null
+) {
+    when {
+        items == null -> {
+            if (showLoading) {
+                androidx.tv.material3.Text(
+                    "$title \u2026", color = TextSecondary, fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 56.dp)
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+        items.isEmpty() -> {}
+        else -> {
+            androidx.tv.material3.Text(
+                title, fontSize = 20.sp, color = TextPrimary,
+                modifier = Modifier.padding(horizontal = 56.dp)
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .focusRestorer(),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
+            ) {
+                Spacer(Modifier.width(40.dp))
+                items.forEachIndexed { idx, item ->
+                    ArtworkCard(
+                        item = item,
+                        serverUrl = serverUrl,
+                        size = size,
+                        badge = badgeFor?.invoke(item),
+                        focusKeeper = focusKeeper,
+                        onFocused = onFocused
+                    ) {
+                        onOpen(item, idx)
+                    }
+                }
+                Spacer(Modifier.width(40.dp))
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
 }

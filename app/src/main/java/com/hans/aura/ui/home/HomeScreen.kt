@@ -117,67 +117,44 @@ fun HomeScreen(
         }
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Shelf("Recently played", recentlyPlayed, serverUrl, focusKeeper, { focusedCardId = it }) { item, idx ->
-                // A track is not a collection: play it directly, with the rest
-                // of the recently-played list queued behind it.
-                onPlayTrack(item, recentlyPlayed ?: listOf(item), idx)
-            }
-            Shelf("Recently added", recentAlbums, serverUrl, focusKeeper, { focusedCardId = it }) { item, _ ->
-                onOpenCollection(item)
-            }
-            Shelf("Artists", artists, serverUrl, focusKeeper, { focusedCardId = it }) { item, _ ->
-                onOpenArtist(item)
-            }
-            Shelf("Playlists", playlists, serverUrl, focusKeeper, { focusedCardId = it }) { item, _ ->
-                onOpenCollection(item)
-            }
+            com.hans.aura.ui.common.ItemShelf(
+                title = "Recently played",
+                items = recentlyPlayed,
+                serverUrl = serverUrl,
+                focusKeeper = focusKeeper,
+                onFocused = { focusedCardId = it },
+                onOpen = { item, idx ->
+                    // A track is not a collection: play it directly, with the rest
+                    // of the recently-played list queued behind it.
+                    onPlayTrack(item, recentlyPlayed ?: listOf(item), idx)
+                }
+            )
+            com.hans.aura.ui.common.ItemShelf(
+                title = "Recently added",
+                items = recentAlbums,
+                serverUrl = serverUrl,
+                focusKeeper = focusKeeper,
+                onFocused = { focusedCardId = it },
+                onOpen = { item, _ -> onOpenCollection(item) }
+            )
+            com.hans.aura.ui.common.ItemShelf(
+                title = "Artists",
+                items = artists,
+                serverUrl = serverUrl,
+                focusKeeper = focusKeeper,
+                onFocused = { focusedCardId = it },
+                onOpen = { item, _ -> onOpenArtist(item) }
+            )
+            com.hans.aura.ui.common.ItemShelf(
+                title = "Playlists",
+                items = playlists,
+                serverUrl = serverUrl,
+                focusKeeper = focusKeeper,
+                onFocused = { focusedCardId = it },
+                onOpen = { item, _ -> onOpenCollection(item) }
+            )
             Spacer(Modifier.height(140.dp)) // clear of the now-playing bar
         }
     }
 }
 
-@Composable
-private fun Shelf(
-    title: String,
-    items: List<JellyfinItem>?,
-    serverUrl: String,
-    focusKeeper: com.hans.aura.ui.common.FocusKeeper,
-    onFocused: (String) -> Unit,
-    onOpen: (JellyfinItem, Int) -> Unit
-) {
-    when {
-        items == null -> {
-            androidx.tv.material3.Text("$title \u2026", color = TextSecondary, fontSize = 14.sp,
-                modifier = Modifier.padding(horizontal = 56.dp))
-            Spacer(Modifier.height(16.dp))
-        }
-        items.isEmpty() -> {}
-        else -> {
-            androidx.tv.material3.Text(title, fontSize = 20.sp, color = TextPrimary,
-                modifier = Modifier.padding(horizontal = 56.dp))
-            Spacer(Modifier.height(12.dp))
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .focusRestorer(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Spacer(Modifier.width(40.dp))
-                items.forEachIndexed { idx, item ->
-                    ArtworkCard(
-                        item = item,
-                        serverUrl = serverUrl,
-                        size = 180.dp,
-                        focusKeeper = focusKeeper,
-                        onFocused = onFocused
-                    ) {
-                        onOpen(item, idx)
-                    }
-                }
-                Spacer(Modifier.width(40.dp))
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-    }
-}

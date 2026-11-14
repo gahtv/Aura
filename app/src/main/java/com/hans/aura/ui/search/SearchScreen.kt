@@ -1,6 +1,5 @@
 package com.hans.aura.ui.search
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +13,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,12 +25,17 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.Text
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.ui.common.ArtworkCard
-import com.hans.aura.ui.common.TrackRow
+import com.hans.aura.ui.common.FocusKeeper
+import com.hans.aura.ui.common.ItemShelf
+import com.hans.aura.ui.common.rememberAtmosAlbumIds
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 
+// Search results render as home-style horizontal shelves (Artists / Albums /
+// Tracks) stacked on one scrollable page — no tabs, all sections at once.
+// The header and text field keep a 56dp inset; the shelf rows themselves
+// bleed edge-to-edge (their inset lives inside the scroll row).
 @Composable
 fun SearchScreen(
     app: AuraApp,
@@ -48,6 +51,8 @@ fun SearchScreen(
     var artists by remember { mutableStateOf<List<JellyfinItem>?>(null) }
     var searching by remember { mutableStateOf(false) }
     val current by player.current.collectAsState()
+    val atmosAlbumIds = rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
+    val focusKeeper = remember { FocusKeeper() }
 
     LaunchedEffect(query) {
         val q = query.trim()
@@ -69,8 +74,8 @@ fun SearchScreen(
         searching = false
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 56.dp, vertical = 32.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+    Column(Modifier.fillMaxSize().padding(vertical = 32.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 56.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("Search", fontSize = 32.sp, color = TextPrimary)
             Spacer(Modifier.weight(1f))
             Button(onClick = onBack) { Text("Back") }
@@ -91,59 +96,60 @@ fun SearchScreen(
             onValueChange = { query = it },
             placeholder = { androidx.compose.material3.Text("Artists, albums, tracks, playlists") },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().focusRequester(searchFieldFocus)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 56.dp)
+                .focusRequester(searchFieldFocus)
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             val q = query.trim()
             if (q.length >= 2 && !searching &&
                 tracks?.isEmpty() == true && albums?.isEmpty() == true && artists?.isEmpty() == true
             ) {
-                Text("No results for \u201C$q\u201D", color = TextSecondary, fontSize = 15.sp)
-            }
-
-            SectionHeader("Tracks")
-            tracks?.forEachIndexed { i, item ->
-                TrackRow(
-                    index = i + 1,
-                    track = item,
-                    isCurrent = item.id == current?.id,
-                    onClick = { tracks?.let { player.playQueue(it, i) } }
+                Text(
+                    "No results for \u201C$q\u201D", color = TextSecondary, fontSize = 15.sp,
+                    modifier = Modifier.padding(horizontal = 56.dp, vertical = 8.dp)
                 )
             }
 
-            SectionHeader("Albums")
-            albums?.forEach { item ->
-                ArtworkCard(
-                    item = item,
-                    serverUrl = session.serverUrl,
-                    size = 160.dp
-                ) { onOpenCollection(item) }
-                Spacer(Modifier.height(16.dp))
-            }
+            ItemShelf(
+                title = "Artists",
+                items = artists,
+                serverUrl = session.serverUrl,
+                focusKeeper = focusKeeper,
+                onFocused = { },
+                onOpen = { item, _ -> onOpenArtist(item) }
+            )
 
-            SectionHeader("Artists")
-            artists?.forEach { item ->
-                ArtworkCard(
-                    item = item,
-                    serverUrl = session.serverUrl,
-                    size = 160.dp
-                ) { onOpenArtist(item) }
-                Spacer(Modifier.height(16.dp))
-            }
+            ItemShelf(
+                title = "Albums & playlists",
+                items = albums,
+                serverUrl = session.serverUrl,
+                focusKeeper = focusKeeper,
+                onFocused = { },
+                badgeFor = { if (it.type == "MusicAlbum" && it.id in atmosAlbumIds) "ATMOS" else null },
+                onOpen = { item, _ -> onOpenCollection(item) }
+            )
 
-            Spacer(Modifier.height(120.dp))
+            ItemShelf(
+                title = "Tracks",
+                items = tracks,
+                serverUrl = session.serverUrl,
+                focusKeeper = focusKeeper,
+                onFocused = { },
+                showLoading = false,
+                badgeFor = { track ->
+                    if (track.albumId != null && track.albumId in atmosAlbumIds) "ATMOS" else null
+                },
+                onOpen = { _, idx ->
+                    // Play the clicked track with the rest of the track results queued behind it.
+                    tracks?.let { list -> player.playQueue(list, idx.coerceIn(0, list.lastIndex)) }
+                }
+            )
+
+            Spacer(Modifier.height(120.dp)) // clear of the now-playing bar
         }
     }
-}
-
-@Composable
-private fun SectionHeader(label: String) {
-    Text(
-        label,
-        fontSize = 20.sp,
-        color = TextPrimary,
-        modifier = Modifier.padding(top = 20.dp, bottom = 8.dp)
-    )
 }

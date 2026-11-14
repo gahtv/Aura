@@ -298,6 +298,53 @@ fun AppRoot() {
     // index never inherits an older screen's state.
     val stateHolder = rememberSaveableStateHolder()
 
+    // Nav breadcrumb: logcat `adb logcat -s AURA_NAV` shows exactly which
+    // screen is up, so adb-driven verification doesn't need screenshots.
+    LaunchedEffect(stack.value) {
+        android.util.Log.d(
+            "AURA_NAV",
+            "top=${Screen.key(top)} stack=${stack.value.joinToString(">") { Screen.key(it) }}"
+        )
+    }
+
+    // Debug deep links (adb extras, see MainActivity): jump straight to a
+    // screen; optional autoplay queues one random track first, which also
+    // triggers the auto-push into Now Playing.
+    LaunchedEffect(Unit) {
+        DebugNav.request.collect { link ->
+            if (link == null) return@collect
+            DebugNav.request.value = null
+            if (link.autoplay) {
+                runCatching {
+                    val session = app.jellyfin.auth.session ?: return@collect
+                    val result = app.jellyfin.api.getItems(
+                        userId = session.userId, includeItemTypes = "Audio",
+                        recursive = true, sortBy = "Random", limit = 1, startIndex = 0
+                    )
+                    if (result.items.isNotEmpty()) player.playQueue(result.items, 0)
+                    android.util.Log.d("AURA_NAV", "autoplay queued ${result.items.size} track(s)")
+                }.onFailure { android.util.Log.d("AURA_NAV", "autoplay failed: $it") }
+            } else {
+                val screen: Screen? = when (link.screen) {
+                    "home" -> Screen.Home
+                    "artists" -> Screen.Artists
+                    "albums" -> Screen.Albums
+                    "tracks" -> Screen.Tracks
+                    "playlists" -> Screen.Playlists
+                    "search" -> Screen.Search
+                    "settings" -> Screen.Settings
+                    "nowplaying" -> Screen.NowPlaying
+                    "queue" -> Screen.Queue
+                    else -> null
+                }
+                screen?.let {
+                    pendingFocus = true
+                    stack.value = if (it == Screen.Home) listOf(it) else listOf(Screen.Home, it)
+                }
+            }
+        }
+    }
+
     // System BACK pops our navigation stack (device back button / remote BACK).
     // On a root tab other than Home, BACK goes Home instead of exiting the app.
     androidx.activity.compose.BackHandler(enabled = stack.value.size > 1 || top != Screen.Home) {

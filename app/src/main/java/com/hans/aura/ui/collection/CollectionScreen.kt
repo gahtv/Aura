@@ -132,7 +132,10 @@ fun CollectionScreen(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(280.dp)
+                // 320dp, not 280: label + 40sp title + subtitle + 2-line bio +
+                // buttons overflowed 280 and the header Box CLIPPED the buttons
+                // (labels rendered half-height). Keep ~40dp of slack below.
+                .height(320.dp)
                 .background(
                     Brush.verticalGradient(
                         listOf(Color.Transparent, Color(0x660E0C0A), Color(0xCC0E0C0A))
@@ -190,7 +193,10 @@ fun CollectionScreen(
                         },
                         fontSize = 13.sp, color = TextSecondary
                     )
-                    androidx.tv.material3.Text(collection.name, fontSize = 40.sp, color = TextPrimary)
+                    androidx.tv.material3.Text(
+                        collection.name, fontSize = 40.sp, color = TextPrimary,
+                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         androidx.tv.material3.Text(
                             subtitle(collection, tracks),
@@ -202,18 +208,35 @@ fun CollectionScreen(
                         }
                     }
                     overview?.let { bio ->
-                        androidx.tv.material3.Text(
-                            bio,
-                            fontSize = 13.sp, color = TextPrimary,
-                            maxLines = 3,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier
+                        Row(
+                            Modifier
                                 .padding(top = 10.dp)
-                                .width(560.dp)
-                                .clickable { showBio = true }
-                        )
+                                .width(600.dp)
+                                .clickable { showBio = true },
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            androidx.tv.material3.Text(
+                                bio,
+                                fontSize = 14.sp, color = TextPrimary,
+                                // Exactly two lines: maxLines = 3 left the
+                                // ellipsis alone on a third line, which read as
+                                // a broken half-sentence and ate button space.
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            // Always-visible affordance: the bio opens a
+                            // full-screen reader, which was previously
+                            // undiscoverable.
+                            androidx.tv.material3.Text(
+                                "  More",
+                                fontSize = 14.sp, color = com.hans.aura.ui.theme.Accent
+                            )
+                        }
                     }
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(14.dp))
+                    // Fixed-height buttons: keep them whole no matter how long
+                    // the title/bio above grows.
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         androidx.tv.material3.Button(onClick = {
                             tracks?.let { player.playQueue(it, 0) }

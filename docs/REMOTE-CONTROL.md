@@ -126,6 +126,29 @@ player, exactly like Spotify Connect, rather than receiving synthetic keystrokes
 (`home` means Aura's Home screen). They are dispatched **inside the app** as
 `KeyEvent`s, so no ADB and no USB debugging is involved.
 
+### Pairing
+
+Every endpoint except `/health` and `/pair/request` requires `X-Aura-Token`.
+Pairing follows the USB-debugging model — nothing is trusted until someone in
+front of the TV says so:
+
+```
+POST http://<tv>:8099/pair/request?name=<device name>
+  -> 200 {"token":"…","device":"Living Room TV"}    (after Allow)
+  -> 403 {"error":"denied"}                          (after Deny, BACK, or 90 s)
+```
+
+Aura shows a full-screen prompt naming the requesting device, with Allow
+focused and BACK = deny. Only Allow mints a token, which is stored in Aura's
+prefs and survives restarts; `MirrorLink.unpair()` clears it. The prompt is
+composed on every branch of the UI, including the signed-out login screen, so a
+remote can pair before anyone has signed in on the TV.
+
+`/state` also reports `deviceName` — the name Android/Cast already uses for the
+device (`Settings.Global.DEVICE_NAME`, e.g. "Living Room TV"), falling back to
+`Build.MODEL`. Aura sends the same name in its Jellyfin capability reports, so
+two Auras in a session list no longer both read "Android TV".
+
 `screen` is one of `home`, `artists`, `albums`, `tracks`, `playlists`, `search`, `settings`, `nowplaying`,
 `queue`, `collection`, `artist`. `itemId` is set for `collection` and `artist`. `lyrics` is true only while
 the Now Playing screen is showing lyrics rather than artwork — that flag is what lets a remote mirror the

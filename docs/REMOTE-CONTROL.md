@@ -177,17 +177,22 @@ ADB (no root, no app changes):
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/launch` | wake the device and start `com.hans.aura/.MainActivity` |
-| GET | `/api/device` | foreground window; `aura_foreground` tells you if Aura is up |
-| POST | `/api/key` | `{key: up\|down\|left\|right\|center\|back\|home\|playpause\|next\|prev\|wake}` |
-| GET | `/api/tvstate` | accessibility tree of the current screen as positioned nodes |
+| GET | `/api/device` | **deprecated** — foreground window; `aura_foreground` tells you if Aura is up |
+| POST | `/api/key` | **deprecated** — `{key: up\|down\|left\|right\|center\|back\|home\|playpause\|next\|prev\|wake}`; use Aura's `/input` |
+| GET | `/api/tvstate` | **deprecated** — accessibility tree of the current screen as positioned nodes |
+| GET | `/api/screen` | **deprecated** — JPEG frame of the TV |
 | GET | `/api/targets` | Cast targets on the LAN |
 | POST | `/api/load` | `{device, url, content_type}` — cast a direct-play URL |
 | POST | `/api/transport` | `{device, action}` on a Cast target |
 | GET | `/api/status?device=` | now playing on a Cast target |
 
-`/api/tvstate` is the basis for a remote that redraws the TV screen in HTML: each node carries `text`,
-normalised `l/t/w/h` (0–1), and `focused`. It is a text-and-layout model, not a screenshot, so it survives
-compression, screen sizes, and text scaling.
+The deprecated rows are the ADB surface: with Aura's mirror link (§2b) a controller sends D-pad keys through
+the app itself (`/input`) and reads screen state semantically (`/state`), so nothing needs USB debugging
+except starting Aura when it is closed. They stay reachable so older scripts do not break; the bridge's own
+UI no longer calls them.
+
+**Deprecated.** `/api/tvstate` was the basis for a remote that redraws the TV screen in HTML — each node
+carries `text`, normalised `l/t/w/h` (0–1), and `focused`. Aura's own `/state` made it unnecessary.
 
 ### Home Assistant sketch
 

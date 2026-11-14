@@ -116,7 +116,12 @@ fun NowPlayingScreen(
         Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(dynBg, com.hans.aura.ui.theme.Canvas)))
-            .padding(horizontal = 64.dp, vertical = 32.dp)
+            // Lyrics view is full-bleed edge to edge; the track view keeps the
+            // standard screen insets.
+            .padding(
+                horizontal = if (showLyrics) 0.dp else 64.dp,
+                vertical = if (showLyrics) 0.dp else 32.dp
+            )
     ) {
         // Top controls auto-hide after a pause on the lyrics view; any key press
         // brings them back for another cycle.
@@ -130,7 +135,16 @@ fun NowPlayingScreen(
         if (!showLyrics) controlsVisible = true
 
         if (controlsVisible || !showLyrics) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .then(
+                        // Lyrics view has no Column padding; inset the controls row itself.
+                        if (showLyrics) Modifier.padding(start = 64.dp, end = 64.dp, top = 32.dp)
+                        else Modifier
+                    ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 androidx.tv.material3.Button(onClick = onBack) { androidx.tv.material3.Text("Back") }
                 Spacer(Modifier.weight(1f))
                 if (isAtmos(item)) AtmosBadge()
@@ -243,7 +257,7 @@ private fun androidx.compose.foundation.layout.BoxScope.NowPlayingChip(app: Aura
     Row(
         Modifier
             .align(Alignment.BottomStart)
-            .padding(start = 0.dp, bottom = 24.dp)
+            .padding(start = 0.dp, bottom = 0.dp)
             .background(Color(0xCC0E0C0A), RoundedCornerShape(12.dp))
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -492,6 +506,10 @@ fun LyricsPane(
             index = target + 1, // +1: head spacer item
             scrollOffset = -anchorOffsetPx
         )
+        // Second snap: the first pass positions with ESTIMATED offsets for
+        // unmeasured items, so the current line can land a line or two low.
+        // A second call re-anchors with the now-measured sizes.
+        listState.scrollToItem(index = target + 1, scrollOffset = -anchorOffsetPx)
     }
 
     Box(

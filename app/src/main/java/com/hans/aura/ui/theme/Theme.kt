@@ -13,6 +13,10 @@ val TextPrimary = Color(0xFFF2EDE6)
 val TextSecondary = Color(0xFFB0A79B)
 val Accent = Color(0xFFE8A44C) // warm amber; later derived from album art
 val AccentDim = Color(0xFF8A5F2E)
+// Neutral outline for "the cursor is here" states where a full accent ring
+// would be too loud (context-menu rows, unselected tabs). Deliberately grey so
+// it never competes with the amber selection fill.
+val FocusOutline = Color(0xFF9A8F82)
 
 @Composable
 fun AuraTheme(content: @Composable () -> Unit) {

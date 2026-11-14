@@ -112,8 +112,10 @@ data class PlaylistRequest(
 @Serializable
 data class CapabilitiesDto(
     @SerialName("PlayableMediaTypes") val playableMediaTypes: List<String> = listOf("Audio"),
+    // No SetVolume: Aura plays at unity gain and the AVR owns the level, so
+    // advertising a volume command would only produce a slider that lies.
     @SerialName("SupportedCommands") val supportedCommands: List<String> = listOf(
-        "Play", "Playstate", "SetVolume", "DisplayMessage"
+        "Play", "Playstate", "DisplayMessage"
     ),
     @SerialName("SupportsMediaControl") val supportsMediaControl: Boolean = true,
     @SerialName("SupportsPersistentValues") val supportsPersistentValues: Boolean = true,
@@ -137,7 +139,10 @@ data class PlaybackStartInfo(
     @SerialName("MediaSourceId") val mediaSourceId: String,
     @SerialName("NowPlayingQueue") val nowPlayingQueue: List<QueueItem> = emptyList(),
     @SerialName("RepeatMode") val repeatMode: String = "RepeatNone",
-    @SerialName("PlaybackOrder") val playbackOrder: String = "Default"
+    @SerialName("PlaybackOrder") val playbackOrder: String = "Default",
+    // Always 100: the app never attenuates. Reporting it keeps the server-side
+    // session volume honest for web/HA remotes instead of leaving a stale value.
+    @SerialName("VolumeLevel") val volumeLevel: Int = 100
 )
 
 @Serializable
@@ -153,7 +158,8 @@ data class PlaybackProgressInfo(
     @SerialName("MediaSourceId") val mediaSourceId: String,
     @SerialName("NowPlayingQueue") val nowPlayingQueue: List<QueueItem> = emptyList(),
     @SerialName("RepeatMode") val repeatMode: String = "RepeatNone",
-    @SerialName("PlaybackOrder") val playbackOrder: String = "Default"
+    @SerialName("PlaybackOrder") val playbackOrder: String = "Default",
+    @SerialName("VolumeLevel") val volumeLevel: Int = 100
 )
 
 @Serializable

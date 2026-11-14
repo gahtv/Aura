@@ -40,9 +40,21 @@ class PlaybackService : MediaSessionService() {
         val app = application as AuraApp
 
         val player = buildPlayer(app)
+        // Unity gain, always: downmixing/attenuating in the player would apply
+        // digital volume to the E-AC-3 JOC bitstream before the AVR sees it.
+        // Level belongs to the receiver, so re-assert it on every track change
+        // in case a platform path (audio focus duck) left it lowered.
+        player.volume = 1f
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 reporter?.onError(error)
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (player.volume != 1f) {
+                    android.util.Log.i("AuraVol", "restoring unity gain (was ${player.volume})")
+                    player.volume = 1f
+                }
             }
         })
 

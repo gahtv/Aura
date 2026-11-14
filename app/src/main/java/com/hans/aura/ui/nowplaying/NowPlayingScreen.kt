@@ -8,6 +8,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -200,11 +202,16 @@ fun NowPlayingScreen(
                         .weight(1f)
                         .padding(start = 48.dp, top = 40.dp)
                 ) {
-                    androidx.tv.material3.Text(
-                        item?.name ?: "Nothing playing",
-                        fontSize = 40.sp,
-                        color = TextPrimary
-                    )
+                    // Big title: shrink to fit, then marquee. Available width
+                    // comes from the row's weight(1f) column.
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        com.hans.aura.ui.common.AutoFitMarqueeText(
+                            text = item?.name ?: "Nothing playing",
+                            widthCap = maxWidth,
+                            sizes = listOf(40.sp, 34.sp, 28.sp),
+                            color = TextPrimary
+                        )
+                    }
                     // Album / artist lines open their detail screens.
                     albumItem?.let { ab ->
                         JumpText(tag = "album", text = ab.name.ifBlank { "Album" }, accent = dynAccent) {
@@ -274,10 +281,14 @@ private fun androidx.compose.foundation.layout.BoxScope.NowPlayingChip(app: Aura
             )
             Spacer(Modifier.width(16.dp))
         }
-        Column {
-            androidx.tv.material3.Text(
-                item?.name ?: "", fontSize = 20.sp, color = TextPrimary,
-                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        Column(Modifier.widthIn(max = 380.dp)) {
+            // Same shrink-then-marquee treatment as the full Now Playing title;
+            // the cap keeps the chip from swallowing the lyric pane.
+            com.hans.aura.ui.common.AutoFitMarqueeText(
+                text = item?.name ?: "",
+                widthCap = 380.dp,
+                sizes = listOf(20.sp, 18.sp, 16.sp),
+                color = TextPrimary
             )
             androidx.tv.material3.Text(
                 item?.artistNames ?: "", fontSize = 14.sp, color = TextSecondary,

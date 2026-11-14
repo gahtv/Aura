@@ -63,7 +63,7 @@ class PlaybackRemote(
     /** Raw POST — the Retrofit path didn't bind capabilities reliably on Jellyfin 12. */
     private fun postCapabilities(token: String, deviceId: String, serverUrl: String) {
         val body = "{\"PlayableMediaTypes\":[\"Audio\"]," +
-            "\"SupportedCommands\":[\"Play\",\"Playstate\",\"SetVolume\",\"DisplayMessage\"," +
+            "\"SupportedCommands\":[\"Play\",\"Playstate\",\"DisplayMessage\"," +
             "\"SetRepeatMode\",\"SetShuffleQueue\"]," +
             "\"SupportsMediaControl\":true,\"SupportsPersistentIdentifier\":true}"
         val req = Request.Builder()
@@ -245,12 +245,11 @@ class PlaybackRemote(
                         Log.i(TAG, "remote set shuffle: $enabled")
                         onMainThread { player.shuffleModeEnabled = enabled }
                     }
-                    "SetVolume" -> {
-                        val vol = arg("Volume")?.toIntOrNull() ?: return
-                        onMainThread { player.volume = (vol / 100f).coerceIn(0f, 1f) }
-                    }
-                    "VolumeUp" -> onMainThread { player.volume = (player.volume + 0.1f).coerceIn(0f, 1f) }
-                    "VolumeDown" -> onMainThread { player.volume = (player.volume - 0.1f).coerceIn(0f, 1f) }
+                    // Volume is deliberately not remote-controllable: the AVR owns level
+                    // and the bitstream must stay at unity gain. Ignore (and say so in
+                    // logcat) instead of silently applying a remote attenuation.
+                    "SetVolume", "VolumeUp", "VolumeDown" ->
+                        Log.i(TAG, "remote $name ignored (volume is AVR-controlled)")
                 }
             }
         }

@@ -179,10 +179,15 @@ private fun NowPlayingPill(player: PlayerConnection, current: Screen, onOpen: ()
         // Cap the pill width so a long title can't push Search/Settings
         // off the right edge of the top bar.
         Column(Modifier.padding(start = 12.dp).widthIn(max = 340.dp)) {
-            androidx.tv.material3.Text(
-                playing.name,
-                color = TextPrimary, fontSize = 14.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
+            // Shrink then marquee inside the cap, so a 60-character track name
+            // can never widen the pill and push Search/Settings off screen.
+            com.hans.aura.ui.common.AutoFitMarqueeText(
+                text = playing.name,
+                // Upper bound only; the row hands out whatever is left, so the
+                // pill can never push Search/Settings off the top bar.
+                widthCap = 200.dp,
+                sizes = listOf(14.sp, 13.sp, 12.sp),
+                color = TextPrimary
             )
             androidx.tv.material3.Text(
                 playing.artistNames.ifBlank { "" },
@@ -251,7 +256,9 @@ private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
                 ) else Modifier
             )
             .clickable { onClick() }
-            .padding(horizontal = 22.dp, vertical = 12.dp)
+            // Tighter horizontal padding: five tabs + pill + two icon buttons
+            // have to coexist inside 960dp on a 1080p TV.
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         androidx.tv.material3.Text(
             label,
@@ -517,6 +524,8 @@ fun AppRoot() {
                         onRefreshLibrary = {
                             LibraryCache.clear()
                             com.hans.aura.data.PagedLibrary.clear()
+                            com.hans.aura.data.AtmosCatalog.clear()
+                            LibraryCache.markManualRefresh()
                             refreshKey++
                         },
                         onSignOut = {

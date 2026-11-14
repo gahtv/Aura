@@ -4,12 +4,17 @@ package com.hans.aura.ui.common
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
@@ -38,7 +44,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.FocusOutline
 import com.hans.aura.ui.theme.Surface
+import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
@@ -175,18 +184,15 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
                     .fillMaxHeight(0.7f)
             ) {
                 spec.actions.forEachIndexed { i, action ->
-                    androidx.tv.material3.Button(
-                        onClick = {
-                            android.util.Log.d("AURA_MENU", "select[$i]=${action.label}")
-                            onDismiss()
-                            action.onSelect()
-                        },
-                        modifier = Modifier
-                            .then(if (i == 0) Modifier.focusRequester(firstFocus) else Modifier)
+                    MenuAction(
+                        label = action.label,
+                        modifier = if (i == 0) Modifier.focusRequester(firstFocus) else Modifier
                     ) {
-                        androidx.tv.material3.Text(action.label)
+                        android.util.Log.d("AURA_MENU", "select[$i]=${action.label}")
+                        onDismiss()
+                        action.onSelect()
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                 }
             }
         }
@@ -211,6 +217,48 @@ fun ContextMenuHosts(app: AuraApp) {
             app = app,
             tracksToAdd = tracks,
             onDismiss = { ContextMenuHost.pickerTracks = null }
+        )
+    }
+}
+
+/**
+ * One context-menu action. Focus has to be loud on TV — the old tv-material
+ * Button only tinted its container, which read as "focus is somewhere" — so a
+ * focused row gets a filled background, a 2dp neutral outline and an accent bar
+ * on the leading edge.
+ */
+@Composable
+private fun MenuAction(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(6.dp)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(shape)
+            .background(if (focused) SurfaceHigh else Color.Transparent)
+            .then(
+                if (focused) Modifier.border(2.dp, FocusOutline, shape) else Modifier
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .width(4.dp)
+                .height(26.dp)
+                .background(
+                    if (focused) Accent else Color.Transparent,
+                    RoundedCornerShape(2.dp)
+                )
+        )
+        Spacer(Modifier.width(14.dp))
+        androidx.tv.material3.Text(
+            label,
+            fontSize = 18.sp,
+            color = if (focused) TextPrimary else TextSecondary
         )
     }
 }

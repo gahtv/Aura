@@ -54,6 +54,10 @@ fun ArtworkCard(
     serverUrl: String,
     size: Dp,
     badge: String? = null,
+    // Optional per-screen tint (artist pages derive it from the artist image);
+    // defaults to the app-wide amber so no other screen changes.
+    badgeColor: Color = com.hans.aura.ui.theme.Accent,
+    accent: Color = com.hans.aura.ui.theme.Accent,
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
@@ -86,7 +90,7 @@ fun ArtworkCard(
                     // Unmistakable focus outline: accent ring on the artwork.
                     if (focused) Modifier.border(
                         width = 3.dp,
-                        color = com.hans.aura.ui.theme.Accent,
+                        color = accent,
                         shape = RoundedCornerShape(6.dp)
                     ) else Modifier
                 )
@@ -116,7 +120,7 @@ fun ArtworkCard(
                         ) {
                             androidx.tv.material3.Text(
                                 label,
-                                color = com.hans.aura.ui.theme.Accent,
+                                color = badgeColor,
                                 fontSize = 9.sp,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                             )
@@ -166,6 +170,8 @@ fun TrackRow(
     isCurrent: Boolean,
     onClick: () -> Unit,
     atmos: Boolean = false,
+    // Per-screen tint (artist pages); app amber elsewhere.
+    accent: Color = com.hans.aura.ui.theme.Accent,
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
@@ -205,13 +211,13 @@ fun TrackRow(
                 Modifier
                     .width(4.dp)
                     .height(40.dp)
-                    .background(com.hans.aura.ui.theme.Accent)
+                    .background(accent)
             )
             androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))
         }
         androidx.tv.material3.Text(
             text = if (isCurrent) "\u25B6" else index.toString(),
-            color = if (isCurrent) com.hans.aura.ui.theme.Accent else TextSecondary,
+            color = if (isCurrent) accent else TextSecondary,
             fontSize = 14.sp,
             modifier = Modifier.width(36.dp)
         )
@@ -219,7 +225,7 @@ fun TrackRow(
             androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
                 androidx.tv.material3.Text(
                     track.name,
-                    color = if (isCurrent) com.hans.aura.ui.theme.Accent else TextPrimary,
+                    color = if (isCurrent) accent else TextPrimary,
                     fontSize = 15.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -227,7 +233,7 @@ fun TrackRow(
                 )
                 if (atmos) {
                     androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
-                    AtmosChip()
+                    AtmosChip(color = accent)
                 }
             }
             if (track.artistNames.isNotBlank()) {
@@ -324,10 +330,10 @@ fun formatDuration(ms: Long): String {
 
 /** Small ATMOS marker used on rows (the card equivalent is ArtworkCard's badge). */
 @Composable
-fun AtmosChip() {
+fun AtmosChip(color: Color = com.hans.aura.ui.theme.Accent) {
     androidx.tv.material3.Text(
         "ATMOS",
-        color = com.hans.aura.ui.theme.Accent,
+        color = color,
         fontSize = 9.sp,
         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
         modifier = Modifier
@@ -411,5 +417,21 @@ fun ItemShelf(
             }
             Spacer(Modifier.height(16.dp))
         }
+    }
+}
+
+/**
+ * Human-readable "how stale is this" label for a wall-clock millisecond stamp.
+ * Used by Settings for the last library refresh; 0 means "never".
+ */
+fun relativeTime(ms: Long): String {
+    if (ms <= 0L) return "never"
+    val elapsed = System.currentTimeMillis() - ms
+    return when {
+        elapsed < 60_000L -> "just now"
+        elapsed < 3_600_000L -> "${elapsed / 60_000L} min ago"
+        elapsed < 86_400_000L -> "${elapsed / 3_600_000L} h ago"
+        else -> java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.US)
+            .format(java.util.Date(ms))
     }
 }

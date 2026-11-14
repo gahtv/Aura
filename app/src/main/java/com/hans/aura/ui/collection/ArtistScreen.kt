@@ -35,7 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.ui.theme.darken
-import com.hans.aura.ui.theme.rememberDynamicColor
+import com.hans.aura.ui.theme.rememberDynamicColors
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
@@ -62,22 +62,35 @@ fun ArtistScreen(
     var albums by remember { mutableStateOf(LibraryCache.get("artist_albums:${artist.id}")) }
     var topTracks by remember { mutableStateOf(LibraryCache.get("artist_top:${artist.id}")) }
     var overview by remember { mutableStateOf<String?>(null) }
+    // The screen is often entered with a STUB artist (id + name only, e.g. from
+    // "View artist" in a context menu), which carries no PrimaryImageTag — so
+    // the dynamic palette would have no image to read. The getItem call below
+    // resolves the real item; keep it and prefer it for art/name.
+    var fetchedArtist by remember(artist.id) { mutableStateOf<JellyfinItem?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val current by player.current.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val atmosAlbumIds = com.hans.aura.ui.common.rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
 
     // Dynamic color wash from the artist image, kept dark for text contrast.
-    val artUrl = artist.primaryImageTag?.let {
-        AuthStore.imageUrl(session.serverUrl, artist.id, it, maxWidth = 480)
+    val shownArtist = fetchedArtist ?: artist
+    val artUrl = shownArtist.primaryImageTag?.let {
+        AuthStore.imageUrl(session.serverUrl, shownArtist.id, it, maxWidth = 480)
     }
-    val dyn = rememberDynamicColor(artUrl)
+    val dyn = rememberDynamicColors(artUrl)
+    // Accent derived from the artist image drives badges, focus rings and the
+    // current-track highlights on this screen only; secondary is already
+    // contrast-corrected by ensureReadable() so it reads on the dark wash.
+    val accent = dyn?.secondary ?: com.hans.aura.ui.theme.Accent
     var showBioDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(artist.id) {
         runCatching {
             app.jellyfin.api.getItem(session.userId, artist.id)
-        }.onSuccess { overview = it.overview?.takeIf { o -> o.isNotBlank() } }
+        }.onSuccess { full ->
+            fetchedArtist = full
+            overview = full.overview?.takeIf { o -> o.isNotBlank() }
+        }
 
         if (albums != null && topTracks != null) return@LaunchedEffect
         runCatching {
@@ -115,9 +128,14 @@ fun ArtistScreen(
         Modifier
             .fillMaxSize()
             .background(
+                // dyn.primary is ALREADY darkened (PaletteCache applies 0.30
+                // when it packs the palette) — darken()ing it again collapsed
+                // every wash to near-black. Use it as-is and derive the mid stop.
                 Brush.verticalGradient(
                     listOf(
-                        dyn?.let { darken(it, 0.30f) } ?: Surface,
+                        dyn?.primary ?: Surface,
+                        dyn?.let { darken(it.primary, 0.55f) }
+                            ?: com.hans.aura.ui.theme.SurfaceHigh,
                         com.hans.aura.ui.theme.Canvas
                     )
                 )
@@ -136,7 +154,7 @@ fun ArtistScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                androidx.tv.material3.Text(artist.name, fontSize = 36.sp, color = TextPrimary)
+                androidx.tv.material3.Text(shownArtist.name, fontSize = 36.sp, color = TextPrimary)
                 overview?.let { bio ->
                     androidx.tv.material3.Text(
                         bio,
@@ -173,10 +191,7 @@ fun ArtistScreen(
             albums?.let { list ->
                 val deduped = list.distinctBy { it.name.lowercase() to (it.year ?: 0) }
                 if (deduped.isNotEmpty()) {
-                    androidx.tv.material3.Text(
-                        "Albums", fontSize = 20.sp, color = TextPrimary,
-                        modifier = Modifier.padding(horizontal = 48.dp)
-                    )
+                    SectionHeader("Albums", accent)
                     Spacer(Modifier.height(12.dp))
                     Row(
                         Modifier
@@ -191,6 +206,9 @@ fun ArtistScreen(
                                 item = album,
                                 serverUrl = session.serverUrl,
                                 size = 180.dp,
+                                badge = "ATMOS".takeIf { album.id in atmosAlbumIds },
+                                badgeColor = accent,
+                                accent = accent,
                                 focusKeeper = focusKeeper,
                                 onFocused = { focusedId = it }
                             ) { onOpenCollection(album) }
@@ -203,10 +221,7 @@ fun ArtistScreen(
             topTracks?.let { list ->
                 val deduped = list.distinctBy { it.name.lowercase() to it.albumId }
                 if (deduped.isNotEmpty()) {
-                    androidx.tv.material3.Text(
-                        "Top tracks", fontSize = 20.sp, color = TextPrimary,
-                        modifier = Modifier.padding(horizontal = 48.dp)
-                    )
+                    SectionHeader("Top tracks", accent)
                     Spacer(Modifier.height(8.dp))
                     deduped.forEachIndexed { i, track ->
                         TrackRow(
@@ -214,6 +229,7 @@ fun ArtistScreen(
                             track = track,
                             isCurrent = track.id == current?.id,
                             atmos = track.albumId != null && track.albumId in atmosAlbumIds,
+                            accent = accent,
                             onClick = { player.playQueue(list, i) },
                             focusKeeper = focusKeeper,
                             onFocused = { focusedId = it },
@@ -235,11 +251,29 @@ fun ArtistScreen(
 
         if (showBioDialog && overview != null) {
             com.hans.aura.ui.common.BioDialog(
-                title = artist.name,
+                title = shownArtist.name,
                 subtitle = "Artist",
                 text = overview!!,
                 onDismiss = { showBioDialog = false }
             )
         }
+    }
+}
+
+/**
+ * Section title with a short accent rule underneath, tinted from the artist
+ * image so the page reads as one themed surface.
+ */
+@Composable
+private fun SectionHeader(title: String, accent: Color) {
+    Column(Modifier.padding(horizontal = 48.dp)) {
+        androidx.tv.material3.Text(title, fontSize = 20.sp, color = TextPrimary)
+        Spacer(Modifier.height(6.dp))
+        Box(
+            Modifier
+                .width(56.dp)
+                .height(3.dp)
+                .background(accent, androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+        )
     }
 }

@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -28,6 +32,9 @@ fun SettingsScreen(
     onSignOut: () -> Unit
 ) {
     val session = app.jellyfin.auth.session!!
+    // Stamps live in LibraryCache (plain fields), so bump a local counter after
+    // a manual refresh or the labels would keep showing the pre-refresh values.
+    var refreshTick by remember { mutableStateOf(0) }
 
     Column(
         Modifier
@@ -51,9 +58,26 @@ fun SettingsScreen(
             "Home screens and library lists refresh automatically every 24 hours.",
             fontSize = 13.sp, color = TextSecondary
         )
+        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+        // Last refresh: when the user forced one, and how old the loaded data is.
+        val lastManual = remember(refreshTick) { com.hans.aura.data.LibraryCache.lastManualRefreshAtMs }
+        val lastLoaded = remember(refreshTick) { com.hans.aura.data.LibraryCache.lastLoadedAtMs }
+        androidx.tv.material3.Text(
+            "Last manual refresh: " + com.hans.aura.ui.common.relativeTime(lastManual),
+            fontSize = 14.sp, color = TextPrimary
+        )
+        androidx.tv.material3.Text(
+            "Data loaded: " + com.hans.aura.ui.common.relativeTime(lastLoaded),
+            fontSize = 14.sp, color = TextSecondary
+        )
         androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
         Row {
-            androidx.tv.material3.Button(onClick = onRefreshLibrary) {
+            androidx.tv.material3.Button(
+                onClick = {
+                    onRefreshLibrary()
+                    refreshTick++
+                }
+            ) {
                 androidx.tv.material3.Text("Refresh library now")
             }
             androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))

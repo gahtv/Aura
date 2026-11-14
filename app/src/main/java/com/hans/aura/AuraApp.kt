@@ -14,6 +14,7 @@ class AuraApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         jellyfin = JellyfinClient(this)
+        com.hans.aura.data.LibraryCache.init(this)
     }
 
     /**

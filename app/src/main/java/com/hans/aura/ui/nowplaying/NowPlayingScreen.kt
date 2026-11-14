@@ -37,8 +37,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -496,7 +497,27 @@ fun LyricsPane(
     Box(
         Modifier
             .fillMaxSize()
-            .onPreviewKeyEvent { onUserInteraction(); false }
+            .onPreviewKeyEvent { event ->
+                onUserInteraction()
+                // DOWN/UP always scroll the lyrics (and pause auto-follow),
+                // no matter which child inside the pane holds focus. KeyDown
+                // only — the matching KeyUp must not scroll a second step.
+                if (event.type == KeyEventType.KeyDown) {
+                    when (event.key) {
+                        Key.DirectionDown -> {
+                            pauseFollow()
+                            scope.launch { listState.scrollBy(160f) }
+                            true
+                        }
+                        Key.DirectionUp -> {
+                            pauseFollow()
+                            scope.launch { listState.scrollBy(-160f) }
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
     ) {
         when {
             lines == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -514,22 +535,7 @@ fun LyricsPane(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .focusable()
-                    .onKeyEvent { event ->
-                        when (event.key) {
-                            Key.DirectionDown -> {
-                                pauseFollow(); onUserInteraction()
-                                scope.launch { listState.scrollBy(160f) }
-                                true
-                            }
-                            Key.DirectionUp -> {
-                                pauseFollow(); onUserInteraction()
-                                scope.launch { listState.scrollBy(-160f) }
-                                true
-                            }
-                            else -> false
-                        }
-                    },
+                    .focusable(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Small head spacer so the first line never glues to the top

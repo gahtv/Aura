@@ -183,10 +183,36 @@ class PlayerConnection(
     fun playQueue(items: List<JellyfinItem>, startIndex: Int, playWhenReady: Boolean = true) {
         val c = _controller.value ?: return
         val serverUrl = sessionProvider()?.serverUrl ?: return
+
+        // Pressing the track that is ALREADY playing from this same list must not
+        // restart it from zero — treat it as "show me what's playing". Requires
+        // the same queue (same context), so re-tapping a track in a different
+        // album still starts playback, and a finished/idle track still replays.
+        val tapped = items.getOrNull(startIndex)
+        if (tapped != null &&
+            c.playbackState != Player.STATE_IDLE &&
+            c.playbackState != Player.STATE_ENDED &&
+            c.currentMediaItem?.mediaId == tapped.id &&
+            sameQueue(c, items)
+        ) {
+            android.util.Log.d("AURA_QUEUE", "playQueue: already playing ${tapped.id} -> now playing")
+            com.hans.aura.ui.common.NavRequests.requestNowPlaying()
+            return
+        }
+
         synchronized(registry) { items.forEach { registry[it.id] = it } }
         c.setMediaItems(items.map { toMediaItem(it, serverUrl) }, startIndex, 0)
         c.playWhenReady = playWhenReady
         c.prepare()
+    }
+
+    /** True when the player's current queue is exactly [items] (same ids, same order). */
+    private fun sameQueue(c: androidx.media3.common.Player, items: List<JellyfinItem>): Boolean {
+        if (c.mediaItemCount != items.size) return false
+        for (i in 0 until c.mediaItemCount) {
+            if (c.getMediaItemAt(i).mediaId != items[i].id) return false
+        }
+        return true
     }
 
     /** Insert after the current track ("Play Next"); starts playback if idle. */

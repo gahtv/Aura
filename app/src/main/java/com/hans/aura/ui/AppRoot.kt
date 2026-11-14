@@ -427,6 +427,17 @@ fun AppRoot() {
         }
     }
 
+    // Explicit "show me what's playing" requests (e.g. tapping the track that is
+    // already playing): push Now Playing instead of restarting the song.
+    LaunchedEffect(Unit) {
+        com.hans.aura.ui.common.NavRequests.openNowPlaying.collect {
+            if (stack.value.last() !is Screen.NowPlaying) {
+                pendingFocus = true
+                stack.value = stack.value + Screen.NowPlaying
+            }
+        }
+    }
+
     // Bumped by Settings > Refresh library; keys into data LaunchedEffects.
     var refreshKey by remember { mutableStateOf(0) }
 

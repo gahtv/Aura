@@ -4,6 +4,8 @@ A native Android TV music app for [Jellyfin](https://jellyfin.org), built for a 
 streamer. Spotify-style UI (Compose TV + Media3) that **direct-plays Dolby Atmos** M4A
 (E-AC-3 JOC) to an AVR via passthrough.
 
+Companion phone remote: **[Aura Remote](https://github.com/gahtv/aura-remote)**.
+
 ![Platform](https://img.shields.io/badge/platform-Android%20TV%20(API%2026%2B)-green)
 ![Kotlin](https://img.shields.io/badge/kotlin-2.x-blue)
 
@@ -17,6 +19,9 @@ streamer. Spotify-style UI (Compose TV + Media3) that **direct-plays Dolby Atmos
 - Playlists: create, add, remove; server mutations evict cached browse data
 - **Cast & remote control**: "Play On" casting, and Aura acts as a full Jellyfin
   remote target (Play/Pause/Seek/Stop/queue/shuffle/repeat) from any web sender
+- **Phone remote**: Aura serves a local mirror link (screen state, queue,
+  transport, in-app input) and pairs with a browser remote on first use — see
+  [Aura Remote](https://github.com/gahtv/aura-remote)
 - Artist/album bios from Jellyfin item overviews, full-screen reader for long text
 - Dynamic album-art theming on detail screens (96px palette decode, process-cached)
 - ATMOS badges on album covers (single cached whole-library scan)

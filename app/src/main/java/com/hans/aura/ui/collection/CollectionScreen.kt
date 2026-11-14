@@ -33,7 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import com.hans.aura.ui.theme.darken
-import com.hans.aura.ui.theme.rememberDynamicColor
+import com.hans.aura.ui.theme.rememberDynamicColors
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,6 +70,10 @@ fun CollectionScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableStateOf(0) }
     var overview by remember { mutableStateOf<String?>(null) }
+    // Same stub problem as the artist page: coming from a JumpText/context menu
+    // gives an id+name item with no ImageTags, so the palette would have nothing
+    // to read and the page fell back to the app amber. Keep the fetched item.
+    var fullItem by remember(collection.id) { mutableStateOf<JellyfinItem?>(null) }
     var showBio by remember { mutableStateOf(false) }
     val currentId by player.current.collectAsState()
     // Playlist rows sit outside album context, so they carry per-track Atmos
@@ -81,15 +85,23 @@ fun CollectionScreen(
 
     // Dynamic color wash from the album art. Kept dark for text contrast;
     // a scrim sits behind the header text so bright artwork stays readable.
-    val artUrl = collection.primaryImageTag?.let {
-        AuthStore.imageUrl(session.serverUrl, collection.id, it, maxWidth = 480)
+    val shown = fullItem ?: collection
+    val artUrl = shown.primaryImageTag?.let {
+        AuthStore.imageUrl(session.serverUrl, shown.id, it, maxWidth = 480)
     }
-    val dyn = rememberDynamicColor(artUrl)
+    // Two-colour palette: primary tints the background wash, secondary becomes
+    // the accent for this album page (current-track marker, focus bar, ATMOS
+    // badge) so the screen matches its own cover instead of the app amber.
+    val dyn = rememberDynamicColors(artUrl)
+    val accent = dyn?.secondary ?: com.hans.aura.ui.theme.Accent
 
     LaunchedEffect(collection.id, refresh) {
         runCatching {
             app.jellyfin.api.getItem(session.userId, collection.id)
-        }.onSuccess { overview = it.overview?.takeIf { o -> o.isNotBlank() } }
+        }.onSuccess {
+            fullItem = it
+            overview = it.overview?.takeIf { o -> o.isNotBlank() }
+        }
 
         if (refresh == 0 && tracks != null) return@LaunchedEffect
         runCatching {
@@ -119,9 +131,13 @@ fun CollectionScreen(
         Modifier
             .fillMaxSize()
             .background(
+                // dyn.primary is already darkened at pack time — darkening it
+                // again collapsed the wash to near-black.
                 Brush.verticalGradient(
                     listOf(
-                        dyn?.let { darken(it, 0.30f) } ?: Surface,
+                        dyn?.primary ?: Surface,
+                        dyn?.let { darken(it.primary, 0.55f) }
+                            ?: com.hans.aura.ui.theme.SurfaceHigh,
                         com.hans.aura.ui.theme.Canvas
                     )
                 )
@@ -142,20 +158,22 @@ fun CollectionScreen(
                     )
                 )
         ) {
-            collection.primaryImageTag?.let { tag ->
+            shown.primaryImageTag?.let { tag ->
                 AsyncImage(
-                    model = AuthStore.imageUrl(session.serverUrl, collection.id, tag, maxWidth = 720),
+                    model = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 720),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
             }
             // Heavy uniform scrim: artwork stays visible as texture, but text
-            // is always legible no matter how bright the cover is.
+            // is always legible no matter how bright the cover is. Neutral black
+            // (not the old warm brown 0x9914100C) so the cover's own colour is
+            // not muddied on a page that is now themed from that cover.
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color(0x9914100C))
+                    .background(Color(0x99101010))
             )
             Box(
                 Modifier
@@ -173,9 +191,9 @@ fun CollectionScreen(
                     .padding(40.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
-                collection.primaryImageTag?.let { tag ->
+                shown.primaryImageTag?.let { tag ->
                     AsyncImage(
-                        model = AuthStore.imageUrl(session.serverUrl, collection.id, tag, maxWidth = 400),
+                        model = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 400),
                         contentDescription = collection.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -194,7 +212,7 @@ fun CollectionScreen(
                         fontSize = 13.sp, color = TextSecondary
                     )
                     androidx.tv.material3.Text(
-                        collection.name, fontSize = 40.sp, color = TextPrimary,
+                        shown.name, fontSize = 40.sp, color = TextPrimary,
                         maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -204,7 +222,7 @@ fun CollectionScreen(
                         )
                         if (tracks?.any { PlayerConnection.isAtmos(it) } == true) {
                             Spacer(Modifier.width(12.dp))
-                            AtmosBadge()
+                            AtmosBadge(color = accent)
                         }
                     }
                     overview?.let { bio ->
@@ -289,6 +307,7 @@ fun CollectionScreen(
                         track = track,
                         isCurrent = track.id == currentId?.id,
                         atmos = track.albumId != null && track.albumId in atmosAlbumIds,
+                        accent = accent,
                         onClick = { player.playQueue(tracks!!, i) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedTrackId = it },

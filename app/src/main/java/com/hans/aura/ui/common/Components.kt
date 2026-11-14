@@ -180,7 +180,9 @@ fun TrackRow(
     var focused by remember { mutableStateOf(false) }
     val bg by animateColorAsState(
         when {
-            isCurrent -> Color(0xFF2A2116)
+            // Tinted by the screen's accent so the "now playing" row belongs to
+            // an album whose colour isn't the app amber.
+            isCurrent -> accent.copy(alpha = 0.16f)
             focused -> SurfaceHigh
             else -> Color.Transparent
         },

@@ -624,15 +624,15 @@ fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
 }
 
 @Composable
-fun AtmosBadge() {
+fun AtmosBadge(color: Color = Accent) {
     Box(
         Modifier
-            .background(Color(0x33E8A44C), RoundedCornerShape(4.dp))
+            .background(color.copy(alpha = 0.20f), RoundedCornerShape(4.dp))
             .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         androidx.tv.material3.Text(
             "DD+ \u2022 ATMOS",
-            color = Accent, fontSize = 12.sp,
+            color = color, fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold
         )
     }

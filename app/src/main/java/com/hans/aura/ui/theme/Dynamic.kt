@@ -73,7 +73,18 @@ fun rememberDynamicColors(imageUrl: String?): DynamicColors? {
     return pair
 }
 
-/** Secondary = most saturated swatch clearly distinct from the dominant one. */
+/**
+ * Secondary = the most POPULOUS saturated swatch that still belongs to the
+ * image's own hue family.
+ *
+ * This used to score raw saturation alone, which meant one small vivid patch
+ * dominated the whole accent: a muted sage artist portrait produced a neon
+ * green accent that looked exactly like some other album's colour leaking into
+ * the page (user-reported: "playing 360 makes the boygenius page green"). Hue
+ * distance from the dominant swatch is now a heavy factor, grey swatches are
+ * ignored, and the result's saturation is capped so the accent reads as part of
+ * the artwork rather than as an unrelated highlight.
+ */
 private fun pickSecondary(palette: Palette, dominant: Int): Int {
     val domHsv = FloatArray(3)
     android.graphics.Color.colorToHSV(dominant, domHsv)
@@ -84,19 +95,39 @@ private fun pickSecondary(palette: Palette, dominant: Int): Int {
         if (c == dominant) continue
         val hsv = FloatArray(3)
         android.graphics.Color.colorToHSV(c, hsv)
-        // 30 degrees apart in hue, or clearly different lightness, counts as distinct
-        val hueGap = minOf(kotlin.math.abs(hsv[0] - domHsv[0]), 360f - kotlin.math.abs(hsv[0] - domHsv[0]))
-        val distinct = hueGap > 30f || kotlin.math.abs(hsv[2] - domHsv[2]) > 0.25f
-        val score = if (distinct) hsv[1] * (1f - kotlin.math.abs(hsv[2] - 0.6f)) else -1f
+        // Greys carry no usable hue; using one turns the accent into plain white.
+        if (hsv[1] < 0.12f) continue
+        val hueGap = minOf(
+            kotlin.math.abs(hsv[0] - domHsv[0]),
+            360f - kotlin.math.abs(hsv[0] - domHsv[0])
+        )
+        // 1.0 at the dominant hue, 0 at 120 degrees away (opposite-ish).
+        val harmony = (1f - hueGap / 120f).coerceAtLeast(0f)
+        if (harmony <= 0f) continue
+        val population = swatch.population / 1000f
+        val score = harmony * harmony * population * (0.4f + 0.6f * hsv[1])
         if (score > bestScore) { bestScore = score; best = c }
     }
     if (best < 0) {
-        // No distinct swatch: derive one from the dominant hue, shifted and
-        // brightened so it still reads as a highlight.
-        val hsv = floatArrayOf(domHsv[0] + 40f, domHsv[1], 0.75f)
+        // Nothing in-family: lean on the dominant hue, nudged so background and
+        // accent are still distinguishable.
+        val hsv = floatArrayOf(
+            (domHsv[0] + 18f) % 360f,
+            (domHsv[1] * 0.9f).coerceAtLeast(0.25f),
+            0.78f
+        )
         best = android.graphics.Color.HSVToColor(hsv)
     }
-    return best
+    return capSaturation(best, 0.62f)
+}
+
+/** Caps vividness so an accent pulled from artwork never shouts. */
+private fun capSaturation(color: Int, maxSat: Float): Int {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(color, hsv)
+    if (hsv[1] <= maxSat) return color
+    hsv[1] = maxSat
+    return android.graphics.Color.HSVToColor(hsv)
 }
 
 /** Packs the two raw palette ints into the cache; unpacks for consumption. */

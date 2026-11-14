@@ -11,3 +11,8 @@ local.properties
 app/build
 .kotlin
 .env
+
+# Internal planning docs - kept in the working tree, never published.
+docs/PLAN-*.md
+docs/PLAN*.md
+docs/ROADMAP-internal.md

@@ -1,39 +1,63 @@
-# Aura roadmap / deferred ideas
+# Roadmap
 
-Pins for things deliberately *not* built yet. Kept here so they don't get re-litigated
-every batch.
+What Aura does today, what is being worked on next, and what is deliberately out of scope. Written for
+people using Aura, not for the issue tracker — plans change, and this is a direction rather than a promise.
 
-## Volume: Home Assistant ↔ AVR bridge (pinned, not planned)
+Companion app: **[Aura Remote](https://github.com/gahtv/aura-remote)** — a browser remote with queue,
+lyrics, mirroring and pairing.
 
-Aura ignores Jellyfin volume commands on purpose (item 1 in `PLAN-next-batch.md`): the
-bitstream must stay at unity gain and the AVR owns the level. The consequence is that
-the Jellyfin web slider and Home Assistant's `media_player` volume do nothing, which is
-confusing in HA.
+## Shipped
 
-The eventual fix is external to Aura: HA talks to the receiver (Denon/Marantz/Yamaha
-integration), and either
+**Playback**
+- Direct play of E-AC-3 JOC (Dolby Atmos) M4A from Jellyfin, bitstream untouched to an Atmos-capable
+  receiver. No transcoding, no downmix, no in-app attenuation.
+- Gapless queue playback, shuffle and repeat, seek, and playback reports so server play counts stay right.
 
-- HA's Jellyfin entity is used only for transport (play/pause/next) while volume lives on
-  the AVR entity, or
-- a small HA script reads the AVR's volume and reports it back into the Jellyfin session
-  so sliders show the truth. Jellyfin 12 has no client-facing endpoint to set a session's
-  reported volume, so this needs a custom capability reply — investigate only if the
-  annoyance is real.
+**Library**
+- Home shelves, Artists / Albums / Tracks / Playlists with paged loading, and search across all three types.
+- Artist pages with albums and top tracks, album pages with full tracklists, artist/album bios.
+- ATMOS badges on albums and tracks that carry an E-AC-3 JOC stream.
+- Colour theming derived from the artwork on artist, album and Now Playing screens.
 
-Not implemented. Revisit after the current batch.
+**Now Playing**
+- Synced LRC lyrics, top-anchored with the current line held in view.
+- Transport controls, jump ±10 s, queue view, and a now-playing pill in the top bar.
 
-## Other deferred items
+**Integration**
+- Full Jellyfin remote-control target ("Play On"): play now/next/last, pause, seek, stop, shuffle, repeat,
+  with state reported back so other senders stay in sync.
+- Mirror link: a local API that publishes the current screen, playback and queue, and accepts navigation,
+  transport and input — the foundation for the phone remote.
+- Pairing: a remote must be approved on the TV before it can control anything, and device names come from
+  the same place Android and Cast get them.
 
-Now planned (not yet built) in `PLAN-wave-3.md`, Part C:
+## Next
 
-- Quick-connect login.
-- Library-selection settings (pick which Jellyfin libraries Aura shows, and keep hidden
-  ones out of the cache entirely).
-- Changing the server / re-signing in from Settings.
-- Queue and playlist reordering (menu-driven up/down/top/bottom, not pointer drag).
+- **Retire ADB.** Auto-launching Aura from the remote is the only thing that still needs USB debugging;
+  moving to the Android TV Remote v2 protocol (PIN pairing) removes it entirely.
+- **Live state instead of polling.** The remote polls the mirror link every couple of seconds; a push
+  channel would make queue and progress changes instant.
+- **Library selection.** Choose which Jellyfin libraries Aura shows, and keep the rest out of the caches.
+- **Queue editing.** Reorder the queue and playlists from the TV remote through menu actions
+  (move up / down / top / bottom) rather than drag, which fights the focus model.
+- **Quick-connect and server switching.** Sign in without typing a password on a TV remote, and change
+  servers from Settings without clearing the app.
 
-Still deferred, out of the wave-3 plan:
+## Considering
 
-- Multi-format / sink validation matrix (Atmos vs. stereo downmix per device).
-- Server-reported library scan time in Settings beyond the admin-only
-  `/ScheduledTasks` probe (see plan item 2) — would need a non-admin source.
+- A multi-format validation matrix — which devices get true Atmos versus a stereo downmix, documented per
+  sink rather than assumed.
+- Home Assistant volume bridging. Aura deliberately never touches volume (the receiver owns it), so an HA
+  slider has to drive the AVR, not the app.
+
+## Not planned
+
+- **Crossfade.** It requires decoding the audio in-app, which destroys the bitstream passthrough that
+  makes Atmos work.
+- **In-app volume.** Same reason: any attenuation happens after the JOC decode and defeats the point.
+- **Phone-native apps.** The remote is a web app on purpose — one codebase in any browser on the network.
+
+## Requests
+
+Open an issue on either repository with what you use and what is missing. Feedback from real living-room
+setups has driven most of what is here.

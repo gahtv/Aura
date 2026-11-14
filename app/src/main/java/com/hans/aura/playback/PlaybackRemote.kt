@@ -40,7 +40,8 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 class PlaybackRemote(
     private val jellyfin: JellyfinClient,
     private val player: Player,
-    private val onPlayItems: (items: List<JellyfinItem>, mode: Int, startMs: Long) -> Unit
+    private val onPlayItems:
+        (items: List<JellyfinItem>, mode: Int, startMs: Long, startIndex: Int) -> Unit
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
@@ -169,7 +170,14 @@ class PlaybackRemote(
                 val startTicks = data?.get("StartPositionTicks")?.jsonPrimitive?.content
                     ?.toLongOrNull() ?: 0L
                 val startMs = startTicks / 10_000
-                Log.i(TAG, "remote play: $command $ids")
+                // When the sender plays an ALBUM (Jellyfin web: click a track in
+                // an album, then "Play"), the server expands it into the album's
+                // full track list and puts the chosen track's POSITION in
+                // StartIndex. Ignoring that made Aura always start at track 1
+                // and the user had to skip manually.
+                val startIndex = data?.get("StartIndex")?.jsonPrimitive?.content
+                    ?.toIntOrNull() ?: 0
+                Log.i(TAG, "remote play: $command startIndex=$startIndex $ids")
                 scope.launch {
                     runCatching {
                         val userId = jellyfin.auth.session!!.userId
@@ -177,11 +185,11 @@ class PlaybackRemote(
                         when (command) {
                             "PlayNext" ->
                                 // Enqueue after the current track without interrupting.
-                                onPlayItems(items, MODE_INSERT_NEXT, startMs)
+                                onPlayItems(items, MODE_INSERT_NEXT, startMs, 0)
                             "PlayLast" ->
                                 // Append at the end of the queue without interrupting.
-                                onPlayItems(items, MODE_APPEND_END, startMs)
-                            else -> onPlayItems(items, MODE_REPLACE, startMs)
+                                onPlayItems(items, MODE_APPEND_END, startMs, 0)
+                            else -> onPlayItems(items, MODE_REPLACE, startMs, startIndex)
                         }
                     }.onFailure { Log.w(TAG, "remote play failed", it) }
                 }

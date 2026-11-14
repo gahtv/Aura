@@ -73,7 +73,7 @@ class PlaybackService : MediaSessionService() {
                 player.playWhenReady = true
             }
         }
-        remote = PlaybackRemote(app.jellyfin, player) { items, mode, startMs ->
+        remote = PlaybackRemote(app.jellyfin, player) { items, mode, startMs, startIndex ->
             runOnMain {
                 when (mode) {
                     PlaybackRemote.MODE_INSERT_NEXT ->
@@ -81,9 +81,12 @@ class PlaybackService : MediaSessionService() {
                     PlaybackRemote.MODE_APPEND_END ->
                         enqueue(items, player.mediaItemCount)
                     else -> {
+                        // Honour the sender's StartIndex: playing an album from
+                        // Jellyfin web arrives as the whole track list plus the
+                        // index of the chosen track.
                         player.setMediaItems(
                             items.map { buildMediaItem(it) },
-                            0,
+                            startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
                             startMs.coerceAtLeast(0)
                         )
                         player.prepare()

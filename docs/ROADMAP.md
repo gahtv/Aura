@@ -24,9 +24,16 @@ Not implemented. Revisit after the current batch.
 
 ## Other deferred items
 
-- Queue drag-reordering.
+Now planned (not yet built) in `PLAN-wave-3.md`, Part C:
+
 - Quick-connect login.
-- Library-selection settings (pick which Jellyfin libraries Aura shows).
+- Library-selection settings (pick which Jellyfin libraries Aura shows, and keep hidden
+  ones out of the cache entirely).
+- Changing the server / re-signing in from Settings.
+- Queue and playlist reordering (menu-driven up/down/top/bottom, not pointer drag).
+
+Still deferred, out of the wave-3 plan:
+
 - Multi-format / sink validation matrix (Atmos vs. stereo downmix per device).
 - Server-reported library scan time in Settings beyond the admin-only
   `/ScheduledTasks` probe (see plan item 2) — would need a non-admin source.

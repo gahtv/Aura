@@ -125,6 +125,19 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
     BackHandler { onDismiss() }
     OverlayVisibility.dialogOpen = true
     val firstFocus = remember { FocusRequester() }
+    // The hold that opened the menu may still be in progress: its release (and
+    // any remaining key repeats) would land on the focused first action and
+    // click it. Ignore OK for a grace window after opening.
+    val openedAt = remember { android.os.SystemClock.uptimeMillis() }
+    val okGraceMillis = 500L
+    val swallowOk = Modifier.onPreviewKeyEvent { event ->
+        val k = event.key
+        val withinGrace = android.os.SystemClock.uptimeMillis() - openedAt < okGraceMillis
+        if (withinGrace && (k == Key.DirectionCenter || k == Key.Enter)) {
+            android.util.Log.d("AURA_MENU", "grace-swallowed ${event.type}")
+            true
+        } else false
+    }
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(100)
@@ -136,7 +149,7 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
     }
     DisposableEffect(Unit) { onDispose { OverlayVisibility.dialogOpen = false } }
 
-    Box(Modifier.fillMaxSize().background(Color(0xE60E0C0A))) {
+    Box(Modifier.fillMaxSize().background(Color(0xE60E0C0A)).then(swallowOk)) {
         Column(
             Modifier
                 .align(Alignment.Center)

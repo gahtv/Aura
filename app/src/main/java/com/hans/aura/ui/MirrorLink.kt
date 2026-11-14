@@ -1,6 +1,10 @@
 package com.hans.aura.ui
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.KeyEvent
+import java.lang.ref.WeakReference
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -20,9 +24,14 @@ import java.net.URLDecoder
  * Deliberately tiny — a hand-rolled HTTP/1.0 server on the LAN, no auth, no
  * dependencies. It answers two questions and accepts one command:
  *
- *   GET  /state                      -> {"screen":"collection","itemId":"…","lyrics":false}
+ *   GET  /state                      -> {"screen":"collection","itemId":"…","lyrics":false,
+ *                                        "queue":[…],"queueIndex":n}
  *   POST /navigate?screen=collection&itemId=…  -> 204
+ *   POST /input?key=up|down|left|right|select|back|home|playpause -> 204
  *   GET  /health                     -> ok
+ *
+ * Input goes through the app itself (a synthetic KeyEvent dispatched into the
+ * running activity), so no ADB, no USB debugging, nothing developer-ish.
  *
  * The remote never needs to know how Aura renders anything; it renders its own
  * native equivalent of the named screen.
@@ -48,6 +57,89 @@ object MirrorLink {
 
     @Volatile private var started = false
     @Volatile private var lyricsVisible = false
+    @Volatile private var activityRef: WeakReference<android.app.Activity>? = null
+    private val main = Handler(Looper.getMainLooper())
+
+    private data class QueueEntry(val id: String, val title: String, val artist: String)
+    @Volatile private var queue: List<QueueEntry> = emptyList()
+    @Volatile private var queueIndex: Int = 0
+
+    @Volatile private var player: com.hans.aura.ui.player.PlayerConnection? = null
+
+    /** Bind the activity that synthetic input is dispatched into. */
+    fun bind(activity: android.app.Activity) {
+        activityRef = WeakReference(activity)
+    }
+
+    /** The endpoint that owns playback — the Connect half of this link. */
+    fun bindPlayer(p: com.hans.aura.ui.player.PlayerConnection) {
+        player = p
+    }
+
+    private fun control(action: String, query: Map<String, String>): Boolean {
+        val p = player ?: return false
+        val known = setOf("play", "pause", "playpause", "next", "prev", "seek", "skip", "shuffle", "repeat")
+        if (action !in known) return false
+
+        // Every PlayerConnection call must happen on the main thread — Media3
+        // throws "Player is accessed on the wrong thread" from an HTTP worker,
+        // and the request would hang instead of answering.
+        main.post {
+            runCatching {
+                when (action) {
+                    "play" -> if (!p.isPlaying.value) p.playPause()
+                    "pause" -> if (p.isPlaying.value) p.playPause()
+                    "playpause" -> p.playPause()
+                    "next" -> p.next()
+                    "prev" -> p.previous()
+                    "seek" -> query["position"]?.toLongOrNull()?.let { p.seekTo(it) }
+                    "skip" -> query["index"]?.toIntOrNull()?.let { p.skipToQueue(it) }
+                    "shuffle" -> query["on"]?.let { p.setShuffle(it == "true") }
+                    "repeat" -> query["mode"]?.toIntOrNull()?.let { p.setRepeat(it) }
+                }
+            }.onFailure { Log.w(TAG, "control $action failed: ${it.message}") }
+        }
+        Log.i(TAG, "control $action")
+        return true
+    }
+
+    fun publishQueue(items: List<Triple<String, String, String>>, index: Int) {
+        val next = items.take(300).map { QueueEntry(it.first, it.second, it.third) }
+        if (next == queue && index == queueIndex) return
+        queue = next
+        queueIndex = index
+        Log.i(TAG, "queue ${next.size} index=$index")
+    }
+
+    private fun dispatchKey(code: Int): Boolean {
+        val activity = activityRef?.get() ?: return false
+        main.post {
+            activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+            activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+        }
+        return true
+    }
+
+    private fun handleInput(key: String): Boolean {
+        val code = when (key) {
+            "up" -> KeyEvent.KEYCODE_DPAD_UP
+            "down" -> KeyEvent.KEYCODE_DPAD_DOWN
+            "left" -> KeyEvent.KEYCODE_DPAD_LEFT
+            "right" -> KeyEvent.KEYCODE_DPAD_RIGHT
+            "select" -> KeyEvent.KEYCODE_DPAD_CENTER
+            "back" -> KeyEvent.KEYCODE_BACK
+            "playpause" -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+            else -> null
+        }
+        // "home" is app-level: Android's HOME needs a system permission, and
+        // leaving Aura is never what a music remote means by home.
+        if (key == "home") {
+            request("home", null)
+            return true
+        }
+        if (code == null) return false
+        return dispatchKey(code)
+    }
 
     fun publish(screen: String, itemId: String? = null, title: String? = null) {
         val next = Snapshot(screen, itemId, title, lyricsVisible)
@@ -110,6 +202,22 @@ object MirrorLink {
                         request(query["screen"] ?: "home", query["itemId"])
                         out.write("HTTP/1.0 204 No Content\r\n\r\n")
                     }
+                    path == "/control" && method == "POST" -> {
+                        val ok = control(query["action"] ?: "", query)
+                        out.write(
+                            if (ok) "HTTP/1.0 204 No Content\r\n\r\n"
+                            else "HTTP/1.0 400 Bad Request\r\n\r\n"
+                        )
+                    }
+                    path == "/input" && method == "POST" -> {
+                        val key = query["key"] ?: ""
+                        val ok = handleInput(key)
+                        Log.i(TAG, "input $key ok=$ok")
+                        out.write(
+                            if (ok) "HTTP/1.0 204 No Content\r\n\r\n"
+                            else "HTTP/1.0 400 Bad Request\r\n\r\n"
+                        )
+                    }
                     else -> out.write("HTTP/1.0 404 Not Found\r\n\r\n")
                 }
                 out.flush()
@@ -121,11 +229,29 @@ object MirrorLink {
 
     private fun stateJson(): String {
         val snap = _state.value
+        val snapshotQueue = queue
+        val snapshotIndex = queueIndex
         return buildJsonObject {
             put("screen", snap.screen)
             put("itemId", snap.itemId)
             put("title", snap.title)
             put("lyrics", snap.lyrics)
+            put("queueIndex", snapshotIndex)
+            put("playing", player?.isPlaying?.value ?: false)
+            put("positionMs", player?.positionMs?.value ?: 0L)
+            put("durationMs", player?.durationMs?.value ?: 0L)
+            put("shuffle", player?.shuffleEnabled?.value ?: false)
+            put("repeat", player?.repeatMode?.value ?: 0)
+            put("trackId", player?.current?.value?.id)
+            put("trackTitle", player?.current?.value?.name)
+            put("trackArtist", player?.current?.value?.artistNames)
+            put("queue", kotlinx.serialization.json.JsonArray(snapshotQueue.map {
+                buildJsonObject {
+                    put("id", it.id)
+                    put("title", it.title)
+                    put("artist", it.artist)
+                }
+            }))
         }.toString()
     }
 

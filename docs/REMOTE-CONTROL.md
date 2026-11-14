@@ -107,11 +107,24 @@ remote can draw its own native version of the screen Aura is on, and so the remo
 
 ```
 GET  http://<tv>:8099/state
-     {"screen":"collection","itemId":"…","title":null,"lyrics":false}
+     {"screen":"nowplaying","lyrics":true,
+      "playing":true,"positionMs":4193,"durationMs":210000,
+      "trackId":"…","trackTitle":"Vanessa","trackArtist":"…",
+      "queue":[…],"queueIndex":0,"shuffle":false,"repeat":0}
 
-POST http://<tv>:8099/navigate?screen=collection&itemId=…
-     204
+POST http://<tv>:8099/navigate?screen=collection&itemId=…   -> 204
+POST http://<tv>:8099/control?action=pause                  -> 204
+POST http://<tv>:8099/input?key=down                        -> 204
 ```
+
+`control` actions: `play`, `pause`, `playpause`, `next`, `prev`,
+`seek&position=<ms>`, `skip&index=<n>`, `shuffle&on=true|false`, `repeat&mode=0|1|2`
+(`0` none, `1` one, `2` all). These are semantic — the endpoint moves its own
+player, exactly like Spotify Connect, rather than receiving synthetic keystrokes.
+
+`input` keys: `up`, `down`, `left`, `right`, `select`, `back`, `playpause`, `home`
+(`home` means Aura's Home screen). They are dispatched **inside the app** as
+`KeyEvent`s, so no ADB and no USB debugging is involved.
 
 `screen` is one of `home`, `artists`, `albums`, `tracks`, `playlists`, `search`, `settings`, `nowplaying`,
 `queue`, `collection`, `artist`. `itemId` is set for `collection` and `artist`. `lyrics` is true only while

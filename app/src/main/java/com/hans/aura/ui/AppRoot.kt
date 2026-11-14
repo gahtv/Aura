@@ -290,6 +290,18 @@ fun AppRoot() {
     }
 
     val player = remember { PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session } }
+
+    // Mirror link also carries playback state and commands (Connect-style):
+    // the remote never sees a keystroke, it sees the queue and controls it.
+    LaunchedEffect(player) { MirrorLink.bindPlayer(player) }
+    val mirrorQueue by player.queue.collectAsState()
+    val mirrorQueueIndex by player.queueIndex.collectAsState()
+    LaunchedEffect(mirrorQueue, mirrorQueueIndex) {
+        MirrorLink.publishQueue(
+            mirrorQueue.map { Triple(it.id, it.name, it.artistNames) },
+            mirrorQueueIndex
+        )
+    }
     val stack = remember { mutableStateOf(listOf<Screen>(Screen.Home)) }
     val top = stack.value.last()
     // Set when a screen is PUSHED so it claims focus on entry (TV has no

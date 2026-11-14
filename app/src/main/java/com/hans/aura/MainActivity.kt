@@ -12,6 +12,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // LAN mirror link: /state + /navigate for remote controls (ui/MirrorLink.kt).
         com.hans.aura.ui.MirrorLink.start()
+        com.hans.aura.ui.MirrorLink.bind(this)
         // Debug deep links: adb am start --es aura_debug_screen <name>
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             intent.getStringExtra("aura_debug_screen")?.let {

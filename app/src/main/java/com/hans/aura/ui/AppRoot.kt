@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -214,15 +215,16 @@ private fun IconNavButton(
             .background(
                 when {
                     active -> Color(0x33E8A44C)
-                    focused -> Color(0xFF3A322A)
+                    focused -> Color(0xFF3E362D)
                     else -> Color(0xFF221D18)
                 }
             )
             .then(
-                if (focused) Modifier.border(
-                    3.dp, com.hans.aura.ui.theme.Accent, shape
-                ) else Modifier
+                // Same grey cursor ring as the tabs, so the whole bar reads
+                // consistently: grey = cursor, amber = current.
+                if (focused) Modifier.border(2.dp, Color(0xFFD6CCBE), shape) else Modifier
             )
+            .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             .padding(10.dp)
     ) {
@@ -240,10 +242,14 @@ private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(8.dp)
     // Loud, unambiguous states: selected = filled amber, focused = thick outline.
+    // An unfocused-vs-focused unselected tab used to differ only by a warm-brown
+    // amber ring on a warm-brown bar, which read as "nothing is focused" — the
+    // cursor now gets a light GREY ring plus a lifted fill so it separates from
+    // both the bar and the amber selection.
     val bg = when {
         selected && focused -> Color(0x66E8A44C)
         selected -> Color(0xFFE8A44C)
-        focused -> Color(0xFF3A322A)
+        focused -> Color(0xFF3E362D)
         else -> Color.Transparent
     }
     Box(
@@ -252,9 +258,12 @@ private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
             .background(bg)
             .then(
                 if (focused) Modifier.border(
-                    3.dp, if (selected) Color(0xFFF2EDE6) else com.hans.aura.ui.theme.Accent, shape
+                    2.dp, if (selected) Color(0xFFF2EDE6) else Color(0xFFD6CCBE), shape
                 ) else Modifier
             )
+            // Without this the `focused` flag never flips and NONE of the focus
+            // styling below renders — the tabs showed only the amber selection.
+            .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             // Tighter horizontal padding: five tabs + pill + two icon buttons
             // have to coexist inside 960dp on a 1080p TV.

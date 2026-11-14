@@ -102,6 +102,23 @@ fun LibraryScreen(
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val current by player.current.collectAsState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    fun trackMenu(track: JellyfinItem, onRemove: (() -> Unit)? = null) =
+        com.hans.aura.ui.common.ContextMenuHost.open(
+            com.hans.aura.ui.common.ContextMenus.forTrack(
+                app, player, scope, track,
+                onOpenArtist = onOpenArtist, onOpenCollection = onOpenCollection,
+                onRemoveFromPlaylist = onRemove
+            )
+        )
+
+    fun albumMenu(item: JellyfinItem) =
+        com.hans.aura.ui.common.ContextMenuHost.open(
+            com.hans.aura.ui.common.ContextMenus.forAlbum(
+                app, player, scope, item, onOpenArtist = onOpenArtist
+            )
+        )
 
     // Atmos badges (Albums grid + Tracks rows): whole-library scan, cached per session.
     var atmosAlbumIds by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -259,7 +276,8 @@ fun LibraryScreen(
                         atmos = track.albumId != null && track.albumId in atmosAlbumIds,
                         onClick = { player.playQueue(items, i) },
                         focusKeeper = focusKeeper,
-                        onFocused = { focusedId = it }
+                        onFocused = { focusedId = it },
+                        onLongPress = { trackMenu(track) }
                     )
                 }
                 item {
@@ -290,7 +308,10 @@ fun LibraryScreen(
                         size = 210.dp,
                         badge = if (kind == "Albums" && item.id in atmosAlbumIds) "ATMOS" else null,
                         focusKeeper = focusKeeper,
-                        onFocused = { focusedId = it }
+                        onFocused = { focusedId = it },
+                        onLongPress = if (kind != "Artists") {
+                            { albumMenu(item) }
+                        } else null
                     ) {
                         when (kind) {
                             "Artists" -> onOpenArtist(item)

@@ -322,7 +322,10 @@ fun AppRoot() {
                         recursive = true, sortBy = "Random", limit = 1, startIndex = 0
                     )
                     if (result.items.isNotEmpty()) player.playQueue(result.items, 0)
-                    android.util.Log.d("AURA_NAV", "autoplay queued ${result.items.size} track(s)")
+                    android.util.Log.d(
+                        "AURA_NAV",
+                        "autoplay queued ${result.items.size} track(s): ${result.items.firstOrNull()?.name} id=${result.items.firstOrNull()?.id}"
+                    )
                 }.onFailure { android.util.Log.d("AURA_NAV", "autoplay failed: $it") }
             } else {
                 val screen: Screen? = when (link.screen) {
@@ -341,6 +344,44 @@ fun AppRoot() {
                     pendingFocus = true
                     stack.value = if (it == Screen.Home) listOf(it) else listOf(Screen.Home, it)
                 }
+            }
+            // Debug: open the long-press context menu for a specific item and
+            // optionally auto-select one of its actions. Everything lands in
+            // logcat (AURA_MENU / AURA_QUEUE) so tests need no screenshots.
+            link.menuItem?.let { itemId ->
+                kotlinx.coroutines.delay(1000)
+                runCatching {
+                    val session = app.jellyfin.auth.session ?: return@collect
+                    val item = app.jellyfin.api.getItem(session.userId, itemId)
+                    val spec = if (item.type == "Audio") {
+                        com.hans.aura.ui.common.ContextMenus.forTrack(
+                            app, player, this, item,
+                            onOpenArtist = { push(Screen.Artist(it)) },
+                            onOpenCollection = { push(Screen.Collection(it)) }
+                        )
+                    } else {
+                        com.hans.aura.ui.common.ContextMenus.forAlbum(
+                            app, player, this, item,
+                            onOpenArtist = { push(Screen.Artist(it)) }
+                        )
+                    }
+                    android.util.Log.d(
+                        "AURA_MENU",
+                        "open \"${spec.title}\" actions=${spec.actions.map { it.label }}"
+                    )
+                    com.hans.aura.ui.common.ContextMenuHost.open(spec)
+                    if (link.menuAction >= 0) {
+                        kotlinx.coroutines.delay(500)
+                        val action = spec.actions.getOrNull(link.menuAction)
+                        android.util.Log.d("AURA_MENU", "select[" + link.menuAction + "]=" + (action?.label ?: "OUT OF RANGE"))
+                        action?.onSelect?.invoke()
+                        kotlinx.coroutines.delay(2000)
+                        android.util.Log.d(
+                            "AURA_QUEUE",
+                            "queue=${player.queue.value.map { it.name }} index=${player.queueIndex.value}"
+                        )
+                    }
+                }.onFailure { android.util.Log.d("AURA_MENU", "failed: $it") }
             }
         }
     }
@@ -389,8 +430,9 @@ fun AppRoot() {
     Box(Modifier.fillMaxSize().background(Canvas)) {
         Column(Modifier.fillMaxSize()) {
             // Now Playing is an immersive view (lyrics/transport fill the
-            // screen); the top bar comes back on any other screen.
-            if (top != Screen.NowPlaying) TopBar(
+            // screen); the top bar comes back on any other screen. Any open
+            // full-screen overlay also hides it so it can't steal focus.
+            if (top != Screen.NowPlaying && !com.hans.aura.ui.common.OverlayVisibility.dialogOpen) TopBar(
                 current = top,
                 onSelect = { tab ->
                     // Tab switch resets the stack to that tab.
@@ -425,6 +467,7 @@ fun AppRoot() {
                     when (top) {
                     Screen.Home -> HomeScreen(
                         app = app,
+                        player = player,
                         onSignOut = {
                             app.jellyfin.auth.clear()
                             signedIn = false
@@ -505,7 +548,8 @@ fun AppRoot() {
                         player = player,
                         onBack = pop,
                         focusTick = focusTick,
-                        initialFocus = pendingFocus
+                        initialFocus = pendingFocus,
+                        onOpenArtist = { push(Screen.Artist(it)) }
                     )
 
                     is Screen.Artist -> ArtistScreen(
@@ -521,6 +565,8 @@ fun AppRoot() {
                 }
             }
         }
+        // Long-press context menus + their playlist picker, always on top.
+        com.hans.aura.ui.common.ContextMenuHosts(app)
     }
 }
 

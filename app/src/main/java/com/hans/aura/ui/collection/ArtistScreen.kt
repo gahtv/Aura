@@ -64,6 +64,7 @@ fun ArtistScreen(
     var overview by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val current by player.current.collectAsState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val atmosAlbumIds = com.hans.aura.ui.common.rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
 
     // Dynamic color wash from the artist image, kept dark for text contrast.
@@ -215,7 +216,15 @@ fun ArtistScreen(
                             atmos = track.albumId != null && track.albumId in atmosAlbumIds,
                             onClick = { player.playQueue(list, i) },
                             focusKeeper = focusKeeper,
-                            onFocused = { focusedId = it }
+                            onFocused = { focusedId = it },
+                            onLongPress = {
+                                com.hans.aura.ui.common.ContextMenuHost.open(
+                                    com.hans.aura.ui.common.ContextMenus.forTrack(
+                                        app, player, scope, track,
+                                        onOpenArtist = null, onOpenCollection = onOpenCollection
+                                    )
+                                )
+                            }
                         )
                     }
                     Spacer(Modifier.height(120.dp))

@@ -162,6 +162,10 @@ fun PlaylistPickerDialog(
                                                     ids = tracksToAdd.joinToString(",") { it.id }
                                                 )
                                             }.onSuccess {
+                                                android.util.Log.d(
+                                                    "AURA_MENU",
+                                                    "picker added ${tracksToAdd.size} track(s) to \"${pl.name}\""
+                                                )
                                                 LibraryCache.evict("col:${pl.id}")
                                                 LibraryCache.evict(
                                                     "home_playlists:${app.jellyfin.auth.session!!.userId}"

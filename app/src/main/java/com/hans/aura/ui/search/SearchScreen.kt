@@ -53,6 +53,7 @@ fun SearchScreen(
     val current by player.current.collectAsState()
     val atmosAlbumIds = rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
     val focusKeeper = remember { FocusKeeper() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     LaunchedEffect(query) {
         val q = query.trim()
@@ -130,6 +131,15 @@ fun SearchScreen(
                 focusKeeper = focusKeeper,
                 onFocused = { },
                 badgeFor = { if (it.type == "MusicAlbum" && it.id in atmosAlbumIds) "ATMOS" else null },
+                onLongPress = { item ->
+                    if (item.type == "MusicAlbum" || item.type == "Playlist") {
+                        com.hans.aura.ui.common.ContextMenuHost.open(
+                            com.hans.aura.ui.common.ContextMenus.forAlbum(
+                                app, player, scope, item, onOpenArtist = onOpenArtist
+                            )
+                        )
+                    }
+                },
                 onOpen = { item, _ -> onOpenCollection(item) }
             )
 
@@ -142,6 +152,14 @@ fun SearchScreen(
                 showLoading = false,
                 badgeFor = { track ->
                     if (track.albumId != null && track.albumId in atmosAlbumIds) "ATMOS" else null
+                },
+                onLongPress = { item ->
+                    com.hans.aura.ui.common.ContextMenuHost.open(
+                        com.hans.aura.ui.common.ContextMenus.forTrack(
+                            app, player, scope, item,
+                            onOpenArtist = onOpenArtist, onOpenCollection = onOpenCollection
+                        )
+                    )
                 },
                 onOpen = { _, idx ->
                     // Play the clicked track with the rest of the track results queued behind it.

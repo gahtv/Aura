@@ -37,6 +37,7 @@ import com.hans.aura.ui.theme.TextSecondary
 @Composable
 fun HomeScreen(
     app: AuraApp,
+    player: com.hans.aura.ui.player.PlayerConnection,
     onSignOut: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenCollection: (JellyfinItem) -> Unit,
@@ -48,6 +49,20 @@ fun HomeScreen(
     val session = app.jellyfin.auth.session!!
     val userId = session.userId
     val serverUrl = session.serverUrl
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    fun trackMenu(track: JellyfinItem) = com.hans.aura.ui.common.ContextMenuHost.open(
+        com.hans.aura.ui.common.ContextMenus.forTrack(
+            app, player, scope, track,
+            onOpenArtist = onOpenArtist, onOpenCollection = onOpenCollection
+        )
+    )
+
+    fun albumMenu(item: JellyfinItem) = com.hans.aura.ui.common.ContextMenuHost.open(
+        com.hans.aura.ui.common.ContextMenus.forAlbum(
+            app, player, scope, item, onOpenArtist = onOpenArtist
+        )
+    )
 
     var recentlyPlayed by remember(refreshKey) { mutableStateOf(LibraryCache.get("home_recent:$userId")) }
     var recentAlbums by remember(refreshKey) { mutableStateOf(LibraryCache.get("home_new:$userId")) }
@@ -123,6 +138,7 @@ fun HomeScreen(
                 serverUrl = serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { focusedCardId = it },
+                onLongPress = { trackMenu(it) },
                 onOpen = { item, idx ->
                     // A track is not a collection: play it directly, with the rest
                     // of the recently-played list queued behind it.
@@ -135,6 +151,7 @@ fun HomeScreen(
                 serverUrl = serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { focusedCardId = it },
+                onLongPress = { albumMenu(it) },
                 onOpen = { item, _ -> onOpenCollection(item) }
             )
             com.hans.aura.ui.common.ItemShelf(
@@ -151,6 +168,7 @@ fun HomeScreen(
                 serverUrl = serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { focusedCardId = it },
+                onLongPress = { albumMenu(it) },
                 onOpen = { item, _ -> onOpenCollection(item) }
             )
             Spacer(Modifier.height(140.dp)) // clear of the now-playing bar

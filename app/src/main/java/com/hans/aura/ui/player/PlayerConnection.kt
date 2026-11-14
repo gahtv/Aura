@@ -189,6 +189,35 @@ class PlayerConnection(
         c.prepare()
     }
 
+    /** Insert after the current track ("Play Next"); starts playback if idle. */
+    fun playNext(items: List<JellyfinItem>) {
+        val c = _controller.value ?: return
+        val serverUrl = sessionProvider()?.serverUrl ?: return
+        synchronized(registry) { items.forEach { registry[it.id] = it } }
+        val wasEmpty = c.mediaItemCount == 0
+        val at = if (wasEmpty) 0 else c.currentMediaItemIndex + 1
+        android.util.Log.d(
+            "AURA_QUEUE",
+            "playNext ${items.map { it.name }} at=$at size=${c.mediaItemCount}"
+        )
+        c.addMediaItems(at, items.map { toMediaItem(it, serverUrl) })
+        if (wasEmpty) { c.prepare(); c.playWhenReady = true }
+    }
+
+    /** Append at the end of the queue; starts playback if idle. */
+    fun addToQueue(items: List<JellyfinItem>) {
+        val c = _controller.value ?: return
+        val serverUrl = sessionProvider()?.serverUrl ?: return
+        synchronized(registry) { items.forEach { registry[it.id] = it } }
+        val wasEmpty = c.mediaItemCount == 0
+        android.util.Log.d(
+            "AURA_QUEUE",
+            "addToQueue ${items.map { it.name }} size=${c.mediaItemCount}"
+        )
+        c.addMediaItems(items.map { toMediaItem(it, serverUrl) })
+        if (wasEmpty) { c.prepare(); c.playWhenReady = true }
+    }
+
     fun playPause() { _controller.value?.let { if (it.isPlaying) it.pause() else it.play() } }
     fun next() { _controller.value?.seekToNextMediaItem() }
     fun previous() { _controller.value?.seekToPreviousMediaItem() }

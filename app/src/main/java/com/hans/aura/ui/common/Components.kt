@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.composed
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +56,7 @@ fun ArtworkCard(
     badge: String? = null,
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -66,6 +68,7 @@ fun ArtworkCard(
                     Modifier.focusRequester(focusKeeper.requesterFor(item.id))
                 } else Modifier
             )
+            .contextMenuKeys(onLongPress)
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocused?.invoke(item.id)
@@ -165,7 +168,8 @@ fun TrackRow(
     atmos: Boolean = false,
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
-    onRemove: (() -> Unit)? = null
+    onRemove: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null
 ) {
     var focused by remember { mutableStateOf(false) }
     val bg by animateColorAsState(
@@ -186,6 +190,7 @@ fun TrackRow(
                     Modifier.focusRequester(focusKeeper.requesterFor(track.id))
                 } else Modifier
             )
+            .contextMenuKeys(onLongPress)
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocused?.invoke(track.id)
@@ -361,7 +366,8 @@ fun ItemShelf(
     onOpen: (JellyfinItem, Int) -> Unit,
     size: Dp = 180.dp,
     showLoading: Boolean = true,
-    badgeFor: ((JellyfinItem) -> String?)? = null
+    badgeFor: ((JellyfinItem) -> String?)? = null,
+    onLongPress: ((JellyfinItem) -> Unit)? = null
 ) {
     when {
         items == null -> {
@@ -395,7 +401,8 @@ fun ItemShelf(
                         size = size,
                         badge = badgeFor?.invoke(item),
                         focusKeeper = focusKeeper,
-                        onFocused = onFocused
+                        onFocused = onFocused,
+                        onLongPress = onLongPress?.let { cb -> { cb(item) } }
                     ) {
                         onOpen(item, idx)
                     }

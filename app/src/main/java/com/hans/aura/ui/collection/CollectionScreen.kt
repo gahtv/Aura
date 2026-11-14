@@ -62,7 +62,8 @@ fun CollectionScreen(
     player: PlayerConnection,
     onBack: () -> Unit,
     focusTick: Int = 0,
-    initialFocus: Boolean = false
+    initialFocus: Boolean = false,
+    onOpenArtist: (JellyfinItem) -> Unit = {}
 ) {
     val session = app.jellyfin.auth.session!!
     var tracks by remember { mutableStateOf(LibraryCache.get("col:${collection.id}")) }
@@ -248,6 +249,18 @@ fun CollectionScreen(
                     .focusRestorer()
             ) {
                 itemsIndexed(tracks!!) { i, track ->
+                    val removeFromPlaylist: (() -> Unit)? = if (collection.type == "Playlist") {
+                        {
+                            scope.launch {
+                                runCatching {
+                                    app.jellyfin.api.removeFromPlaylist(collection.id, track.id)
+                                }.onSuccess {
+                                    LibraryCache.evict("col:${collection.id}")
+                                    refresh++
+                                }
+                            }
+                        }
+                    } else null
                     TrackRow(
                         index = i + 1,
                         track = track,
@@ -256,18 +269,17 @@ fun CollectionScreen(
                         onClick = { player.playQueue(tracks!!, i) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedTrackId = it },
-                        onRemove = if (collection.type == "Playlist") {
-                            {
-                                scope.launch {
-                                    runCatching {
-                                        app.jellyfin.api.removeFromPlaylist(collection.id, track.id)
-                                    }.onSuccess {
-                                        LibraryCache.evict("col:${collection.id}")
-                                        refresh++
-                                    }
-                                }
-                            }
-                        } else null
+                        onRemove = removeFromPlaylist,
+                        onLongPress = {
+                            com.hans.aura.ui.common.ContextMenuHost.open(
+                                com.hans.aura.ui.common.ContextMenus.forTrack(
+                                    app, player, scope, track,
+                                    onOpenArtist = onOpenArtist,
+                                    onOpenCollection = null,
+                                    onRemoveFromPlaylist = removeFromPlaylist
+                                )
+                            )
+                        }
                     )
                 }
                 item { Spacer(Modifier.height(120.dp)) } // room for the now-playing bar

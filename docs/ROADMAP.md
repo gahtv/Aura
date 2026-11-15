@@ -39,14 +39,27 @@ lyrics, mirroring and pairing.
 - Choose which Jellyfin libraries Aura shows. Switched-off libraries are never queried, so their music never
   reaches Home, search or the caches.
 
+**Library and discovery**
+- Liked songs: a heart on every track and album, "Add to favorites" at the top of the long-press menu, a heart
+  in Now Playing, and a Liked view on the Tracks tab.
+- Genres: browse by genre from the Albums tab, with a "Play genre radio" button on each genre page.
+- Start radio from a track, an album or an artist — the queue is seeded from Jellyfin's own instant mix.
+- Artist pages list similar artists; Home gains "Recently played artists" and "Your Atmos".
+- Jump to a letter on the Albums and Artists grids instead of scrolling from A.
+- Reorder the queue and playlists with Move up / down / top, and clear the rest of the queue from its header.
+
+**Listening**
+- Resume a track where you left off when you pick it deliberately.
+- Keep the music going: when the queue runs out, more tracks follow automatically (switchable in Settings).
+- Smart shuffle puts the least-played and longest-unplayed tracks first.
+- Sleep timer on the queue screen: Off / 15 / 30 / 45 / 60 minutes, pausing at the end instead of stopping.
+
 ## Next
 
 - **Retire ADB.** Auto-launching Aura from the remote is the only thing that still needs USB debugging;
   moving to the Android TV Remote v2 protocol (PIN pairing) removes it entirely.
 - **Live state instead of polling.** The remote polls the mirror link every couple of seconds; a push
   channel would make queue and progress changes instant.
-- **Queue editing.** Reorder the queue and playlists from the TV remote through menu actions
-  (move up / down / top / bottom) rather than drag, which fights the focus model.
 
 ## Considering
 

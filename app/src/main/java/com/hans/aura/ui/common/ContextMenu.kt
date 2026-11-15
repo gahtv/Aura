@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,8 +53,13 @@ import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
 
-/** One row in a context menu. */
-data class ContextAction(val label: String, val onSelect: () -> Unit)
+/** One row in a context menu. `icon` is a Material Symbols drawable id
+ *  (ic_*); when null the row is text-only. */
+data class ContextAction(
+    val label: String,
+    val icon: Int? = null,
+    val onSelect: () -> Unit
+)
 
 /** What a long-press opens: title, subtitle and the available actions. */
 data class ContextMenuSpec(
@@ -186,6 +192,7 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
                 spec.actions.forEachIndexed { i, action ->
                     MenuAction(
                         label = action.label,
+                        icon = action.icon,
                         modifier = if (i == 0) Modifier.focusRequester(firstFocus) else Modifier
                     ) {
                         android.util.Log.d("AURA_MENU", "select[$i]=${action.label}")
@@ -228,7 +235,12 @@ fun ContextMenuHosts(app: AuraApp) {
  * on the leading edge.
  */
 @Composable
-private fun MenuAction(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun MenuAction(
+    label: String,
+    icon: Int? = null,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(6.dp)
     Row(
@@ -255,6 +267,15 @@ private fun MenuAction(label: String, modifier: Modifier = Modifier, onClick: ()
                 )
         )
         Spacer(Modifier.width(14.dp))
+        if (icon != null) {
+            androidx.compose.material3.Icon(
+                painter = androidx.compose.ui.res.painterResource(icon),
+                contentDescription = null,
+                tint = if (focused) Accent else TextSecondary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(14.dp))
+        }
         androidx.tv.material3.Text(
             label,
             fontSize = 18.sp,

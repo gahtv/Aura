@@ -693,10 +693,14 @@ private fun TransportHeartButton(favorite: Boolean, accent: Color, onClick: () -
             .clickable(onClickLabel = label) { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        androidx.tv.material3.Text(
-            if (favorite) "\u2665" else "\u2661",
-            color = tint,
-            fontSize = 26.sp
+        androidx.compose.material3.Icon(
+            painter = painterResource(
+                if (favorite) com.hans.aura.R.drawable.ic_favorite_fill1
+                else com.hans.aura.R.drawable.ic_favorite
+            ),
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(26.dp)
         )
     }
 }

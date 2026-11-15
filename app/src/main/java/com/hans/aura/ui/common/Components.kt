@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -282,12 +283,15 @@ fun TrackRow(
             )
         }
         if (onRemove != null) {
-            androidx.tv.material3.Text(
-                "\u2715",
-                color = TextSecondary,
-                fontSize = 16.sp,
+            androidx.compose.material3.Icon(
+                painter = androidx.compose.ui.res.painterResource(
+                    com.hans.aura.R.drawable.ic_close
+                ),
+                contentDescription = "Remove",
+                tint = TextSecondary,
                 modifier = Modifier
                     .padding(start = 16.dp)
+                    .size(18.dp)
                     .clickable { onRemove() }
             )
         }
@@ -314,7 +318,7 @@ fun HeartToggle(
     accent: Color,
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
-    fontSize: androidx.compose.ui.unit.TextUnit = 18.sp,
+    iconSize: androidx.compose.ui.unit.Dp = 20.dp,
     interactive: Boolean = true
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -345,10 +349,14 @@ fun HeartToggle(
         focusableModifier.padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
-        androidx.tv.material3.Text(
-            if (favorite) "\u2665" else "\u2661",
-            color = if (favorite) accent else TextSecondary,
-            fontSize = fontSize
+        androidx.compose.material3.Icon(
+            painter = androidx.compose.ui.res.painterResource(
+                if (favorite) com.hans.aura.R.drawable.ic_favorite_fill1
+                else com.hans.aura.R.drawable.ic_favorite
+            ),
+            contentDescription = null,
+            tint = if (favorite) accent else TextSecondary,
+            modifier = Modifier.size(iconSize)
         )
     }
 }

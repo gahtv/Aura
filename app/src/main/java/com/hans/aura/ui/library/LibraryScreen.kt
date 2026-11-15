@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
@@ -318,7 +319,9 @@ fun LibraryScreen(
             // cannot fit a sixth tab, and this reads as a filter, not a place.
             if (kind == "Tracks") {
                 SortPill(
-                    label = if (likedOnly) "\u2665 Liked" else "\u2661 Liked",
+                    label = "Liked",
+                    leadingIcon = if (likedOnly) com.hans.aura.R.drawable.ic_favorite_fill1
+                    else com.hans.aura.R.drawable.ic_favorite,
                     selected = likedOnly,
                     onClick = {
                         likedOnly = !likedOnly
@@ -330,14 +333,21 @@ fun LibraryScreen(
             // Genres pill (Albums only): opens the genre grid, which owns its
             // own screen in the back-stack so BACK returns here.
             if (kind == "Albums" && onOpenGenres != null) {
-                SortPill(label = "Genres", selected = false, onClick = { onOpenGenres() })
+                SortPill(
+                        label = "Genres",
+                        leadingIcon = com.hans.aura.R.drawable.ic_category,
+                        selected = false,
+                        onClick = { onOpenGenres() }
+                    )
             }
             sortModesFor(kind).forEach { mode ->
                 val active = mode == sort
                 SortPill(
-                    label = if (active && mode != SortMode.RANDOM) {
-                        mode.label + if (desc) " \u25BC" else " \u25B2"
-                    } else mode.label,
+                    label = mode.label,
+                    trailingIcon = if (active && mode != SortMode.RANDOM) {
+                        if (desc) com.hans.aura.R.drawable.ic_arrow_drop_down
+                        else com.hans.aura.R.drawable.ic_arrow_drop_up
+                    } else null,
                     selected = active,
                     onClick = {
                         if (active && mode != SortMode.RANDOM) desc = !desc
@@ -524,7 +534,9 @@ private fun SortPill(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    leadingIcon: Int? = null,
+    trailingIcon: Int? = null
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
@@ -548,11 +560,30 @@ private fun SortPill(
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 7.dp)
     ) {
-        androidx.tv.material3.Text(
-            label,
-            fontSize = 13.sp,
-            color = if (selected) androidx.compose.ui.graphics.Color(0xFF191410) else TextPrimary
-        )
+        val content = if (selected) androidx.compose.ui.graphics.Color(0xFF191410) else TextPrimary
+        androidx.compose.foundation.layout.Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            if (leadingIcon != null) {
+                androidx.compose.material3.Icon(
+                    painter = androidx.compose.ui.res.painterResource(leadingIcon),
+                    contentDescription = null,
+                    tint = content,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+            androidx.tv.material3.Text(label, fontSize = 13.sp, color = content)
+            if (trailingIcon != null) {
+                Spacer(Modifier.width(2.dp))
+                androidx.compose.material3.Icon(
+                    painter = androidx.compose.ui.res.painterResource(trailingIcon),
+                    contentDescription = null,
+                    tint = content,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        }
     }
 }
 

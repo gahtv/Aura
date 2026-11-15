@@ -1,6 +1,7 @@
 package com.hans.aura.ui.common
 
 import com.hans.aura.AuraApp
+import com.hans.aura.R
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.Mixes
@@ -36,14 +37,14 @@ object ContextMenus {
         val actions = mutableListOf<ContextAction>()
         if (index != currentIndex) {
             if (index > 0) {
-                actions.add(ContextAction("Move up") { player.moveInQueue(index, index - 1) })
-                actions.add(ContextAction("Move to top") { player.moveInQueue(index, 0) })
+                actions.add(ContextAction("Move up", R.drawable.ic_arrow_upward) { player.moveInQueue(index, index - 1) })
+                actions.add(ContextAction("Move to top", R.drawable.ic_vertical_align_top) { player.moveInQueue(index, 0) })
             }
             if (index < size - 1) {
-                actions.add(ContextAction("Move down") { player.moveInQueue(index, index + 1) })
+                actions.add(ContextAction("Move down", R.drawable.ic_arrow_downward) { player.moveInQueue(index, index + 1) })
             }
         }
-        actions.add(ContextAction("Remove from queue") { player.removeFromQueue(index) })
+        actions.add(ContextAction("Remove from queue", R.drawable.ic_delete) { player.removeFromQueue(index) })
         return ContextMenuSpec(
             title = track.name,
             subtitle = track.artistNames.ifBlank { null },
@@ -76,17 +77,17 @@ object ContextMenus {
         playlistMove: PlaylistMove? = null
     ): ContextMenuSpec {
         val actions = mutableListOf(
-            ContextAction("Add to playlist") {
+            ContextAction("Add to playlist", R.drawable.ic_playlist_add) {
                 // The picker replaces the menu: close it first or it keeps
                 // stealing key focus from the picker.
                 ContextMenuHost.current = null
                 ContextMenuHost.openPicker(listOf(track))
             },
-            ContextAction("Play next") { player.playNext(listOf(track)) },
-            ContextAction("Add to queue") { player.addToQueue(listOf(track)) },
+            ContextAction("Play next", R.drawable.ic_queue_play_next) { player.playNext(listOf(track)) },
+            ContextAction("Add to queue", R.drawable.ic_queue_music) { player.addToQueue(listOf(track)) },
             // InstantMix from this track: GET /Items/{trackId}/InstantMix,
             // ~50 tracks replacing the queue (AURA_MIX breadcrumb in Mixes).
-            ContextAction("Start radio") {
+            ContextAction("Start radio", R.drawable.ic_radio) {
                 scope.launch {
                     Mixes.playMix(
                         api = app.jellyfin.api,
@@ -102,18 +103,18 @@ object ContextMenus {
         // is reached for on a TV.
         playlistMove?.let { pm ->
             if (pm.index > 0) {
-                actions.add(0, ContextAction("Move to top") { movePlaylistItem(app, scope, pm, 0) })
-                actions.add(1, ContextAction("Move up") { movePlaylistItem(app, scope, pm, pm.index - 1) })
+                actions.add(0, ContextAction("Move to top", R.drawable.ic_vertical_align_top) { movePlaylistItem(app, scope, pm, 0) })
+                actions.add(1, ContextAction("Move up", R.drawable.ic_arrow_upward) { movePlaylistItem(app, scope, pm, pm.index - 1) })
             }
             if (pm.index < pm.size - 1) {
-                actions.add(ContextAction("Move down") { movePlaylistItem(app, scope, pm, pm.index + 1) })
+                actions.add(ContextAction("Move down", R.drawable.ic_arrow_downward) { movePlaylistItem(app, scope, pm, pm.index + 1) })
             }
         }
         val artistId = track.artistItems?.firstOrNull()?.id
             ?: track.albumArtists?.firstOrNull()?.id
         if (onOpenArtist != null && artistId != null) {
             actions.add(
-                ContextAction("View artist") {
+                ContextAction("View artist", R.drawable.ic_person) {
                     scope.launch {
                         runCatching {
                             app.jellyfin.api.getItem(app.jellyfin.auth.session!!.userId, artistId)
@@ -124,7 +125,7 @@ object ContextMenus {
         }
         if (onOpenCollection != null && track.albumId != null) {
             actions.add(
-                ContextAction("View album") {
+                ContextAction("View album", R.drawable.ic_album) {
                     scope.launch {
                         runCatching {
                             app.jellyfin.api.getItem(
@@ -136,7 +137,7 @@ object ContextMenus {
             )
         }
         onRemoveFromPlaylist?.let {
-            actions.add(ContextAction("Remove from playlist") { it() })
+            actions.add(ContextAction("Remove from playlist", R.drawable.ic_playlist_remove) { it() })
         }
         // Liked songs sit FIRST — above "Play next" and above the playlist
         // reorder rows (inserted after them so nothing can push it down).
@@ -156,13 +157,13 @@ object ContextMenus {
         onOpenArtist: ((JellyfinItem) -> Unit)?
     ): ContextMenuSpec {
         val actions = mutableListOf(
-            ContextAction("Play next") {
+            ContextAction("Play next", R.drawable.ic_queue_play_next) {
                 scope.launch { albumTracks(app, album)?.let { player.playNext(it) } }
             },
-            ContextAction("Add to queue") {
+            ContextAction("Add to queue", R.drawable.ic_queue_music) {
                 scope.launch { albumTracks(app, album)?.let { player.addToQueue(it) } }
             },
-            ContextAction("Add to playlist") {
+            ContextAction("Add to playlist", R.drawable.ic_playlist_add) {
                 scope.launch {
                     ContextMenuHost.current = null
                     albumTracks(app, album)?.let { ContextMenuHost.openPicker(it) }
@@ -172,7 +173,7 @@ object ContextMenus {
         val artistId = album.albumArtists?.firstOrNull()?.id
         if (onOpenArtist != null && artistId != null) {
             actions.add(
-                ContextAction("View artist") {
+                ContextAction("View artist", R.drawable.ic_person) {
                     scope.launch {
                         runCatching {
                             app.jellyfin.api.getItem(app.jellyfin.auth.session!!.userId, artistId)
@@ -199,7 +200,10 @@ object ContextMenus {
         item: JellyfinItem
     ): ContextAction {
         val liked = com.hans.aura.data.Favorites.isFavorite(item)
-        return ContextAction(if (liked) "Remove from favorites" else "Add to favorites") {
+        return ContextAction(
+            if (liked) "Remove from favorites" else "Add to favorites",
+            if (liked) R.drawable.ic_favorite_fill1 else R.drawable.ic_favorite
+        ) {
             scope.launch {
                 val userId = app.jellyfin.auth.session?.userId ?: return@launch
                 com.hans.aura.data.Favorites.toggle(app.jellyfin.api, userId, item)

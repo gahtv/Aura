@@ -23,6 +23,9 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,6 +68,10 @@ enum class SortMode(val label: String, val sortBy: String, val defaultDesc: Bool
     RANDOM("Random", "Random", false)
 }
 
+/** A-Z rail: "#" catches numerics/symbols, then A-Z. */
+private val AZ_LETTERS: List<String> = listOf("#") + ('A'..'Z').map { it.toString() }
+private const val AZ_FIRST = "#"
+
 private fun sortModesFor(kind: String): List<SortMode> = when (kind) {
     "Artists" -> listOf(SortMode.TITLE, SortMode.DATE_ADDED, SortMode.PLAY_COUNT, SortMode.RANDOM)
     "Albums" -> listOf(SortMode.TITLE, SortMode.ALBUM_ARTIST, SortMode.DATE_ADDED, SortMode.LENGTH, SortMode.PLAY_COUNT, SortMode.RANDOM)
@@ -88,14 +95,27 @@ fun LibraryScreen(
     refreshKey: Int = 0,
     focusTick: Int = 0,
     onOpenCollection: (JellyfinItem) -> Unit,
-    onOpenArtist: (JellyfinItem) -> Unit
+    onOpenArtist: (JellyfinItem) -> Unit,
+    // Genres live behind a pill INSIDE the Albums tab: a sixth top-bar tab does
+    // not fit 960dp next to five tabs, the pill and two icon buttons.
+    onOpenGenres: (() -> Unit)? = null
 ) {
     val session = app.jellyfin.auth.session!!
     var sort by remember { mutableStateOf(LibrarySortPrefs.get(kind)) }
     var desc by remember { mutableStateOf(sort.defaultDesc) }
+    // A-Z jump: null = no letter filter. When set, the paged query starts at
+    // that letter (nameStartsWithOrGreater) instead of index 0 of the alphabet.
+    var letter by androidx.compose.runtime.saveable.rememberSaveable(kind) {
+        mutableStateOf<String?>(null)
+    }
+    var azOpen by remember { mutableStateOf(false) }
+    // Set when a letter is picked so the NEW list starts at the top; BACK
+    // restores the same key and must NOT be scrolled to 0.
+    var justJumped by remember { mutableStateOf(false) }
     // Sort-specific keys: switching sort reloads fresh and BACK restores the
     // exact list + scroll of the sort that was active.
-    val cacheKey = "lib_${kind.lowercase()}:${session.userId}:${sort.sortBy}:$desc"
+    val cacheKey = "lib_${kind.lowercase()}:${session.userId}:${sort.sortBy}:$desc" +
+        (letter?.let { ":az_$it" } ?: "")
     var items by remember { mutableStateOf<List<JellyfinItem>>(emptyList()) }
     var initialized by remember { mutableStateOf(false) }
     var total by remember { mutableStateOf(Int.MAX_VALUE) }
@@ -132,7 +152,19 @@ fun LibraryScreen(
         loading = true
         runCatching {
             val order = if (desc) "Descending" else "Ascending"
-            val result = when (kind) {
+            val fromLetter = letter
+            val result = if (fromLetter != null) {
+                // A-Z jump: the paged query STARTS at the letter, so page 1 is
+                // the first item at/after it and we never walk the alphabet.
+                pageFromLetter(
+                    api = app.jellyfin.api,
+                    userId = session.userId,
+                    kind = kind,
+                    letter = fromLetter,
+                    limit = PAGE_SIZE,
+                    startIndex = items.size
+                )
+            } else when (kind) {
                 "Artists" -> com.hans.aura.data.LibraryFilter.queryAlbumArtists(
                     app.jellyfin.api, userId = session.userId, sortBy = sort.sortBy, sortOrder = order,
                     limit = PAGE_SIZE, startIndex = items.size
@@ -160,7 +192,11 @@ fun LibraryScreen(
                 )
                 else -> error("Unknown kind $kind")
             }
-            total = result.totalRecordCount
+            // A-Z jump skips the count: pagination ends on a short page instead
+            // of trusting a total that belongs to the whole (unfiltered) list.
+            total = if (fromLetter != null) {
+                if (result.items.size < PAGE_SIZE) items.size + result.items.size else Int.MAX_VALUE
+            } else result.totalRecordCount
             items = items + result.items
             com.hans.aura.data.PagedLibrary.put(cacheKey, items, total)
         }.onFailure { error = it.message }
@@ -221,8 +257,21 @@ fun LibraryScreen(
             loadMore()
         }
     }
+    // A-Z jump lands on the TOP of the new list; a grid still holding the
+    // previous list's deep offset would drop the user in the middle of the
+    // "B"s. BACK restores the same key and is deliberately left alone.
+    LaunchedEffect(cacheKey) {
+        if (!justJumped) return@LaunchedEffect
+        justJumped = false
+        kotlinx.coroutines.delay(50)
+        runCatching {
+            if (kind == "Tracks") listState.scrollToItem(0) else gridState.scrollToItem(0)
+        }
+    }
 
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val azPillFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val railFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
@@ -237,6 +286,11 @@ fun LibraryScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Genres pill (Albums only): opens the genre grid, which owns its
+            // own screen in the back-stack so BACK returns here.
+            if (kind == "Albums" && onOpenGenres != null) {
+                SortPill(label = "Genres", selected = false, onClick = { onOpenGenres() })
+            }
             sortModesFor(kind).forEach { mode ->
                 val active = mode == sort
                 SortPill(
@@ -253,6 +307,63 @@ fun LibraryScreen(
                         }
                     }
                 )
+            }
+            // A-Z jump pill: only where the grid is alphabetical (Albums/Artists).
+            if (kind == "Albums" || kind == "Artists") {
+                SortPill(
+                    label = letter?.let { "A\u2013Z \u00B7 $it" } ?: "A\u2013Z",
+                    selected = azOpen || letter != null,
+                    modifier = Modifier.focusRequester(azPillFocus),
+                    onClick = { azOpen = !azOpen }
+                )
+            }
+        }
+        // Letter rail: an inline strip above the grid (no overlay, so the grid
+        // keeps its scroll and focus restore). UP from the grid reaches the
+        // pills, UP again the rail; BACK closes the rail without leaving the tab.
+        if (azOpen) {
+            androidx.activity.compose.BackHandler(enabled = azOpen) {
+                azOpen = false
+                scope.launch { kotlinx.coroutines.delay(60); azPillFocus.requestFocus() }
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 32.dp, end = 32.dp, bottom = 6.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AZ_LETTERS.forEach { candidate ->
+                    LetterChip(
+                        label = candidate,
+                        selected = candidate == letter,
+                        modifier = if (candidate == AZ_FIRST) Modifier.focusRequester(railFocus) else Modifier,
+                        onClick = {
+                            // A-Z only means anything on SortName, so the jump
+                            // pins the sort; the key changes and page 1 reloads.
+                            azOpen = false
+                            letter = candidate
+                            justJumped = true
+                            sort = SortMode.TITLE
+                            desc = false
+                            LibrarySortPrefs.set(kind, SortMode.TITLE)
+                            android.util.Log.d("AURA_AZ", "letter=$candidate kind=$kind")
+                            // The rail disappears when a letter is taken; hand
+                            // focus to the grid or the selector is stranded.
+                            scope.launch {
+                                kotlinx.coroutines.delay(150)
+                                runCatching { contentFocus.requestFocus() }
+                            }
+                        }
+                    )
+                }
+            }
+            LaunchedEffect(azOpen) {
+                if (azOpen) {
+                    kotlinx.coroutines.delay(80)
+                    runCatching { railFocus.requestFocus() }
+                }
             }
         }
     Box(Modifier.fillMaxSize().weight(1f)) {
@@ -345,7 +456,12 @@ fun LibraryScreen(
 /** Sort pill: active = filled amber, focused = thick outline. Clicking the
  *  active pill (see call site) flips its direction. */
 @Composable
-private fun SortPill(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun SortPill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     var focused by remember { mutableStateOf(false) }
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
     val bg = when {
@@ -355,7 +471,7 @@ private fun SortPill(label: String, selected: Boolean, onClick: () -> Unit) {
         else -> androidx.compose.ui.graphics.Color.Transparent
     }
     Box(
-        Modifier
+        modifier
             .clip(shape)
             .background(bg)
             .border(
@@ -374,4 +490,115 @@ private fun SortPill(label: String, selected: Boolean, onClick: () -> Unit) {
             color = if (selected) androidx.compose.ui.graphics.Color(0xFF191410) else TextPrimary
         )
     }
+}
+
+/**
+ * One letter chip on the A-Z rail. Selected = filled amber (the jump in
+ * effect), focused = bright 3dp ring, so the D-pad cursor is never ambiguous.
+ * onFocusChanged comes BEFORE clickable or the flag never flips.
+ */
+@Composable
+private fun LetterChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+    Box(
+        modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onClick() }
+            .clip(shape)
+            .background(
+                when {
+                    selected && focused -> androidx.compose.ui.graphics.Color(0x99E8A44C)
+                    selected -> androidx.compose.ui.graphics.Color(0xFFE8A44C)
+                    focused -> androidx.compose.ui.graphics.Color(0xFF3A322A)
+                    else -> androidx.compose.ui.graphics.Color(0xFF1F1A16)
+                }
+            )
+            .border(
+                width = if (focused) 3.dp else 0.dp,
+                color = if (focused) androidx.compose.ui.graphics.Color(0xFFF2EDE6)
+                else androidx.compose.ui.graphics.Color.Transparent,
+                shape = shape
+            )
+            .padding(horizontal = 13.dp, vertical = 8.dp)
+    ) {
+        androidx.tv.material3.Text(
+            label,
+            fontSize = 14.sp,
+            color = if (selected) androidx.compose.ui.graphics.Color(0xFF191410) else TextPrimary
+        )
+    }
+}
+
+/**
+ * Page of the Albums/Artists grid that STARTS at [letter]
+ * (Jellyfin's `nameStartsWithOrGreater`, compared against SortName).
+ *
+ * Browse queries must honour the hidden-library selection, and
+ * data/LibraryFilter.kt (owned elsewhere) does not pass this parameter through,
+ * so the jump re-uses LibraryFilter's public view of the selection and fans out
+ * per visible music library itself. With nothing hidden it is a single query.
+ */
+private suspend fun pageFromLetter(
+    api: com.hans.aura.data.JellyfinApi,
+    userId: String,
+    kind: String,
+    letter: String,
+    limit: Int,
+    startIndex: Int
+): com.hans.aura.data.ItemsResponse {
+    suspend fun onePage(
+        parentId: String?,
+        start: Int,
+        size: Int
+    ): com.hans.aura.data.ItemsResponse =
+        if (kind == "Artists") {
+            api.getAlbumArtists(
+                userId = userId,
+                sortBy = "SortName",
+                sortOrder = "Ascending",
+                limit = size,
+                startIndex = start,
+                fields = "PrimaryImageAspectRatio",
+                imageTypeLimit = 1,
+                parentId = parentId,
+                nameStartsWithOrGreater = letter
+            )
+        } else {
+            api.getItems(
+                userId = userId,
+                includeItemTypes = "MusicAlbum",
+                recursive = true,
+                sortBy = "SortName",
+                sortOrder = "Ascending",
+                limit = size,
+                startIndex = start,
+                parentId = parentId,
+                nameStartsWithOrGreater = letter
+            )
+        }
+
+    if (!com.hans.aura.data.LibraryFilter.isActive()) return onePage(null, startIndex, limit)
+
+    val libs = com.hans.aura.data.LibraryFilter.visibleLibraries().filter {
+        it.collectionType == null || it.collectionType.equals("music", ignoreCase = true)
+    }
+    if (libs.isEmpty()) return com.hans.aura.data.ItemsResponse()
+    val wanted = startIndex + limit
+    val responses = libs.mapNotNull { lib ->
+        runCatching { onePage(lib.id, 0, wanted) }.getOrNull()
+    }
+    val all = responses.flatMap { it.items }
+        .distinctBy { it.id }
+        .sortedBy { (it.sortName ?: it.name).lowercase() }
+    return com.hans.aura.data.ItemsResponse(
+        items = all.drop(startIndex).take(limit),
+        totalRecordCount = responses.sumOf { it.totalRecordCount },
+        startIndex = startIndex
+    )
 }

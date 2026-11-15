@@ -31,17 +31,22 @@ lyrics, mirroring and pairing.
 - Pairing: a remote must be approved on the TV before it can control anything, and device names come from
   the same place Android and Cast get them.
 
+**Accounts and libraries**
+- Sign in without a password on the TV: Quick Connect shows a 6-digit code that you approve from your phone
+  or Jellyfin Web.
+- Change server, or sign in again on the same server, from Settings — no clearing app data. Destructive
+  actions ask first.
+- Choose which Jellyfin libraries Aura shows. Switched-off libraries are never queried, so their music never
+  reaches Home, search or the caches.
+
 ## Next
 
 - **Retire ADB.** Auto-launching Aura from the remote is the only thing that still needs USB debugging;
   moving to the Android TV Remote v2 protocol (PIN pairing) removes it entirely.
 - **Live state instead of polling.** The remote polls the mirror link every couple of seconds; a push
   channel would make queue and progress changes instant.
-- **Library selection.** Choose which Jellyfin libraries Aura shows, and keep the rest out of the caches.
 - **Queue editing.** Reorder the queue and playlists from the TV remote through menu actions
   (move up / down / top / bottom) rather than drag, which fights the focus model.
-- **Quick-connect and server switching.** Sign in without typing a password on a TV remote, and change
-  servers from Settings without clearing the app.
 
 ## Considering
 

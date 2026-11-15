@@ -15,6 +15,8 @@ class AuraApp : Application(), ImageLoaderFactory {
         super.onCreate()
         jellyfin = JellyfinClient(this)
         com.hans.aura.data.LibraryCache.init(this)
+        // Library selection (hidden library ids + the last known library list).
+        com.hans.aura.data.Prefs.init(this)
         // Device name + mirror-link pairing state (Settings.Global.DEVICE_NAME,
         // i.e. the same name the Cast/Google Home UI shows).
         com.hans.aura.ui.MirrorLink.init(this)

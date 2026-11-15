@@ -44,14 +44,21 @@ object LibraryCache {
     }
 
     fun get(key: String): List<JellyfinItem>? =
-        store[key]?.takeIf { System.currentTimeMillis() - it.savedAtMs < TTL_MS }?.items
+        store[k(key)]?.takeIf { System.currentTimeMillis() - it.savedAtMs < TTL_MS }?.items
 
     fun put(key: String, items: List<JellyfinItem>) {
-        store[key] = Entry(System.currentTimeMillis(), items)
+        store[k(key)] = Entry(System.currentTimeMillis(), items)
         markLoaded()
     }
 
-    fun evict(key: String) { store.remove(key) }
+    fun evict(key: String) { store.remove(k(key)) }
+
+    /**
+     * Every key is scoped to the library selection, so a list fetched while
+     * library X was visible can never be served after X is hidden (and vice
+     * versa). With nothing hidden the suffix is empty and keys are unchanged.
+     */
+    private fun k(key: String): String = key + LibraryFilter.cacheSuffix()
 
     /** Wipes cached lists but keeps the stamps: Settings should still be able to
      *  report when the previous batch of data was fetched. */

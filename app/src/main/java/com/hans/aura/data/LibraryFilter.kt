@@ -1,0 +1,287 @@
+package com.hans.aura.data
+
+import android.util.Log
+
+/**
+ * Library selection enforcement, at the DATA layer.
+ *
+ * Jellyfin's /Items has no "exclude this library subtree" filter — `excludeItemIds`
+ * (per the OpenAPI spec) drops the listed ids themselves, not their descendants,
+ * so it cannot express "hide this library". The supported filter that does is
+ * `parentId`, which localises a query to one folder. So when the user has hidden
+ * libraries we issue one recursive query per VISIBLE library and merge the
+ * results here: hidden libraries are never queried, therefore nothing from them
+ * can reach LibraryCache / PagedLibrary / AtmosCatalog.
+ *
+ * With no hidden libraries every call goes through the original single-query
+ * path, so users who hide nothing see byte-identical behaviour and cost.
+ *
+ * EXEMPT (never filtered): direct item lookups (getItem, /Items?Ids=, playlist
+ * items by id) and anything the remote "Play On" path fetches. Filtering those
+ * empties detail screens and breaks remote control.
+ */
+object LibraryFilter {
+    private const val TAG = "AURA_LIBS"
+
+    /** Per-library page cap: one library may have to answer a deep page. */
+    private const val MAX_FETCH_PER_LIBRARY = 5000
+
+    /** Throttle: log the strategy once per distinct request shape, not per page. */
+    @Volatile
+    private var lastLogSignature: String? = null
+
+    /** All parameters of a browse query, in the shape JellyfinApi.getItems takes. */
+    data class ItemsQuery(
+        val includeItemTypes: String? = null,
+        val excludeItemTypes: String? = null,
+        val genres: String? = null,
+        val recursive: Boolean = true,
+        val parentId: String? = null,
+        val artistIds: String? = null,
+        val albumArtistIds: String? = null,
+        val searchTerm: String? = null,
+        val sortBy: String = "SortName",
+        val sortOrder: String = "Ascending",
+        val limit: Int = 100,
+        val startIndex: Int = 0,
+        val fields: String = DEFAULT_FIELDS,
+        val imageTypeLimit: Int = 1
+    ) {
+        companion object {
+            const val DEFAULT_FIELDS = "PrimaryImageAspectRatio,MediaSources,ChildCount,Path"
+        }
+    }
+
+    /** Hidden library ids (empty = nothing hidden). */
+    fun hidden(): Set<String> = Prefs.hiddenLibraries
+
+    /** Libraries the user kept: the stored /UserViews list minus the hidden ids. */
+    fun visibleLibraries(): List<LibraryRef> {
+        val hiddenIds = Prefs.hiddenLibraries
+        return Prefs.knownLibraries.filterNot { it.id in hiddenIds }
+    }
+
+    /** True when browse queries have to be split per visible library. */
+    fun isActive(): Boolean = Prefs.hiddenLibraries.isNotEmpty() && Prefs.knownLibraries.isNotEmpty()
+
+    /**
+     * Suffix appended to every cache key (LibraryCache + PagedLibrary) so data
+     * fetched under one selection can never be served under another. Empty when
+     * nothing is hidden, i.e. the historical key = the cache key.
+     */
+    fun cacheSuffix(): String {
+        val hiddenIds = Prefs.hiddenLibraries
+        if (hiddenIds.isEmpty()) return ""
+        return "#h=" + hiddenIds.sorted().joinToString(",")
+    }
+
+    /** Pulls the user's library list and remembers it (and the hidden set stays). */
+    suspend fun refreshLibraryList(api: JellyfinApi, userId: String): List<LibraryRef> {
+        val views = api.getUserViews(userId = userId)
+        val libs = views.items.mapNotNull { item ->
+            item.id.takeIf { it.isNotBlank() }?.let {
+                LibraryRef(id = it, name = item.name, collectionType = item.collectionType)
+            }
+        }
+        Prefs.knownLibraries = libs
+        // Ids that no longer exist on the server must not linger in the hidden
+        // set — they would silently filter nothing and confuse the log line.
+        val liveIds = libs.map { it.id }.toSet()
+        val hidden = Prefs.hiddenLibraries
+        if (hidden.any { it !in liveIds }) Prefs.hiddenLibraries = hidden.filter { it in liveIds }.toSet()
+        logState()
+        return libs
+    }
+
+    /**
+     * Browse query (shelves, library tabs, search): honours the hidden set.
+     * A query already scoped to a parent (album tracklist, playlist tracks) is
+     * passed through untouched — that is a direct item lookup, not a browse.
+     */
+    suspend fun queryItems(api: JellyfinApi, userId: String, q: ItemsQuery): ItemsResponse {
+        // Playlists are user-owned virtual content, not library content: hiding
+        // a music library must not hide the playlists tab.
+        if (!isActive() || q.parentId != null || q.includeItemTypes == "Playlist") {
+            return api.getItems(
+                userId = userId,
+                includeItemTypes = q.includeItemTypes,
+                excludeItemTypes = q.excludeItemTypes,
+                genres = q.genres,
+                recursive = q.recursive,
+                parentId = q.parentId,
+                artistIds = q.artistIds,
+                albumArtistIds = q.albumArtistIds,
+                searchTerm = q.searchTerm,
+                sortBy = q.sortBy,
+                sortOrder = q.sortOrder,
+                limit = q.limit,
+                startIndex = q.startIndex,
+                fields = q.fields,
+                imageTypeLimit = q.imageTypeLimit
+            )
+        }
+        val libs = visibleLibraries()
+        if (libs.isEmpty()) {
+            // Everything hidden: return nothing rather than falling back to an
+            // unfiltered query that would show what the user just switched off.
+            Log.w(TAG, "all libraries hidden — returning empty result for ${q.includeItemTypes}")
+            return ItemsResponse()
+        }
+        val perLibraryLimit = (q.startIndex + q.limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
+        val responses = libs.mapNotNull { lib ->
+            runCatching {
+                api.getItems(
+                    userId = userId,
+                    includeItemTypes = q.includeItemTypes,
+                    excludeItemTypes = q.excludeItemTypes,
+                    genres = q.genres,
+                    recursive = q.recursive,
+                    parentId = lib.id,
+                    artistIds = q.artistIds,
+                    albumArtistIds = q.albumArtistIds,
+                    searchTerm = q.searchTerm,
+                    sortBy = q.sortBy,
+                    sortOrder = q.sortOrder,
+                    limit = perLibraryLimit,
+                    startIndex = 0,
+                    fields = q.fields,
+                    imageTypeLimit = q.imageTypeLimit
+                )
+            }.onFailure {
+                // An unreadable library must not kill the whole screen.
+                Log.w(TAG, "library \"${lib.name}\" (${lib.id}) query failed: ${it.message}")
+            }.getOrNull()
+        }
+        // Mixed-type queries (search) also ask for Playlists, which live in the
+        // server's virtual playlists view rather than inside a music library —
+        // without this they would vanish from results once anything is hidden.
+        val playlists = if (q.includeItemTypes?.contains("Playlist", ignoreCase = true) == true) {
+            listOfNotNull(
+                runCatching {
+                    api.getItems(
+                        userId = userId,
+                        includeItemTypes = "Playlist",
+                        recursive = true,
+                        searchTerm = q.searchTerm,
+                        sortBy = q.sortBy,
+                        sortOrder = q.sortOrder,
+                        limit = perLibraryLimit,
+                        startIndex = 0,
+                        fields = q.fields,
+                        imageTypeLimit = q.imageTypeLimit
+                    )
+                }.getOrNull()
+            )
+        } else emptyList()
+        logStrategy(q.includeItemTypes, libs)
+        return merge(responses + playlists, q)
+    }
+
+    /** Same treatment for the album-artist endpoint (Artists tab + Home shelf). */
+    suspend fun queryAlbumArtists(
+        api: JellyfinApi,
+        userId: String,
+        sortBy: String = "SortName",
+        sortOrder: String = "Ascending",
+        limit: Int = 200,
+        startIndex: Int = 0,
+        fields: String = "PrimaryImageAspectRatio",
+        imageTypeLimit: Int = 1
+    ): ItemsResponse {
+        if (!isActive()) {
+            return api.getAlbumArtists(
+                userId = userId, sortBy = sortBy, sortOrder = sortOrder,
+                limit = limit, startIndex = startIndex,
+                fields = fields, imageTypeLimit = imageTypeLimit
+            )
+        }
+        val libs = visibleLibraries()
+        if (libs.isEmpty()) {
+            Log.w(TAG, "all libraries hidden — returning empty artist result")
+            return ItemsResponse()
+        }
+        val perLibraryLimit = (startIndex + limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
+        val responses = libs.mapNotNull { lib ->
+            runCatching {
+                api.getAlbumArtists(
+                    userId = userId, sortBy = sortBy, sortOrder = sortOrder,
+                    limit = perLibraryLimit, startIndex = 0,
+                    fields = fields, imageTypeLimit = imageTypeLimit,
+                    parentId = lib.id
+                )
+            }.onFailure {
+                Log.w(TAG, "library \"${lib.name}\" artist query failed: ${it.message}")
+            }.getOrNull()
+        }
+        logStrategy("MusicArtist", libs)
+        return merge(responses, ItemsQuery(sortBy = sortBy, sortOrder = sortOrder,
+            limit = limit, startIndex = startIndex))
+    }
+
+    /** Merge per-library pages: honour the requested sort, then the page window. */
+    private fun merge(responses: List<ItemsResponse>, q: ItemsQuery): ItemsResponse {
+        if (responses.isEmpty()) return ItemsResponse()
+        val all = responses.flatMap { it.items }.distinctBy { it.id }
+        val total = responses.sumOf { it.totalRecordCount }
+        val ordered = comparatorFor(q.sortBy, q.sortOrder)?.let { all.sortedWith(it) } ?: all
+        val page = ordered.drop(q.startIndex).take(q.limit)
+        return ItemsResponse(items = page, totalRecordCount = total, startIndex = q.startIndex)
+    }
+
+    /**
+     * Re-creates the server's ordering for the sort the caller asked for. Each
+     * per-library response is already sorted, so this only has to interleave
+     * them — i.e. compare on the same field the server sorted on. Sort fields
+     * we cannot reproduce (Random) return null and keep the server order.
+     */
+    private fun comparatorFor(sortBy: String, sortOrder: String): Comparator<JellyfinItem>? {
+        val desc = sortOrder.equals("Descending", ignoreCase = true)
+        val selectors: Array<(JellyfinItem) -> Comparable<*>?> = when {
+            sortBy.contains("Random", ignoreCase = true) -> return null
+            sortBy.contains("DatePlayed", ignoreCase = true) -> arrayOf({ it.userData?.lastPlayedDate }, { it.name.lowercase() })
+            sortBy.contains("DateCreated", ignoreCase = true) -> arrayOf({ it.dateCreated }, { it.name.lowercase() })
+            sortBy.contains("Runtime", ignoreCase = true) -> arrayOf({ it.runTimeTicks }, { it.name.lowercase() })
+            sortBy.contains("PlayCount", ignoreCase = true) -> arrayOf({ it.userData?.playCount }, { it.name.lowercase() })
+            sortBy.contains("AlbumArtist", ignoreCase = true) -> arrayOf({ it.albumArtist?.lowercase() ?: it.name.lowercase() }, { it.name.lowercase() })
+            sortBy.contains("Album", ignoreCase = true) -> arrayOf({ it.album?.lowercase() ?: it.name.lowercase() }, { it.name.lowercase() })
+            else -> arrayOf({ it.sortName?.lowercase() ?: it.name.lowercase() })
+        }
+        val cmp = Comparator<JellyfinItem> { a, b -> compareValuesBy(a, b, *selectors) }
+        return if (desc) cmp.reversed() else cmp
+    }
+
+    /** One AURA_LIBS line per distinct query shape, listing ids + strategy. */
+    private fun logStrategy(itemTypes: String?, libs: List<LibraryRef>) {
+        val signature = "$itemTypes|${libs.joinToString(",") { it.id }}"
+        if (signature == lastLogSignature) return
+        lastLogSignature = signature
+        Log.i(
+            TAG,
+            "strategy=per-library types=${itemTypes ?: "*"} visible=[${libs.joinToString(",") { it.id }}]" +
+                " hidden=[${hidden().sorted().joinToString(",")}]"
+        )
+    }
+
+    /** Startup / settings-time breadcrumb: who is visible and who is hidden. */
+    fun logState() {
+        val libs = Prefs.knownLibraries
+        val hiddenIds = hidden()
+        Log.i(
+            TAG,
+            if (hiddenIds.isEmpty()) {
+                "strategy=single (no hidden libraries) known=[${libs.joinToString(",") { it.id }}]"
+            } else {
+                "known=[${libs.joinToString(",") { "${it.id}:${it.name}" }}]" +
+                    " visible=[${libs.filterNot { it.id in hiddenIds }.joinToString(",") { it.id }}]" +
+                    " hidden=[${hiddenIds.sorted().joinToString(",")}] strategy=per-library"
+            }
+        )
+    }
+
+    /** Call after any change of the hidden set / library list. */
+    fun clearCaches() {
+        LibraryCache.clear()
+        PagedLibrary.clear()
+        AtmosCatalog.clear()
+    }
+}

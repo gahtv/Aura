@@ -12,9 +12,12 @@ object PagedLibrary {
 
     private val store = ConcurrentHashMap<String, Page>()
 
-    fun get(key: String): Page? = store[key]
+    fun get(key: String): Page? = store[k(key)]
     fun put(key: String, items: List<JellyfinItem>, total: Int) {
-        store[key] = Page(items, total)
+        store[k(key)] = Page(items, total)
     }
     fun clear() = store.clear()
+
+    /** Paged lists are scoped to the library selection, same as LibraryCache. */
+    private fun k(key: String): String = key + LibraryFilter.cacheSuffix()
 }

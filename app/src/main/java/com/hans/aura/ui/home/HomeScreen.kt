@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
+import com.hans.aura.data.LibraryFilter
 import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
@@ -76,26 +77,34 @@ fun HomeScreen(
         }
         runCatching {
             val api = app.jellyfin.api
+            // Browse queries go through LibraryFilter: hidden libraries are
+            // never fetched, so their items cannot land in LibraryCache.
             if (recentlyPlayed == null) {
-                api.getItems(
-                    userId = userId, includeItemTypes = "Audio", recursive = true,
-                    sortBy = "DatePlayed", sortOrder = "Descending", limit = 20
+                LibraryFilter.queryItems(
+                    api, userId,
+                    LibraryFilter.ItemsQuery(
+                        includeItemTypes = "Audio", recursive = true,
+                        sortBy = "DatePlayed", sortOrder = "Descending", limit = 20
+                    )
                 ).items.also {
                     LibraryCache.put("home_recent:$userId", it)
                     recentlyPlayed = it
                 }
             }
             if (recentAlbums == null) {
-                api.getItems(
-                    userId = userId, includeItemTypes = "MusicAlbum", recursive = true,
-                    sortBy = "DateCreated", sortOrder = "Descending", limit = 20
+                LibraryFilter.queryItems(
+                    api, userId,
+                    LibraryFilter.ItemsQuery(
+                        includeItemTypes = "MusicAlbum", recursive = true,
+                        sortBy = "DateCreated", sortOrder = "Descending", limit = 20
+                    )
                 ).items.also {
                     LibraryCache.put("home_new:$userId", it)
                     recentAlbums = it
                 }
             }
             if (artists == null) {
-                api.getAlbumArtists(userId = userId, limit = 100).items.also {
+                LibraryFilter.queryAlbumArtists(api, userId, limit = 100).items.also {
                     LibraryCache.put("home_artists:$userId", it)
                     artists = it
                 }

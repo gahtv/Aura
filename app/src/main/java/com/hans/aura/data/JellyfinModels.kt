@@ -51,7 +51,13 @@ data class JellyfinItem(
     @SerialName("ChildCount") val childCount: Int? = null,
     @SerialName("UserData") val userData: UserData? = null,
     @SerialName("MediaSources") val mediaSources: List<MediaSource>? = null,
-    @SerialName("Overview") val overview: String? = null
+    @SerialName("Overview") val overview: String? = null,
+    // SortName is what the server sorts and compares on (it strips "The " etc.),
+    // so client-side merging of per-library pages must use it, not Name.
+    @SerialName("SortName") val sortName: String? = null,
+    @SerialName("DateCreated") val dateCreated: String? = null,
+    // Present on library folders returned by GET /UserViews ("music", "movies", …).
+    @SerialName("CollectionType") val collectionType: String? = null
 ) {
     val primaryImageTag: String? get() = imageTags?.get("Primary")
     val durationMs: Long get() = (runTimeTicks ?: 0L) / 10_000L

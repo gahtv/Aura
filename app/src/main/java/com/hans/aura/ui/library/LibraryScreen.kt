@@ -133,19 +133,25 @@ fun LibraryScreen(
         runCatching {
             val order = if (desc) "Descending" else "Ascending"
             val result = when (kind) {
-                "Artists" -> app.jellyfin.api.getAlbumArtists(
-                    userId = session.userId, sortBy = sort.sortBy, sortOrder = order,
+                "Artists" -> com.hans.aura.data.LibraryFilter.queryAlbumArtists(
+                    app.jellyfin.api, userId = session.userId, sortBy = sort.sortBy, sortOrder = order,
                     limit = PAGE_SIZE, startIndex = items.size
                 )
-                "Albums" -> app.jellyfin.api.getItems(
-                    userId = session.userId, includeItemTypes = "MusicAlbum",
-                    recursive = true, sortBy = sort.sortBy, sortOrder = order,
-                    limit = PAGE_SIZE, startIndex = items.size
+                "Albums" -> com.hans.aura.data.LibraryFilter.queryItems(
+                    app.jellyfin.api, session.userId,
+                    com.hans.aura.data.LibraryFilter.ItemsQuery(
+                        includeItemTypes = "MusicAlbum",
+                        recursive = true, sortBy = sort.sortBy, sortOrder = order,
+                        limit = PAGE_SIZE, startIndex = items.size
+                    )
                 )
-                "Tracks" -> app.jellyfin.api.getItems(
-                    userId = session.userId, includeItemTypes = "Audio",
-                    recursive = true, sortBy = sort.sortBy, sortOrder = order,
-                    limit = PAGE_SIZE, startIndex = items.size
+                "Tracks" -> com.hans.aura.data.LibraryFilter.queryItems(
+                    app.jellyfin.api, session.userId,
+                    com.hans.aura.data.LibraryFilter.ItemsQuery(
+                        includeItemTypes = "Audio",
+                        recursive = true, sortBy = sort.sortBy, sortOrder = order,
+                        limit = PAGE_SIZE, startIndex = items.size
+                    )
                 )
                 "Playlists" -> app.jellyfin.api.getItems(
                     userId = session.userId, includeItemTypes = "Playlist",

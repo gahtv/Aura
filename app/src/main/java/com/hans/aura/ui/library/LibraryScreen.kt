@@ -43,69 +43,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LibraryCache
 import com.hans.aura.ui.common.ArtworkCard
+import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
-import kotlinx.coroutines.launch
 
 /**
  * Whole-library views: Artists, Albums, Tracks, Playlists.
- * Pages of 60 items load as the user approaches the end of the list.
+ *
+ * Layout and focus only — paging, the sort/filter axes and the cache keys live
+ * in [LibraryViewModel], so navigating to a detail screen and pressing BACK
+ * restores the exact loaded pages, sort and filters.
  */
-private const val PAGE_SIZE = 60
-
-/** Server-side sort fields (Jellyfin SortBy). Random pages independently, so
- *  consecutive pages under Random may overlap or miss items — accepted. */
-enum class SortMode(val label: String, val sortBy: String, val defaultDesc: Boolean) {
-    TITLE("Title", "SortName", false),
-    ALBUM("Album", "Album", false),
-    ALBUM_ARTIST("Album artist", "AlbumArtist", false),
-    DATE_ADDED("Date added", "DateCreated", true),
-    LENGTH("Length", "Runtime", true),
-    PLAY_COUNT("Most played", "PlayCount", true),
-    RANDOM("Random", "Random", false)
-}
-
-/** A-Z rail: "#" catches numerics/symbols, then A-Z. */
-private val AZ_LETTERS: List<String> = listOf("#") + ('A'..'Z').map { it.toString() }
-
-private fun sortModesFor(kind: String): List<SortMode> = when (kind) {
-    "Artists" -> listOf(SortMode.TITLE, SortMode.DATE_ADDED, SortMode.PLAY_COUNT, SortMode.RANDOM)
-    "Albums" -> listOf(SortMode.TITLE, SortMode.ALBUM_ARTIST, SortMode.DATE_ADDED, SortMode.LENGTH, SortMode.PLAY_COUNT, SortMode.RANDOM)
-    "Tracks" -> listOf(SortMode.TITLE, SortMode.ALBUM, SortMode.ALBUM_ARTIST, SortMode.DATE_ADDED, SortMode.LENGTH, SortMode.PLAY_COUNT, SortMode.RANDOM)
-    else -> listOf(SortMode.TITLE, SortMode.DATE_ADDED, SortMode.RANDOM) // Playlists
-}
-
-/** Session-scoped: the chosen sort survives navigating away and back. */
-private object LibrarySortPrefs {
-    private val byKind = mutableMapOf<String, SortMode>()
-    fun get(kind: String): SortMode =
-        byKind[kind] ?: sortModesFor(kind).first()
-    fun set(kind: String, mode: SortMode) { byKind[kind] = mode }
-}
-
-/** Session-scoped "Liked" filter for the Tracks tab (a pill, not a 6th tab —
- *  the 960dp top bar has no room for another tab). */
-private object LibraryLikedPrefs {
-    var on: Boolean = false
-}
-
-/**
- * "Only Atmos" per-view filter (the icon pill). Session-scoped and separate from
- * the Settings preference: the pill is for "just show me the Atmos ones here",
- * the preference is for "never show me anything else anywhere".
- */
-private object LibraryAtmosPrefs {
-    private val byKind = mutableMapOf<String, Boolean>()
-    fun get(kind: String): Boolean = byKind[kind] ?: false
-    fun set(kind: String, on: Boolean) { byKind[kind] = on }
-}
-
 @Composable
 fun LibraryScreen(
     app: AuraApp,
@@ -117,48 +73,22 @@ fun LibraryScreen(
     onOpenArtist: (JellyfinItem) -> Unit,
     // Genres live behind a pill INSIDE the Albums tab: a sixth top-bar tab does
     // not fit 960dp next to five tabs, the pill and two icon buttons.
-    onOpenGenres: (() -> Unit)? = null
+    onOpenGenres: (() -> Unit)? = null,
+    viewModel: LibraryViewModel = viewModel(
+        // AppRoot's manual back-stack keeps LocalViewModelStoreOwner at the
+        // Activity, so every tab needs its own key (and a new user needs a new
+        // one or the previous session's pages would be served).
+        key = "library:$kind:${app.jellyfin.auth.session?.userId ?: "anon"}",
+        factory = viewModelFactory { initializer { LibraryViewModel(app, kind) } }
+    )
 ) {
-    val session = app.jellyfin.auth.session!!
-    var sort by remember { mutableStateOf(LibrarySortPrefs.get(kind)) }
-    var desc by remember { mutableStateOf(sort.defaultDesc) }
-    // "Liked" is only offered on the Tracks tab, and it narrows the SAME paged
-    // list rather than adding a top-bar tab.
-    var likedOnly by remember {
-        mutableStateOf(kind == "Tracks" && LibraryLikedPrefs.on)
-    }
-    // "Only Atmos" icon pill: only meaningful on the two music item tabs, and
-    // hidden when the Settings preference is on (that already filters everything,
-    // so a second control would just contradict itself).
-    val atmosCapable = kind == "Albums" || kind == "Tracks"
-    var atmosView by remember { mutableStateOf(atmosCapable && LibraryAtmosPrefs.get(kind)) }
-    val atmosEffective = atmosCapable && (atmosView || com.hans.aura.data.AtmosFilter.on)
-    // A-Z jump: null = no letter filter. When set, the paged query starts at
-    // that letter (nameStartsWithOrGreater) instead of index 0 of the alphabet.
-    var letter by androidx.compose.runtime.saveable.rememberSaveable(kind) {
-        mutableStateOf<String?>(null)
-    }
-    var azOpen by remember { mutableStateOf(false) }
-    // Set when a letter is picked so the NEW list starts at the top; BACK
-    // restores the same key and must NOT be scrolled to 0.
-    var justJumped by remember { mutableStateOf(false) }
-    // Sort-specific keys: switching sort reloads fresh and BACK restores the
-    // exact list + scroll of the sort that was active. Liked and A-Z each get
-    // their own key so neither can be served the other's page.
-    val cacheKey = when {
-        atmosEffective -> "lib_atmos_${kind.lowercase()}:${session.userId}:${sort.sortBy}:$desc:${if (likedOnly) "fav" else "all"}"
-        likedOnly -> "lib_liked:${session.userId}:${sort.sortBy}:$desc"
-        letter != null ->
-            "lib_${kind.lowercase()}:${session.userId}:${sort.sortBy}:$desc:az_$letter"
-        else -> "lib_${kind.lowercase()}:${session.userId}:${sort.sortBy}:$desc"
-    }
-    var items by remember { mutableStateOf<List<JellyfinItem>>(emptyList()) }
-    var initialized by remember { mutableStateOf(false) }
-    var total by remember { mutableStateOf(Int.MAX_VALUE) }
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val session = app.jellyfin.auth.session ?: return
+    val state by viewModel.state.collectAsState()
+    val items = state.items
     val current by player.current.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    LaunchedEffect(refreshKey) { viewModel.onRefreshKey(refreshKey) }
 
     fun trackMenu(track: JellyfinItem, onRemove: (() -> Unit)? = null) =
         com.hans.aura.ui.common.ContextMenuHost.open(
@@ -169,19 +99,6 @@ fun LibraryScreen(
             )
         )
 
-    /**
-     * A-Z jump is SortName+Ascending ONLY (pageFromLetter hard-codes it), so any
-     * other sort or filter click must drop the letter first. Without this the
-     * pill looked selected while the list kept coming back alphabetical
-     * (user-reported: "all the other options visually can be selected but can't
-     * actually be selected").
-     */
-    fun clearLetter(reason: String) {
-        val current = letter ?: return
-        android.util.Log.d("AURA_AZ", "cleared reason=$reason kind=$kind was=$current")
-        letter = null
-    }
-
     fun albumMenu(item: JellyfinItem) =
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forAlbum(
@@ -189,132 +106,7 @@ fun LibraryScreen(
             )
         )
 
-    // Atmos badges (Albums grid + Tracks rows): whole-library scan, cached per session.
-    var atmosAlbumIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    LaunchedEffect(cacheKey, refreshKey) {
-        if (kind != "Albums" && kind != "Tracks") return@LaunchedEffect
-        atmosAlbumIds = com.hans.aura.data.AtmosCatalog.albumIds(app.jellyfin.api, session.userId)
-    }
-
-    suspend fun loadMore() {
-        if (loading || items.size >= total) return
-        loading = true
-        runCatching {
-            val order = if (desc) "Descending" else "Ascending"
-            val result = if (atmosEffective) {
-                // Atmos only: ids come from the session's Atmos scan, hydrated by
-                // id and sorted client-side (Jellyfin cannot filter by codec).
-                if (kind == "Tracks") {
-                    com.hans.aura.data.AtmosBrowse.tracks(
-                        api = app.jellyfin.api,
-                        userId = session.userId,
-                        sortBy = sort.sortBy,
-                        desc = desc,
-                        favoritesOnly = likedOnly,
-                        startIndex = items.size,
-                        limit = PAGE_SIZE
-                    )
-                } else {
-                    com.hans.aura.data.AtmosBrowse.albums(
-                        api = app.jellyfin.api,
-                        userId = session.userId,
-                        sortBy = sort.sortBy,
-                        desc = desc,
-                        favoritesOnly = likedOnly,
-                        startIndex = items.size,
-                        limit = PAGE_SIZE
-                    )
-                }
-            } else if (likedOnly) {
-                // Favourites go through the same paged/LibraryFilter path as
-                // every other tab, so the library-selection filter still applies.
-                com.hans.aura.data.Favorites.browseLiked(
-                    api = app.jellyfin.api,
-                    userId = session.userId,
-                    sortBy = sort.sortBy,
-                    sortOrder = order,
-                    startIndex = items.size,
-                    limit = PAGE_SIZE
-                )
-            } else if (letter != null) {
-                // A-Z jump: the paged query STARTS at the letter, so page 1 is
-                // the first item at/after it and we never walk the alphabet.
-                pageFromLetter(
-                    api = app.jellyfin.api,
-                    userId = session.userId,
-                    kind = kind,
-                    letter = letter!!,
-                    limit = PAGE_SIZE,
-                    startIndex = items.size
-                )
-            } else when (kind) {
-                "Artists" -> com.hans.aura.data.LibraryFilter.queryAlbumArtists(
-                    app.jellyfin.api, userId = session.userId, sortBy = sort.sortBy, sortOrder = order,
-                    limit = PAGE_SIZE, startIndex = items.size
-                )
-                "Albums" -> com.hans.aura.data.LibraryFilter.queryItems(
-                    app.jellyfin.api, session.userId,
-                    com.hans.aura.data.LibraryFilter.ItemsQuery(
-                        includeItemTypes = "MusicAlbum",
-                        recursive = true, sortBy = sort.sortBy, sortOrder = order,
-                        limit = PAGE_SIZE, startIndex = items.size
-                    )
-                )
-                "Tracks" -> com.hans.aura.data.LibraryFilter.queryItems(
-                    app.jellyfin.api, session.userId,
-                    com.hans.aura.data.LibraryFilter.ItemsQuery(
-                        includeItemTypes = "Audio",
-                        recursive = true, sortBy = sort.sortBy, sortOrder = order,
-                        limit = PAGE_SIZE, startIndex = items.size
-                    )
-                )
-                "Playlists" -> app.jellyfin.api.getItems(
-                    userId = session.userId, includeItemTypes = "Playlist",
-                    recursive = true, sortBy = sort.sortBy, sortOrder = order,
-                    limit = PAGE_SIZE, startIndex = items.size
-                )
-                else -> error("Unknown kind $kind")
-            }
-            // A-Z jump skips the count: pagination ends on a short page instead
-            // of trusting a total that belongs to the whole (unfiltered) list.
-            total = if (letter != null) {
-                if (result.items.size < PAGE_SIZE) items.size + result.items.size else Int.MAX_VALUE
-            } else result.totalRecordCount
-            items = items + result.items
-            com.hans.aura.data.PagedLibrary.put(cacheKey, items, total)
-        }.onFailure { error = it.message }
-        loading = false
-    }
-
-    LaunchedEffect(cacheKey, refreshKey) {
-        items = emptyList()
-        total = Int.MAX_VALUE
-        initialized = false
-        error = null
-        // Session-scoped paged store first: keeps deep-scroll state alive
-        // across BACK so focus restoration can find the exact item.
-        com.hans.aura.data.PagedLibrary.get(cacheKey)?.let { page ->
-            items = page.items
-            total = page.total
-            initialized = true
-        }
-        if (!initialized) {
-            LibraryCache.get(cacheKey)?.let { cached ->
-                if (cached.isNotEmpty()) {
-                    items = cached
-                    initialized = true
-                }
-            }
-        }
-        if (!initialized) {
-            loadMore()
-            initialized = true
-        }
-        if (items.isNotEmpty()) {
-            com.hans.aura.data.PagedLibrary.put(cacheKey, items, total)
-            LibraryCache.put(cacheKey, items.take(PAGE_SIZE))
-        }
-    }
+    var azOpen by remember { mutableStateOf(false) }
 
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
@@ -331,21 +123,20 @@ fun LibraryScreen(
         }
     }
     LaunchedEffect(nearGridEnd, items.size) {
-        if (kind != "Tracks" && nearGridEnd && initialized && items.isNotEmpty() && items.size < total) {
-            loadMore()
+        if (kind != "Tracks" && nearGridEnd && state.initialized && items.isNotEmpty() && items.size < state.total) {
+            viewModel.loadNextPage()
         }
     }
     LaunchedEffect(nearListEnd, items.size) {
-        if (kind == "Tracks" && nearListEnd && initialized && items.isNotEmpty() && items.size < total) {
-            loadMore()
+        if (kind == "Tracks" && nearListEnd && state.initialized && items.isNotEmpty() && items.size < state.total) {
+            viewModel.loadNextPage()
         }
     }
     // A-Z jump lands on the TOP of the new list; a grid still holding the
     // previous list's deep offset would drop the user in the middle of the
     // "B"s. BACK restores the same key and is deliberately left alone.
-    LaunchedEffect(cacheKey) {
-        if (!justJumped) return@LaunchedEffect
-        justJumped = false
+    LaunchedEffect(state.jumpTick) {
+        if (state.jumpTick == 0) return@LaunchedEffect
         kotlinx.coroutines.delay(50)
         runCatching {
             if (kind == "Tracks") listState.scrollToItem(0) else gridState.scrollToItem(0)
@@ -371,18 +162,10 @@ fun LibraryScreen(
         ) {
             // "Only Atmos" icon pill: Albums + Tracks. Hidden while the Settings
             // preference is on, because that already filters everything.
-            if (atmosCapable && !com.hans.aura.data.AtmosFilter.on) {
+            if (state.atmosCapable && !com.hans.aura.data.AtmosFilter.on) {
                 com.hans.aura.ui.common.AtmosFilterPill(
-                    selected = atmosView,
-                    onClick = {
-                        clearLetter("atmos")
-                        atmosView = !atmosView
-                        LibraryAtmosPrefs.set(kind, atmosView)
-                        android.util.Log.d(
-                            "AURA_ATMOS",
-                            "view=${if (atmosView) "on" else "off"} kind=$kind"
-                        )
-                    }
+                    selected = state.atmosView,
+                    onClick = { viewModel.toggleAtmos() }
                 )
                 Spacer(Modifier.width(12.dp))
             }
@@ -391,14 +174,10 @@ fun LibraryScreen(
             if (kind == "Tracks") {
                 SortPill(
                     label = "Liked",
-                    leadingIcon = if (likedOnly) com.hans.aura.R.drawable.ic_favorite_fill1
+                    leadingIcon = if (state.likedOnly) com.hans.aura.R.drawable.ic_favorite_fill1
                     else com.hans.aura.R.drawable.ic_favorite,
-                    selected = likedOnly,
-                    onClick = {
-                        clearLetter("liked")
-                        likedOnly = !likedOnly
-                        LibraryLikedPrefs.on = likedOnly
-                    }
+                    selected = state.likedOnly,
+                    onClick = { viewModel.toggleLiked() }
                 )
                 Spacer(Modifier.width(18.dp))
             }
@@ -406,37 +185,29 @@ fun LibraryScreen(
             // own screen in the back-stack so BACK returns here.
             if (kind == "Albums" && onOpenGenres != null) {
                 SortPill(
-                        label = "Genres",
-                        leadingIcon = com.hans.aura.R.drawable.ic_category,
-                        selected = false,
-                        onClick = { onOpenGenres() }
-                    )
+                    label = "Genres",
+                    leadingIcon = com.hans.aura.R.drawable.ic_category,
+                    selected = false,
+                    onClick = { onOpenGenres() }
+                )
             }
             sortModesFor(kind).forEach { mode ->
-                val active = mode == sort
+                val active = mode == state.sort
                 SortPill(
                     label = mode.label,
                     trailingIcon = if (active && mode != SortMode.RANDOM) {
-                        if (desc) com.hans.aura.R.drawable.ic_arrow_drop_down
+                        if (state.desc) com.hans.aura.R.drawable.ic_arrow_drop_down
                         else com.hans.aura.R.drawable.ic_arrow_drop_up
                     } else null,
                     selected = active,
-                    onClick = {
-                        clearLetter(mode.label)
-                        if (active && mode != SortMode.RANDOM) desc = !desc
-                        else if (!active) {
-                            sort = mode
-                            desc = mode.defaultDesc
-                            LibrarySortPrefs.set(kind, mode)
-                        }
-                    }
+                    onClick = { viewModel.onSortClick(mode) }
                 )
             }
             // A-Z jump pill: only where the grid is alphabetical (Albums/Artists).
-            if (kind == "Albums" || kind == "Artists") {
+            if (state.azCapable) {
                 SortPill(
-                    label = letter?.let { "A\u2013Z \u00B7 $it" } ?: "A\u2013Z",
-                    selected = azOpen || letter != null,
+                    label = state.letter?.let { "A\u2013Z \u00B7 $it" } ?: "A\u2013Z",
+                    selected = azOpen || state.letter != null,
                     modifier = Modifier.focusRequester(azPillFocus),
                     onClick = { azOpen = !azOpen }
                 )
@@ -462,13 +233,11 @@ fun LibraryScreen(
                 // of a jump is one press instead of leaving the rail open.
                 LetterChip(
                     label = "All",
-                    selected = letter == null,
+                    selected = state.letter == null,
                     modifier = Modifier.focusRequester(railFocus),
                     onClick = {
-                        android.util.Log.d("AURA_AZ", "cleared reason=all kind=$kind was=$letter")
-                        letter = null
                         azOpen = false
-                        justJumped = true
+                        viewModel.clearLetter(null)
                         scope.launch {
                             kotlinx.coroutines.delay(150)
                             runCatching { contentFocus.requestFocus() }
@@ -478,18 +247,13 @@ fun LibraryScreen(
                 AZ_LETTERS.forEach { candidate ->
                     LetterChip(
                         label = candidate,
-                        selected = candidate == letter,
+                        selected = candidate == state.letter,
                         modifier = Modifier,
                         onClick = {
                             // A-Z only means anything on SortName, so the jump
                             // pins the sort; the key changes and page 1 reloads.
                             azOpen = false
-                            letter = candidate
-                            justJumped = true
-                            sort = SortMode.TITLE
-                            desc = false
-                            LibrarySortPrefs.set(kind, SortMode.TITLE)
-                            android.util.Log.d("AURA_AZ", "letter=$candidate kind=$kind")
+                            viewModel.selectLetter(candidate)
                             // The rail disappears when a letter is taken; hand
                             // focus to the grid or the selector is stranded.
                             scope.launch {
@@ -507,118 +271,120 @@ fun LibraryScreen(
                 }
             }
         }
-    Box(Modifier.fillMaxSize().weight(1f)) {
-        when {
-            error != null && items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text("Library error: $error", color = TextPrimary)
-            }
-            !initialized && items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text("Loading\u2026", color = TextSecondary, fontSize = 16.sp)
-            }
-            items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text(
-                    when {
-                        atmosEffective && likedOnly -> "No liked Atmos content here"
-                        atmosEffective && kind == "Tracks" -> "No Atmos tracks here"
-                        atmosEffective -> "No Atmos albums here"
-                        likedOnly -> "No liked songs yet"
-                        else -> "Nothing here"
-                    },
-                    color = TextSecondary, fontSize = 16.sp
+        Box(Modifier.fillMaxSize().weight(1f)) {
+            when {
+                state.error != null && items.isEmpty() -> ErrorPane(
+                    message = "Couldn't load from server",
+                    detail = state.error,
+                    onRetry = { viewModel.retry() }
                 )
-            }
-            kind == "Tracks" -> LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 24.dp)
-                    .focusRequester(contentFocus)
-                    .focusRestorer()
-            ) {
-                itemsIndexed(items) { i, track ->
-                    TrackRow(
-                        index = i + 1,
-                        track = track,
-                        isCurrent = track.id == current?.id,
-                        atmos = track.albumId != null && track.albumId in atmosAlbumIds,
-                        onClick = { player.playQueue(items, i, resume = true) },
-                        focusKeeper = focusKeeper,
-                        onFocused = { focusedId = it },
-                        onLongPress = { trackMenu(track) },
-                        favorite = com.hans.aura.data.Favorites.isFavorite(track),
-                        onToggleFavorite = {
-                            scope.launch {
-                                com.hans.aura.data.Favorites.toggle(
-                                    app.jellyfin.api, session.userId, track
-                                )
-                            }
-                        }
-                    )
+                !state.initialized && items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    androidx.tv.material3.Text("Loading\u2026", color = TextSecondary, fontSize = 16.sp)
                 }
-                item {
-                    Spacer(Modifier.height(60.dp))
+                items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     androidx.tv.material3.Text(
-                        if (items.size < total) "Loading more\u2026" else "${items.size} tracks",
-                        color = TextSecondary, fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 24.dp)
+                        when {
+                            state.atmosEffective && state.likedOnly -> "No liked Atmos content here"
+                            state.atmosEffective && kind == "Tracks" -> "No Atmos tracks here"
+                            state.atmosEffective -> "No Atmos albums here"
+                            state.likedOnly -> "No liked songs yet"
+                            else -> "Nothing here"
+                        },
+                        color = TextSecondary, fontSize = 16.sp
                     )
-                    Spacer(Modifier.height(120.dp))
                 }
-            }
-            else -> LazyVerticalGrid(
-                columns = GridCells.Fixed(5),
-                state = gridState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 32.dp)
-                    .focusRequester(contentFocus)
-                    .focusRestorer(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
-                items(items, key = { "${kind}_${it.id}" }) { item ->
-                    ArtworkCard(
-                        item = item,
-                        serverUrl = session.serverUrl,
-                        size = 210.dp,
-                        badge = if (kind == "Albums" && item.id in atmosAlbumIds) "ATMOS" else null,
-                        focusKeeper = focusKeeper,
-                        onFocused = { focusedId = it },
-                        onLongPress = if (kind != "Artists") {
-                            { albumMenu(item) }
-                        } else null,
-                        favorite = if (kind == "Albums") {
-                            com.hans.aura.data.Favorites.isFavorite(item)
-                        } else null,
-                        onToggleFavorite = if (kind == "Albums") {
-                            {
+                kind == "Tracks" -> LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp)
+                        .focusRequester(contentFocus)
+                        .focusRestorer()
+                ) {
+                    itemsIndexed(items) { i, track ->
+                        TrackRow(
+                            index = i + 1,
+                            track = track,
+                            isCurrent = track.id == current?.id,
+                            atmos = track.albumId?.let { it in state.atmosAlbumIds } == true,
+                            onClick = { player.playQueue(items, i, resume = true) },
+                            focusKeeper = focusKeeper,
+                            onFocused = { focusedId = it },
+                            onLongPress = { trackMenu(track) },
+                            favorite = com.hans.aura.data.Favorites.isFavorite(track),
+                            onToggleFavorite = {
                                 scope.launch {
                                     com.hans.aura.data.Favorites.toggle(
-                                        app.jellyfin.api, session.userId, item
+                                        app.jellyfin.api, session.userId, track
                                     )
                                 }
                             }
-                        } else null
-                    ) {
-                        when (kind) {
-                            "Artists" -> onOpenArtist(item)
-                            else -> onOpenCollection(item)
-                        }
+                        )
                     }
-                }
-                item(span = { GridItemSpan(5) }) {
-                    Column {
-                        Spacer(Modifier.height(24.dp))
+                    item {
+                        Spacer(Modifier.height(60.dp))
                         androidx.tv.material3.Text(
-                            if (items.size < total) "Loading more\u2026"
-                            else "${items.size} ${kind.lowercase()}",
-                            color = TextSecondary, fontSize = 12.sp
+                            if (items.size < state.total) "Loading more\u2026" else "${items.size} tracks",
+                            color = TextSecondary, fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 24.dp)
                         )
                         Spacer(Modifier.height(120.dp))
                     }
                 }
+                else -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(5),
+                    state = gridState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 32.dp)
+                        .focusRequester(contentFocus)
+                        .focusRestorer(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    items(items, key = { "${kind}_${it.id}" }) { item ->
+                        ArtworkCard(
+                            item = item,
+                            serverUrl = session.serverUrl,
+                            size = 210.dp,
+                            badge = if (kind == "Albums" && item.id in state.atmosAlbumIds) "ATMOS" else null,
+                            focusKeeper = focusKeeper,
+                            onFocused = { focusedId = it },
+                            onLongPress = if (kind != "Artists") {
+                                { albumMenu(item) }
+                            } else null,
+                            favorite = if (kind == "Albums") {
+                                com.hans.aura.data.Favorites.isFavorite(item)
+                            } else null,
+                            onToggleFavorite = if (kind == "Albums") {
+                                {
+                                    scope.launch {
+                                        com.hans.aura.data.Favorites.toggle(
+                                            app.jellyfin.api, session.userId, item
+                                        )
+                                    }
+                                }
+                            } else null
+                        ) {
+                            when (kind) {
+                                "Artists" -> onOpenArtist(item)
+                                else -> onOpenCollection(item)
+                            }
+                        }
+                    }
+                    item(span = { GridItemSpan(5) }) {
+                        Column {
+                            Spacer(Modifier.height(24.dp))
+                            androidx.tv.material3.Text(
+                                if (items.size < state.total) "Loading more\u2026"
+                                else "${items.size} ${kind.lowercase()}",
+                                color = TextSecondary, fontSize = 12.sp
+                            )
+                            Spacer(Modifier.height(120.dp))
+                        }
+                    }
+                }
             }
-        }
         }
     }
 }
@@ -724,72 +490,4 @@ private fun LetterChip(
             color = if (selected) androidx.compose.ui.graphics.Color(0xFF191410) else TextPrimary
         )
     }
-}
-
-/**
- * Page of the Albums/Artists grid that STARTS at [letter]
- * (Jellyfin's `nameStartsWithOrGreater`, compared against SortName).
- *
- * Browse queries must honour the hidden-library selection, and
- * data/LibraryFilter.kt (owned elsewhere) does not pass this parameter through,
- * so the jump re-uses LibraryFilter's public view of the selection and fans out
- * per visible music library itself. With nothing hidden it is a single query.
- */
-private suspend fun pageFromLetter(
-    api: com.hans.aura.data.JellyfinApi,
-    userId: String,
-    kind: String,
-    letter: String,
-    limit: Int,
-    startIndex: Int
-): com.hans.aura.data.ItemsResponse {
-    suspend fun onePage(
-        parentId: String?,
-        start: Int,
-        size: Int
-    ): com.hans.aura.data.ItemsResponse =
-        if (kind == "Artists") {
-            api.getAlbumArtists(
-                userId = userId,
-                sortBy = "SortName",
-                sortOrder = "Ascending",
-                limit = size,
-                startIndex = start,
-                fields = "PrimaryImageAspectRatio",
-                imageTypeLimit = 1,
-                parentId = parentId,
-                nameStartsWithOrGreater = letter
-            )
-        } else {
-            api.getItems(
-                userId = userId,
-                includeItemTypes = "MusicAlbum",
-                recursive = true,
-                sortBy = "SortName",
-                sortOrder = "Ascending",
-                limit = size,
-                startIndex = start,
-                parentId = parentId,
-                nameStartsWithOrGreater = letter
-            )
-        }
-
-    if (!com.hans.aura.data.LibraryFilter.isActive()) return onePage(null, startIndex, limit)
-
-    val libs = com.hans.aura.data.LibraryFilter.visibleLibraries().filter {
-        it.collectionType == null || it.collectionType.equals("music", ignoreCase = true)
-    }
-    if (libs.isEmpty()) return com.hans.aura.data.ItemsResponse()
-    val wanted = startIndex + limit
-    val responses = libs.mapNotNull { lib ->
-        runCatching { onePage(lib.id, 0, wanted) }.getOrNull()
-    }
-    val all = responses.flatMap { it.items }
-        .distinctBy { it.id }
-        .sortedBy { (it.sortName ?: it.name).lowercase() }
-    return com.hans.aura.data.ItemsResponse(
-        items = all.drop(startIndex).take(limit),
-        totalRecordCount = responses.sumOf { it.totalRecordCount },
-        startIndex = startIndex
-    )
 }

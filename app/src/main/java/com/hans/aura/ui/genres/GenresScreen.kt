@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,12 +38,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LibraryCache
-import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.Mixes
 import com.hans.aura.ui.common.ArtworkCard
+import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
@@ -59,11 +60,11 @@ import kotlinx.coroutines.launch
  * Music genres, reached from the Genres pill inside the Albums tab (not a sixth
  * top-bar tab — five tabs + pill + two icon buttons already fill 960dp).
  *
- * The genre list comes from the library's own items: there is no
+ * The genre list comes from the library's own tracks: there is no
  * GET /MusicGenres collection endpoint in the 12.4.0 spec (only
  * /MusicGenres/{name} and /MusicGenres/{name}/InstantMix), so it is
- * `getItems(IncludeItemTypes=MusicGenre)` through LibraryFilter, exactly like
- * every other browse query, which keeps hidden libraries hidden.
+ * `getItems(IncludeItemTypes=Audio, Fields=Genres)` through LibraryFilter,
+ * exactly like every other browse query, which keeps hidden libraries hidden.
  */
 @Composable
 fun GenresScreen(
@@ -72,21 +73,14 @@ fun GenresScreen(
     onBack: () -> Unit,
     onOpenGenre: (String) -> Unit,
     focusTick: Int = 0,
-    initialFocus: Boolean = false
+    initialFocus: Boolean = false,
+    viewModel: GenresViewModel = viewModel(
+        key = "genres:${app.jellyfin.auth.session?.userId ?: "anon"}",
+        factory = viewModelFactory { initializer { GenresViewModel(app) } }
+    )
 ) {
-    val session = app.jellyfin.auth.session!!
-    var genres by remember { mutableStateOf(LibraryCache.get("genres:${session.userId}")) }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(Unit) {
-        if (genres != null) return@LaunchedEffect
-        runCatching {
-            loadGenres(app.jellyfin.api, session.userId)
-        }.onSuccess {
-            LibraryCache.put("genres:${session.userId}", it)
-            genres = it
-        }.onFailure { error = it.message }
-    }
+    app.jellyfin.auth.session ?: return
+    val state by viewModel.state.collectAsState()
 
     val contentFocus = remember { FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
@@ -96,14 +90,17 @@ fun GenresScreen(
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(title = "Genres", onBack = onBack)
+        val genres = state.genres
         when {
-            error != null && genres == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text("Library error: $error", color = TextPrimary)
-            }
+            genres == null && state.error != null -> ErrorPane(
+                message = "Couldn't load from server",
+                detail = state.error,
+                onRetry = { viewModel.retry() }
+            )
             genres == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text("Loading\u2026", color = TextSecondary, fontSize = 16.sp)
             }
-            genres!!.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+            genres.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text("No genres", color = TextSecondary, fontSize = 16.sp)
             }
             else -> LazyVerticalGrid(
@@ -117,7 +114,7 @@ fun GenresScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(genres!!, key = { "genre_${it.id}" }) { genre ->
+                items(genres, key = { "genre_${it.id}" }) { genre ->
                     GenreTile(
                         name = genre.name,
                         focusKeeper = focusKeeper,
@@ -147,12 +144,14 @@ fun GenreScreen(
     onBack: () -> Unit,
     onOpenCollection: (JellyfinItem) -> Unit,
     focusTick: Int = 0,
-    initialFocus: Boolean = false
+    initialFocus: Boolean = false,
+    viewModel: GenreAlbumsViewModel = viewModel(
+        key = "genre:$genreName:${app.jellyfin.auth.session?.userId ?: "anon"}",
+        factory = viewModelFactory { initializer { GenreAlbumsViewModel(app, genreName) } }
+    )
 ) {
-    val session = app.jellyfin.auth.session!!
-    var albums by remember(genreName) { mutableStateOf(LibraryCache.get("genre_albums:$genreName")) }
-    var tracks by remember(genreName) { mutableStateOf(LibraryCache.get("genre_tracks:$genreName")) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val session = app.jellyfin.auth.session ?: return
+    val state by viewModel.state.collectAsState()
     var radioBusy by remember { mutableStateOf(false) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val current by player.current.collectAsState()
@@ -163,44 +162,6 @@ fun GenreScreen(
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val contentFocus = remember { FocusRequester() }
     val radioFocus = remember { FocusRequester() }
-
-    LaunchedEffect(genreName) {
-        if (albums != null && tracks != null) return@LaunchedEffect
-        runCatching {
-            if (albums == null) {
-                LibraryFilter.queryItems(
-                    app.jellyfin.api, session.userId,
-                    LibraryFilter.ItemsQuery(
-                        includeItemTypes = "MusicAlbum",
-                        genres = genreName,
-                        recursive = true,
-                        sortBy = "SortName",
-                        sortOrder = "Ascending",
-                        limit = 200
-                    )
-                ).items.also {
-                    LibraryCache.put("genre_albums:$genreName", it)
-                    albums = it
-                }
-            }
-            if (tracks == null) {
-                LibraryFilter.queryItems(
-                    app.jellyfin.api, session.userId,
-                    LibraryFilter.ItemsQuery(
-                        includeItemTypes = "Audio",
-                        genres = genreName,
-                        recursive = true,
-                        sortBy = "SortName",
-                        sortOrder = "Ascending",
-                        limit = 100
-                    )
-                ).items.also {
-                    LibraryCache.put("genre_tracks:$genreName", it)
-                    tracks = it
-                }
-            }
-        }.onFailure { error = it.message }
-    }
 
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
     com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, radioFocus)
@@ -216,8 +177,8 @@ fun GenreScreen(
                 androidx.tv.material3.Text(genreName, fontSize = 34.sp, color = TextPrimary)
                 androidx.tv.material3.Text(
                     listOfNotNull(
-                        albums?.let { "${it.size} albums" },
-                        tracks?.let { "${it.size} tracks" }
+                        state.albums?.let { "${it.size} albums" },
+                        state.tracks?.let { "${it.size} tracks" }
                     ).joinToString(" \u00B7 "),
                     fontSize = 13.sp, color = TextSecondary
                 )
@@ -249,13 +210,15 @@ fun GenreScreen(
             }
         }
 
-        val albumList = (albums ?: emptyList()).let { com.hans.aura.data.AtmosFilter.albums(it) }
-        val trackList = (tracks ?: emptyList()).let { com.hans.aura.data.AtmosFilter.tracks(it) }
+        val albumList = state.visibleAlbums
+        val trackList = state.visibleTracks
         when {
-            error != null && albums == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text("Library error: $error", color = TextPrimary)
-            }
-            albums == null && tracks == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+            state.loading && state.error != null -> ErrorPane(
+                message = "Couldn't load from server",
+                detail = state.error,
+                onRetry = { viewModel.retry() }
+            )
+            state.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text("Loading\u2026", color = TextSecondary, fontSize = 16.sp)
             }
             albumList.isNotEmpty() -> LazyVerticalGrid(
@@ -382,63 +345,5 @@ private fun RadioButton(label: String, modifier: Modifier = Modifier, onClick: (
             fontSize = 15.sp,
             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
         )
-    }
-}
-
-/**
- * Genres of the MUSIC libraries only.
- *
- * `getItems(IncludeItemTypes=MusicGenre)` is not a "music" item type for
- * LibraryFilter's per-library strategy (data/LibraryFilter.kt is owned
- * elsewhere), so an unscoped query also returns movie/TV genres — "Drama",
- * "Action" and friends would sit in the genre grid. Scoping each query to the
- * visible music libraries' roots keeps the list musical and keeps hidden
- * libraries hidden. With no known library list (first run, before /UserViews is
- * cached) it falls back to the single unfiltered query.
- */
-private suspend fun loadGenres(
-    api: com.hans.aura.data.JellyfinApi,
-    userId: String
-): List<JellyfinItem> {
-    // Built from the genre strings the tracks actually carry, NOT from the
-    // server's MusicGenre table: that table keeps every genre the library has
-    // ever seen (264 entries here, most of them matching nothing), and the
-    // `Genres=` filter compares the FULL string, so half its entries open an
-    // empty screen. Scanning Audio costs a few pages once per cache TTL and
-    // every entry it produces is guaranteed to have music behind it.
-    val names = LinkedHashSet<String>()
-    var start = 0
-    var total = Int.MAX_VALUE
-    var pages = 0
-    while (start < total && pages < 12) {
-        val result = runCatching {
-            com.hans.aura.data.LibraryFilter.queryItems(
-                api, userId,
-                com.hans.aura.data.LibraryFilter.ItemsQuery(
-                    includeItemTypes = "Audio",
-                    recursive = true,
-                    sortBy = "SortName",
-                    sortOrder = "Ascending",
-                    limit = 500,
-                    startIndex = start,
-                    fields = "Genres"
-                )
-            )
-        }.getOrNull() ?: break
-        result.items.forEach { item ->
-            item.genres.orEmpty().forEach { g ->
-                g.trim().takeIf { it.isNotBlank() }?.let(names::add)
-            }
-        }
-        if (result.items.isEmpty()) break
-        total = result.totalRecordCount
-        start += result.items.size
-        pages++
-    }
-    android.util.Log.i("AURA_GENRES", "scanned=$start distinct=${names.size} pages=$pages")
-    return names.sortedBy { it.lowercase() }.map { name ->
-        // A synthetic item: the grid only needs a stable id and a label, and
-        // the real id would collide with a library item's.
-        JellyfinItem(id = "genre:$name", name = name, type = "MusicGenre")
     }
 }

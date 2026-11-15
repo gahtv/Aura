@@ -65,6 +65,10 @@ fun PlaylistPickerDialog(
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    // Every mutation below needs a user id; without a session there is nothing
+    // to add to, so the dialog simply does not render (it can only be opened
+    // while signed in).
+    val userId = app.jellyfin.auth.session?.userId ?: return
     // BACK dismisses the dialog; without this it pops the screen underneath.
     androidx.activity.compose.BackHandler { onDismiss() }
     // Pull focus INTO the dialog immediately and trap it here — otherwise the
@@ -100,11 +104,11 @@ fun PlaylistPickerDialog(
                     app.jellyfin.api.createPlaylist(
                         name = name,
                         ids = tracksToAdd.joinToString(",") { it.id },
-                        userId = app.jellyfin.auth.session!!.userId,
+                        userId = userId,
                         body = com.hans.aura.data.PlaylistRequest(
                             name = name,
                             ids = tracksToAdd.map { it.id },
-                            userId = app.jellyfin.auth.session!!.userId
+                            userId = userId
                         )
                     )
                 }.onSuccess { created ->
@@ -112,11 +116,14 @@ fun PlaylistPickerDialog(
                         "AURA_MENU",
                         "picker created playlist \"$name\" (${created.id}) with ${tracksToAdd.size} track(s)"
                     )
-                    LibraryCache.evict("home_playlists:${app.jellyfin.auth.session!!.userId}")
+                    LibraryCache.evict("home_playlists:$userId")
                     onDismiss()
                 }.onFailure { e ->
+                    // Surface it in the dialog: closing on failure looked like
+                    // success (Retrofit bodies throw, but the dialog vanished
+                    // before anyone could read the log).
                     android.util.Log.w("AURA_MENU", "create playlist failed: ${e.message}")
-                    status = "Could not create playlist: ${e.message}"
+                    status = "Could not create playlist: ${e.message ?: "server rejected it"}"
                     creating = false
                 }
             }
@@ -136,13 +143,13 @@ fun PlaylistPickerDialog(
     LaunchedEffect(Unit) {
         runCatching {
             app.jellyfin.api.getItems(
-                userId = app.jellyfin.auth.session!!.userId,
+                userId = userId,
                 includeItemTypes = "Playlist", recursive = true,
                 sortBy = "SortName", limit = 100
             ).items
         }.onSuccess {
             playlists = it
-            LibraryCache.put("home_playlists:${app.jellyfin.auth.session!!.userId}", it)
+            LibraryCache.put("home_playlists:$userId", it)
         }.onFailure { playlists = emptyList() }
     }
 
@@ -235,10 +242,10 @@ fun PlaylistPickerDialog(
                 Spacer(Modifier.height(12.dp))
             }
 
-            when (playlists) {
+            when (val loaded = playlists) {
                 null -> androidx.tv.material3.Text("Loading playlists\u2026", color = TextSecondary)
                 else -> {
-                    if (playlists!!.isEmpty() && creatingName == null) {
+                    if (loaded.isEmpty() && creatingName == null) {
                         androidx.tv.material3.Text(
                             "No playlists yet \u2014 create one above",
                             color = TextSecondary
@@ -253,7 +260,7 @@ fun PlaylistPickerDialog(
                             .verticalScroll(rememberScrollState())
                             .background(Border.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
                     ) {
-                        playlists!!.forEach { pl ->
+                        loaded.forEach { pl ->
                             var rowFocused by remember(pl.id) { mutableStateOf(false) }
                             Box(
                                 Modifier
@@ -275,7 +282,7 @@ fun PlaylistPickerDialog(
                                                 val resp = app.jellyfin.api.addToPlaylist(
                                                     playlistId = pl.id,
                                                     ids = tracksToAdd.joinToString(",") { it.id },
-                                                    userId = app.jellyfin.auth.session!!.userId
+                                                    userId = userId
                                                 )
                                                 // Retrofit's Response<T> does NOT throw on
                                                 // 4xx/5xx — without this check a rejected
@@ -296,9 +303,7 @@ fun PlaylistPickerDialog(
                                                     "picker added ${tracksToAdd.size} track(s) to \"${pl.name}\" (${pl.id})"
                                                 )
                                                 LibraryCache.evict("col:${pl.id}")
-                                                LibraryCache.evict(
-                                                    "home_playlists:${app.jellyfin.auth.session!!.userId}"
-                                                )
+                                                LibraryCache.evict("home_playlists:$userId")
                                                 onDismiss()
                                             }.onFailure { e ->
                                                 android.util.Log.w(

@@ -24,11 +24,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,15 +37,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.hans.aura.data.AuthStore
 import com.hans.aura.ui.theme.darken
 import com.hans.aura.ui.theme.rememberDynamicColors
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LibraryCache
-import com.hans.aura.data.LibraryFilter
 import com.hans.aura.ui.common.ArtworkCard
+import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Surface
@@ -65,27 +65,24 @@ fun ArtistScreen(
     initialFocus: Boolean = false,
     onOpenCollection: (JellyfinItem) -> Unit,
     // Similar artists open as another artist page (same screen, pushed).
-    onOpenArtist: (JellyfinItem) -> Unit = {}
+    onOpenArtist: (JellyfinItem) -> Unit = {},
+    // Keyed per artist AND per session: the Activity owns the ViewModelStore
+    // (AppRoot's back-stack is manual), so a key collision would serve one
+    // artist's albums on another's page.
+    viewModel: ArtistViewModel = viewModel(
+        key = "artist:${artist.id}:${app.jellyfin.auth.session?.userId ?: "anon"}",
+        factory = viewModelFactory { initializer { ArtistViewModel(app, artist.id) } }
+    )
 ) {
-    val session = app.jellyfin.auth.session!!
-    var albums by remember { mutableStateOf(LibraryCache.get("artist_albums:${artist.id}")) }
-    var topTracks by remember { mutableStateOf(LibraryCache.get("artist_top:${artist.id}")) }
-    // GET /Artists/{itemId}/Similar (userId, limit) — the same collaboration
-    // graph Jellyfin Web's "Similar artists" row uses.
-    var similar by remember { mutableStateOf(LibraryCache.get("artist_similar:${artist.id}")) }
-    var overview by remember { mutableStateOf<String?>(null) }
-    // The screen is often entered with a STUB artist (id + name only, e.g. from
-    // "View artist" in a context menu), which carries no PrimaryImageTag — so
-    // the dynamic palette would have no image to read. The getItem call below
-    // resolves the real item; keep it and prefer it for art/name.
-    var fetchedArtist by remember(artist.id) { mutableStateOf<JellyfinItem?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val session = app.jellyfin.auth.session ?: return
+    val state by viewModel.state.collectAsState()
     val current by player.current.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val atmosAlbumIds = com.hans.aura.ui.common.rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
 
     // Dynamic color wash from the artist image, kept dark for text contrast.
-    val shownArtist = fetchedArtist ?: artist
+    // The hydrated item is preferred: a stub artist (id + name only) carries no
+    // PrimaryImageTag, so the palette would have nothing to read.
+    val shownArtist = state.fetchedArtist ?: artist
     val artUrl = shownArtist.primaryImageTag?.let {
         AuthStore.imageUrl(session.serverUrl, shownArtist.id, it, maxWidth = 480)
     }
@@ -94,71 +91,8 @@ fun ArtistScreen(
     // current-track highlights on this screen only; secondary is already
     // contrast-corrected by ensureReadable() so it reads on the dark wash.
     val accent = dyn?.secondary ?: com.hans.aura.ui.theme.Accent
-    // "Only Atmos" for THIS artist: filters the albums row and the top tracks by
-    // the album ids already loaded for the ATMOS badges, so it costs no request.
-    // The Settings preference does the same thing app-wide.
-    var atmosView by remember { mutableStateOf(false) }
-    val atmosOnly = atmosView || com.hans.aura.data.AtmosFilter.on
+    val atmosAlbumIds = state.atmosAlbumIds
     var showBioDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(artist.id) {
-        runCatching {
-            app.jellyfin.api.getItem(session.userId, artist.id)
-        }.onSuccess { full ->
-            fetchedArtist = full
-            overview = full.overview?.takeIf { o -> o.isNotBlank() }
-        }
-
-        if (similar == null) {
-            runCatching {
-                app.jellyfin.api.getSimilarArtists(artist.id, session.userId, limit = 20).items
-            }.onSuccess {
-                android.util.Log.i("AURA_SIMILAR", "artist=${artist.id} n=${it.size}")
-                LibraryCache.put("artist_similar:${artist.id}", it)
-                similar = it
-            }.onFailure {
-                android.util.Log.w("AURA_SIMILAR", "artist=${artist.id} failed: ${it.message}")
-            }
-        }
-
-        if (albums != null && topTracks != null) return@LaunchedEffect
-        runCatching {
-            val api = app.jellyfin.api
-            if (albums == null) {
-                LibraryFilter.queryItems(
-                    api, session.userId,
-                    LibraryFilter.ItemsQuery(
-                        includeItemTypes = "MusicAlbum",
-                        albumArtistIds = artist.id, recursive = true,
-                        sortBy = "ProductionYear", sortOrder = "Descending", limit = 100
-                    )
-                ).items.also {
-                    LibraryCache.put("artist_albums:${artist.id}", it)
-                    albums = it
-                }
-            }
-            if (topTracks == null) {
-                LibraryFilter.queryItems(
-                    api, session.userId,
-                    LibraryFilter.ItemsQuery(
-                        includeItemTypes = "Audio",
-                        albumArtistIds = artist.id, recursive = true,
-                        sortBy = "PlayCount", sortOrder = "Descending", limit = 10
-                    )
-                ).items.also {
-                    LibraryCache.put("artist_top:${artist.id}", it)
-                    topTracks = it
-                }
-            }
-        }.onFailure { error = it.message }
-    }
-
-    LaunchedEffect(albums, atmosAlbumIds, atmosOnly) {
-        android.util.Log.d(
-            "AURA_ARTIST",
-            "state albums=${albums?.size ?: -1} atmos=${atmosAlbumIds.size} atmosOnly=$atmosOnly"
-        )
-    }
 
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
@@ -218,7 +152,7 @@ fun ArtistScreen(
         ) {
             Column(Modifier.weight(1f)) {
                 androidx.tv.material3.Text(shownArtist.name, fontSize = 36.sp, color = TextPrimary)
-                overview?.let { bio ->
+                state.overview?.let { bio ->
                     androidx.tv.material3.Text(
                         bio,
                         fontSize = 13.sp, color = TextPrimary,
@@ -236,15 +170,9 @@ fun ArtistScreen(
             // on, since that already removes every non-Atmos album here.
             if (!com.hans.aura.data.AtmosFilter.on) {
                 com.hans.aura.ui.common.AtmosFilterPill(
-                    selected = atmosView,
+                    selected = state.atmosView,
                     accent = accent,
-                    onClick = {
-                        atmosView = !atmosView
-                        android.util.Log.d(
-                            "AURA_ATMOS",
-                            "view=${if (atmosView) "on" else "off"} kind=artist artist=${artist.id}"
-                        )
-                    }
+                    onClick = { viewModel.toggleAtmos() }
                 )
                 Spacer(Modifier.width(12.dp))
             }
@@ -268,10 +196,12 @@ fun ArtistScreen(
             }
         }
 
-        if (error != null) {
-            Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text("Library error: $error", color = TextPrimary)
-            }
+        if (state.error != null && !state.hasContent) {
+            ErrorPane(
+                message = "Couldn't load from server",
+                detail = state.error,
+                onRetry = { viewModel.retry() }
+            )
             return@Column
         }
 
@@ -293,16 +223,11 @@ fun ArtistScreen(
             // anchored, which pushed the albums row off the top on entry.
             item(key = "albums") {
                 Column {
-                    val list = albums
                     // NO dedupe (user decision 2026-11-15): the FLAC copy in
                     // "Music" and the E-AC-3 JOC copy in "Atmos Content" are two
                     // albums, and hiding one made the Atmos release disappear.
                     // "Only Atmos" is a FILTER (settings switch + icon pill).
-                    val visibleAlbums = when {
-                        list == null -> emptyList()
-                        atmosOnly -> list.filter { it.id in atmosAlbumIds }
-                        else -> list
-                    }
+                    val visibleAlbums = state.visibleAlbums
                     if (visibleAlbums.isNotEmpty()) {
                         SectionHeader("Albums", accent)
                         Spacer(Modifier.height(12.dp))
@@ -337,7 +262,7 @@ fun ArtistScreen(
 
             item(key = "similar") {
                 Column {
-                    val list = similar
+                    val list = state.similar
                     if (!list.isNullOrEmpty()) {
                         com.hans.aura.ui.common.ItemShelf(
                             title = "Similar artists",
@@ -354,55 +279,48 @@ fun ArtistScreen(
                 }
             }
 
-            topTracks?.let { list ->
-                val deduped = list.distinctBy { it.name.lowercase() to it.albumId }
-                // Atmos tracks are identified by their ALBUM id: the FLAC and the
-                // Atmos copy are different albums, so `albumId in atmosAlbumIds`
-                // picks exactly the Atmos performances without a second scan.
-                val visibleTracks = if (atmosOnly) {
-                    deduped.filter { it.albumId != null && it.albumId in atmosAlbumIds }
-                } else deduped
-                if (visibleTracks.isNotEmpty()) {
-                    item(key = "topHeader") {
-                        Column {
-                            SectionHeader("Top tracks", accent)
-                            Spacer(Modifier.height(8.dp))
-                        }
+            val visibleTracks = state.visibleTopTracks
+            if (visibleTracks.isNotEmpty()) {
+                item(key = "topHeader") {
+                    Column {
+                        SectionHeader("Top tracks", accent)
+                        Spacer(Modifier.height(8.dp))
                     }
-                    itemsIndexed(visibleTracks, key = { _, t -> "top_${t.id}" }) { i, track ->
-                        TrackRow(
-                            index = i + 1,
-                            track = track,
-                            isCurrent = track.id == current?.id,
-                            atmos = track.albumId != null && track.albumId in atmosAlbumIds,
-                            accent = accent,
-                            onClick = { player.playQueue(visibleTracks, i, resume = true) },
-                            focusKeeper = focusKeeper,
-                            onFocused = {
-                                focusedId = it
-                                logFocus("top", it)
-                            },
-                            onLongPress = {
-                                com.hans.aura.ui.common.ContextMenuHost.open(
-                                    com.hans.aura.ui.common.ContextMenus.forTrack(
-                                        app, player, scope, track,
-                                        onOpenArtist = null, onOpenCollection = onOpenCollection
-                                    )
-                                )
-                            }
-                        )
-                    }
-                    item(key = "bottomSpacer") { Spacer(Modifier.height(120.dp)) }
                 }
+                itemsIndexed(visibleTracks, key = { _, t -> "top_${t.id}" }) { i, track ->
+                    TrackRow(
+                        index = i + 1,
+                        track = track,
+                        isCurrent = track.id == current?.id,
+                        atmos = track.albumId?.let { it in atmosAlbumIds } == true,
+                        accent = accent,
+                        onClick = { player.playQueue(visibleTracks, i, resume = true) },
+                        focusKeeper = focusKeeper,
+                        onFocused = {
+                            focusedId = it
+                            logFocus("top", it)
+                        },
+                        onLongPress = {
+                            com.hans.aura.ui.common.ContextMenuHost.open(
+                                com.hans.aura.ui.common.ContextMenus.forTrack(
+                                    app, player, scope, track,
+                                    onOpenArtist = null, onOpenCollection = onOpenCollection
+                                )
+                            )
+                        }
+                    )
+                }
+                item(key = "bottomSpacer") { Spacer(Modifier.height(120.dp)) }
             }
         }
         }
 
+        val overview = state.overview
         if (showBioDialog && overview != null) {
             com.hans.aura.ui.common.BioDialog(
                 title = shownArtist.name,
                 subtitle = "Artist",
-                text = overview!!,
+                text = overview,
                 onDismiss = { showBioDialog = false }
             )
         }

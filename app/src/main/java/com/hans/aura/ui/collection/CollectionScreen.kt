@@ -20,9 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,12 +35,15 @@ import com.hans.aura.ui.theme.rememberDynamicColors
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.Mixes
+import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.nowplaying.AtmosBadge
 import kotlinx.coroutines.launch
@@ -64,29 +65,27 @@ fun CollectionScreen(
     onBack: () -> Unit,
     focusTick: Int = 0,
     initialFocus: Boolean = false,
-    onOpenArtist: (JellyfinItem) -> Unit = {}
+    onOpenArtist: (JellyfinItem) -> Unit = {},
+    viewModel: CollectionViewModel = viewModel(
+        key = "collection:${collection.id}:${app.jellyfin.auth.session?.userId ?: "anon"}",
+        factory = viewModelFactory {
+            initializer { CollectionViewModel(app, collection.id, collection.type) }
+        }
+    )
 ) {
-    val session = app.jellyfin.auth.session!!
-    var tracks by remember { mutableStateOf(LibraryCache.get("col:${collection.id}")) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var refresh by remember { mutableStateOf(0) }
-    var overview by remember { mutableStateOf<String?>(null) }
-    // Same stub problem as the artist page: coming from a JumpText/context menu
-    // gives an id+name item with no ImageTags, so the palette would have nothing
-    // to read and the page fell back to the app amber. Keep the fetched item.
-    var fullItem by remember(collection.id) { mutableStateOf<JellyfinItem?>(null) }
+    val session = app.jellyfin.auth.session ?: return
+    val state by viewModel.state.collectAsState()
+    val tracks = state.tracks
     var showBio by remember { mutableStateOf(false) }
     val currentId by player.current.collectAsState()
     // Playlist rows sit outside album context, so they carry per-track Atmos
     // chips (album detail pages derive their badge in the header instead).
-    val atmosAlbumIds = if (collection.type == "Playlist") {
-        com.hans.aura.ui.common.rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
-    } else emptySet()
+    val atmosAlbumIds = if (collection.type == "Playlist") state.atmosAlbumIds else emptySet()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     // Dynamic color wash from the album art. Kept dark for text contrast;
     // a scrim sits behind the header text so bright artwork stays readable.
-    val shown = fullItem ?: collection
+    val shown = state.fullItem ?: collection
     val artUrl = shown.primaryImageTag?.let {
         AuthStore.imageUrl(session.serverUrl, shown.id, it, maxWidth = 480)
     }
@@ -95,31 +94,6 @@ fun CollectionScreen(
     // badge) so the screen matches its own cover instead of the app amber.
     val dyn = rememberDynamicColors(artUrl)
     val accent = dyn?.secondary ?: com.hans.aura.ui.theme.Accent
-
-    LaunchedEffect(collection.id, refresh) {
-        runCatching {
-            app.jellyfin.api.getItem(session.userId, collection.id)
-        }.onSuccess {
-            fullItem = it
-            overview = it.overview?.takeIf { o -> o.isNotBlank() }
-        }
-
-        if (refresh == 0 && tracks != null) return@LaunchedEffect
-        runCatching {
-            val result = when (collection.type) {
-                "Playlist" -> app.jellyfin.api.getPlaylistItems(
-                    playlistId = collection.id, userId = session.userId
-                )
-                else -> app.jellyfin.api.getItems(
-                    userId = session.userId, parentId = collection.id,
-                    includeItemTypes = "Audio", sortBy = "ParentIndexNumber,IndexNumber,SortName",
-                    limit = 500
-                )
-            }
-            LibraryCache.put("col:${collection.id}", result.items)
-            tracks = result.items
-        }.onFailure { error = it.message }
-    }
 
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val playButtonFocus = remember { androidx.compose.ui.focus.FocusRequester() }
@@ -226,7 +200,7 @@ fun CollectionScreen(
                             AtmosBadge(color = accent)
                         }
                     }
-                    overview?.let { bio ->
+                    state.overview?.let { bio ->
                         Row(
                             Modifier
                                 .padding(top = 10.dp)
@@ -296,13 +270,15 @@ fun CollectionScreen(
             tracks?.let { com.hans.aura.data.AtmosFilter.tracks(it) }
         } else tracks
         when {
-            error != null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text("Could not load: $error", color = TextPrimary)
-            }
-            tracks == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+            state.error != null && shownTracks == null -> ErrorPane(
+                message = "Couldn't load from server",
+                detail = state.error,
+                onRetry = { viewModel.retry() }
+            )
+            shownTracks == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text("Loading\u2026", color = TextSecondary)
             }
-            shownTracks!!.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+            shownTracks.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text(
                     if (atmosFiltered) "No Atmos tracks in this album" else "Empty",
                     color = TextSecondary
@@ -314,26 +290,17 @@ fun CollectionScreen(
                     .focusRequester(contentFocus)
                     .focusRestorer()
             ) {
-                itemsIndexed(shownTracks!!) { i, track ->
+                itemsIndexed(shownTracks) { i, track ->
                     val removeFromPlaylist: (() -> Unit)? = if (collection.type == "Playlist") {
-                        {
-                            scope.launch {
-                                runCatching {
-                                    app.jellyfin.api.removeFromPlaylist(collection.id, track.id)
-                                }.onSuccess {
-                                    LibraryCache.evict("col:${collection.id}")
-                                    refresh++
-                                }
-                            }
-                        }
+                        { viewModel.removeFromPlaylist(track.id) }
                     } else null
                     TrackRow(
                         index = i + 1,
                         track = track,
                         isCurrent = track.id == currentId?.id,
-                        atmos = track.albumId != null && track.albumId in atmosAlbumIds,
+                        atmos = track.albumId?.let { it in atmosAlbumIds } == true,
                         accent = accent,
-                        onClick = { player.playQueue(shownTracks!!, i, resume = true) },
+                        onClick = { player.playQueue(shownTracks, i, resume = true) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedTrackId = it },
                         onRemove = removeFromPlaylist,
@@ -353,8 +320,8 @@ fun CollectionScreen(
                                             playlistId = collection.id,
                                             itemId = track.id,
                                             index = i,
-                                            size = tracks!!.size,
-                                            onMoved = { refresh++ }
+                                            size = shownTracks.size,
+                                            onMoved = { viewModel.refresh() }
                                         )
                                     } else null
                                 )
@@ -367,11 +334,12 @@ fun CollectionScreen(
         }
         }
 
+        val overview = state.overview
         if (showBio && overview != null) {
             com.hans.aura.ui.common.BioDialog(
                 title = collection.name,
                 subtitle = collection.albumArtist,
-                text = overview!!,
+                text = overview,
                 onDismiss = { showBio = false }
             )
         }

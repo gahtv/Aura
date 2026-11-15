@@ -33,7 +33,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,11 +49,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.tv.material3.Button
 import androidx.tv.material3.Text
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.Prefs
+import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.FocusKeeper
 import com.hans.aura.ui.common.ItemShelf
 import com.hans.aura.ui.common.contextMenuKeys
@@ -77,21 +79,18 @@ fun SearchScreen(
     player: PlayerConnection,
     onBack: () -> Unit,
     onOpenCollection: (JellyfinItem) -> Unit,
-    onOpenArtist: (JellyfinItem) -> Unit
+    onOpenArtist: (JellyfinItem) -> Unit,
+    viewModel: SearchViewModel = viewModel(
+        key = "search:${app.jellyfin.auth.session?.userId ?: "anon"}",
+        factory = viewModelFactory { initializer { SearchViewModel(app) } }
+    )
 ) {
-    val session = app.jellyfin.auth.session!!
-    var query by rememberSaveable { mutableStateOf("") }
-    var tracks by remember { mutableStateOf<List<JellyfinItem>?>(null) }
-    var albums by remember { mutableStateOf<List<JellyfinItem>?>(null) }
-    var artists by remember { mutableStateOf<List<JellyfinItem>?>(null) }
-    var searching by remember { mutableStateOf(false) }
-    // Bumped on every submit so ENTER re-runs a search whose query did not
-    // change (live-as-you-type already covers the changing case).
-    var searchTick by remember { mutableIntStateOf(0) }
+    val session = app.jellyfin.auth.session ?: return
+    val state by viewModel.state.collectAsState()
+    val query = state.query
     // Bumped when focus has to be placed back in the field (after a chip tap
     // makes the chip row disappear).
     var focusFieldTick by remember { mutableIntStateOf(0) }
-    var recentSearches by remember { mutableStateOf(Prefs.recentSearches()) }
     var voiceMessage by remember { mutableStateOf<String?>(null) }
     val current by player.current.collectAsState()
     val atmosAlbumIds = rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
@@ -100,16 +99,8 @@ fun SearchScreen(
     val context = LocalContext.current
 
     // Debug hook: the parent verifies chip state from logcat.
-    LaunchedEffect(recentSearches) {
-        Log.d("AURA_SEARCH", "history=${recentSearches.size}")
-    }
-
-    /** Submit [raw]: record history, log the AURA_SEARCH hook, re-run. */
-    fun submit(raw: String) {
-        val q = raw.trim()
-        if (q.length >= 2) recentSearches = Prefs.addRecentSearch(q)
-        Log.d("AURA_SEARCH", "query=$q recent=${recentSearches.size}")
-        searchTick++
+    LaunchedEffect(state.recentSearches) {
+        Log.d("AURA_SEARCH", "history=${state.recentSearches.size}")
     }
 
     // Voice search: a TV without a speech service returns RESULT_CANCELED, so
@@ -123,9 +114,9 @@ fun SearchScreen(
                 ?.firstOrNull()?.trim()
         } else null
         if (!spoken.isNullOrBlank()) {
-            query = spoken
+            viewModel.onQueryChange(spoken)
             focusFieldTick++
-            submit(spoken)
+            viewModel.submit()
         } else {
             Log.d("AURA_SEARCH", "voice=unavailable")
             voiceMessage = "Voice search unavailable on this device"
@@ -163,30 +154,6 @@ fun SearchScreen(
         }
     }
 
-    LaunchedEffect(query, searchTick) {
-        val q = query.trim()
-        if (q.length < 2) { tracks = emptyList(); albums = emptyList(); artists = emptyList(); return@LaunchedEffect }
-        searching = true
-        runCatching {
-            val api = app.jellyfin.api
-            // Search is a browse query: hidden libraries are not queried.
-            val result = com.hans.aura.data.LibraryFilter.queryItems(
-                api, session.userId,
-                com.hans.aura.data.LibraryFilter.ItemsQuery(
-                    searchTerm = q, recursive = true,
-                    includeItemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
-                    limit = 50
-                )
-            )
-            tracks = result.items.filter { it.type == "Audio" }
-            albums = result.items.filter { it.type == "MusicAlbum" || it.type == "Playlist" }
-            artists = result.items.filter { it.type == "MusicArtist" }
-        }.onFailure {
-            tracks = emptyList(); albums = emptyList(); artists = emptyList()
-        }
-        searching = false
-    }
-
     Column(Modifier.fillMaxSize().padding(vertical = 32.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 56.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Search", fontSize = 32.sp, color = TextPrimary)
@@ -216,7 +183,7 @@ fun SearchScreen(
             }
         }
 
-        val showRecent = query.isBlank() && recentSearches.isNotEmpty()
+        val showRecent = query.isBlank() && state.recentSearches.isNotEmpty()
 
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 56.dp),
@@ -224,13 +191,13 @@ fun SearchScreen(
         ) {
             androidx.compose.material3.TextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = { viewModel.onQueryChange(it) },
                 placeholder = { androidx.compose.material3.Text("Artists, albums, tracks, playlists") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(
-                    onSearch = { submit(query) },
-                    onDone = { submit(query) }
+                    onSearch = { viewModel.submit() },
+                    onDone = { viewModel.submit() }
                 ),
                 modifier = Modifier
                     .weight(1f)
@@ -247,7 +214,7 @@ fun SearchScreen(
                                 true
                             } else false
                             Key.Enter, Key.NumPadEnter, Key.DirectionCenter -> {
-                                submit(query)
+                                viewModel.submit()
                                 true
                             }
                             else -> false
@@ -279,17 +246,17 @@ fun SearchScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Spacer(Modifier.width(56.dp))
-                recentSearches.forEachIndexed { idx, term ->
+                state.recentSearches.forEachIndexed { idx, term ->
                     RecentQueryChip(
                         text = term,
                         firstFocus = if (idx == 0) recentFocus else null,
                         onRun = {
-                            query = term
-                            submit(term)
+                            viewModel.onQueryChange(term)
+                            viewModel.submit()
                             focusFieldTick++
                         },
                         onRemove = {
-                            recentSearches = Prefs.removeRecentSearch(term)
+                            viewModel.removeRecent(term)
                             focusFieldTick++
                         }
                     )
@@ -304,10 +271,14 @@ fun SearchScreen(
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             val q = query.trim()
-            if (q.length >= 2 && !searching &&
-                tracks?.isEmpty() == true && albums?.isEmpty() == true && artists?.isEmpty() == true
-            ) {
-                Text(
+            when {
+                q.length >= 2 && !state.searching && state.error != null && state.allEmpty ->
+                    ErrorPane(
+                        message = "Couldn't load from server",
+                        detail = state.error,
+                        onRetry = { viewModel.retry() }
+                    )
+                q.length >= 2 && !state.searching && state.allEmpty -> Text(
                     "No results for \u201C$q\u201D", color = TextSecondary, fontSize = 15.sp,
                     modifier = Modifier.padding(horizontal = 56.dp, vertical = 8.dp)
                 )
@@ -315,7 +286,7 @@ fun SearchScreen(
 
             ItemShelf(
                 title = "Artists",
-                items = artists,
+                items = state.artists,
                 serverUrl = session.serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { },
@@ -324,7 +295,7 @@ fun SearchScreen(
 
             ItemShelf(
                 title = "Albums & playlists",
-                items = albums,
+                items = state.albums,
                 serverUrl = session.serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { },
@@ -343,7 +314,7 @@ fun SearchScreen(
 
             ItemShelf(
                 title = "Tracks",
-                items = tracks,
+                items = state.tracks,
                 serverUrl = session.serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { },
@@ -361,7 +332,11 @@ fun SearchScreen(
                 },
                 onOpen = { _, idx ->
                     // Play the clicked track with the rest of the track results queued behind it.
-                    tracks?.let { list -> player.playQueue(list, idx.coerceIn(0, list.lastIndex), resume = true) }
+                    state.tracks?.let { list ->
+                        if (list.isNotEmpty()) {
+                            player.playQueue(list, idx.coerceIn(0, list.lastIndex), resume = true)
+                        }
+                    }
                 }
             )
 

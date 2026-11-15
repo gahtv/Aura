@@ -66,7 +66,7 @@ fun SettingsScreen(
     // (a plain preference) and hides the sleep-timer row.
     player: com.hans.aura.ui.player.PlayerConnection? = null
 ) {
-    val session = app.jellyfin.auth.session!!
+    val session = app.jellyfin.auth.session ?: return
     // Stamps live in LibraryCache (plain fields), so bump a local counter after
     // a manual refresh or the labels would keep showing the pre-refresh values.
     var refreshTick by remember { mutableStateOf(0) }
@@ -214,7 +214,7 @@ fun SettingsScreen(
                     androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
                 }
                 else -> {
-                    val libs = libraries!!
+                    val libs = libraries.orEmpty()
                     items(libs.size, key = { libs[it].id }) { i ->
                         val lib = libs[i]
                         LibraryToggleRow(
@@ -390,8 +390,9 @@ private fun SleepTimerRow(player: com.hans.aura.ui.player.PlayerConnection) {
     var step by remember { mutableStateOf(0) }
     val presets = listOf(15, 30, 45, 60)
     LaunchedEffect(remaining != null) { if (remaining == null) step = 0 }
+    val leftMs = remaining
     val value = when {
-        remaining != null -> com.hans.aura.ui.common.formatDuration(remaining!!) + " left"
+        leftMs != null -> com.hans.aura.ui.common.formatDuration(leftMs) + " left"
         step in 1..4 -> "${presets[step - 1]} min"
         else -> "Off"
     }

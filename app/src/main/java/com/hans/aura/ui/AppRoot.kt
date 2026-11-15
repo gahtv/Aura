@@ -474,6 +474,31 @@ fun AppRoot() {
                     }
                 }.onFailure { android.util.Log.d("AURA_MENU", "failed: $it") }
             }
+            // Debug: drive a queue mutation without DPAD keys, so reordering
+            // and clear-upcoming are verifiable from AURA_QUEUE logcat alone.
+            link.queueAction?.let { op ->
+                kotlinx.coroutines.delay(1500) // queue mirror settled
+                android.util.Log.d(
+                    "AURA_QUEUE",
+                    "debug op=$op before=${player.queue.value.map { it.id }} index=${player.queueIndex.value}"
+                )
+                when {
+                    op == "clear" -> player.clearUpcoming()
+                    op.startsWith("move:") -> {
+                        val parts = op.removePrefix("move:").split(',')
+                        val from = parts.getOrNull(0)?.trim()?.toIntOrNull()
+                        val to = parts.getOrNull(1)?.trim()?.toIntOrNull()
+                        if (from != null && to != null) player.moveInQueue(from, to)
+                        else android.util.Log.d("AURA_QUEUE", "debug move: bad args \"$op\"")
+                    }
+                    else -> android.util.Log.d("AURA_QUEUE", "debug op unknown: $op")
+                }
+                kotlinx.coroutines.delay(1500)
+                android.util.Log.d(
+                    "AURA_QUEUE",
+                    "debug after=${player.queue.value.map { it.id }} index=${player.queueIndex.value}"
+                )
+            }
         }
     }
 

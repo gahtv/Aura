@@ -318,7 +318,20 @@ fun CollectionScreen(
                                     app, player, scope, track,
                                     onOpenArtist = onOpenArtist,
                                     onOpenCollection = null,
-                                    onRemoveFromPlaylist = removeFromPlaylist
+                                    onRemoveFromPlaylist = removeFromPlaylist,
+                                    // Playlist rows are reorderable server-side;
+                                    // a successful move must evict the 24h
+                                    // LibraryCache entry or the page keeps the
+                                    // pre-move order.
+                                    playlistMove = if (collection.type == "Playlist") {
+                                        com.hans.aura.ui.common.ContextMenus.PlaylistMove(
+                                            playlistId = collection.id,
+                                            itemId = track.id,
+                                            index = i,
+                                            size = tracks!!.size,
+                                            onMoved = { refresh++ }
+                                        )
+                                    } else null
                                 )
                             )
                         }

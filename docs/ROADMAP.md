@@ -53,6 +53,13 @@ lyrics, mirroring and pairing.
 - Keep the music going: when the queue runs out, more tracks follow automatically (switchable in Settings).
 - Smart shuffle puts the least-played and longest-unplayed tracks first.
 - Sleep timer on the queue screen: Off / 15 / 30 / 45 / 60 minutes, pausing at the end instead of stopping.
+- Lyrics you can line up: nudge a track's timing with the D-pad when the words run early or late — remembered per
+  track — and a clear "no lyrics" state when there are none.
+- Optional online lyrics lookup for tracks Jellyfin has none for (off by default; LRCLIB).
+- Press DOWN on the transport controls for a quick "up next" peek, and a Radio button that restarts the mix from
+  the track that is playing.
+- Search remembers your last few terms as chips you can re-run, takes voice input from the remote, and accepts
+  ENTER without losing the field.
 
 ## Next
 

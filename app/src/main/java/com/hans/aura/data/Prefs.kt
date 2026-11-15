@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 /** A Jellyfin library ("UserView") as offered in Settings > Libraries shown in Aura. */
@@ -134,6 +135,53 @@ object Prefs {
         val edit = p()?.edit() ?: return
         if (clamped == 0L) edit.remove(KEY_LYRICS_OFFSET + trackId).apply()
         else edit.putLong(KEY_LYRICS_OFFSET + trackId, clamped).apply()
+    }
+
+    // ---- Recent searches -------------------------------------------------
+    // Appended at the end of the object on purpose: another branch also adds
+    // keys here, and end-of-object keeps the merge additive.
+    private const val KEY_SEARCH_RECENT = "search_recent_terms"
+    private const val SEARCH_RECENT_LIMIT = 8
+    private val stringListSerializer = ListSerializer(String.serializer())
+
+    /**
+     * Last [SEARCH_RECENT_LIMIT] submitted search terms, newest first.
+     * Encoded as a JSON array: terms may contain commas, so a comma-joined
+     * string would silently split a term like "AC/DC, live".
+     */
+    fun recentSearches(): List<String> {
+        val raw = p()?.getString(KEY_SEARCH_RECENT, null) ?: return emptyList()
+        return runCatching { json.decodeFromString(stringListSerializer, raw) }
+            .onFailure { Log.w(TAG, "recent search decode failed: ${it.message}") }
+            .getOrDefault(emptyList())
+    }
+
+    private fun writeRecentSearches(list: List<String>) {
+        p()?.edit()?.putString(KEY_SEARCH_RECENT, json.encodeToString(stringListSerializer, list))?.apply()
+    }
+
+    /**
+     * Record a submitted term. Case-insensitive dedupe (a re-run replaces the
+     * older entry rather than duplicating it), newest first, capped at
+     * [SEARCH_RECENT_LIMIT]. Returns the resulting list.
+     */
+    fun addRecentSearch(term: String): List<String> {
+        val t = term.trim()
+        if (t.length < 2) return recentSearches()
+        val merged = ArrayList<String>(SEARCH_RECENT_LIMIT)
+        merged.add(t)
+        recentSearches().forEach { old ->
+            if (!old.equals(t, ignoreCase = true) && merged.size < SEARCH_RECENT_LIMIT) merged.add(old)
+        }
+        writeRecentSearches(merged)
+        return merged
+    }
+
+    /** Drop one entry (long-press on its chip). Returns the resulting list. */
+    fun removeRecentSearch(term: String): List<String> {
+        val remaining = recentSearches().filterNot { it.equals(term.trim(), ignoreCase = true) }
+        writeRecentSearches(remaining)
+        return remaining
     }
 }
 

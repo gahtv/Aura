@@ -3,6 +3,7 @@ package com.hans.aura.ui.common
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
+import com.hans.aura.data.Mixes
 import com.hans.aura.ui.player.PlayerConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -82,7 +83,20 @@ object ContextMenus {
                 ContextMenuHost.openPicker(listOf(track))
             },
             ContextAction("Play next") { player.playNext(listOf(track)) },
-            ContextAction("Add to queue") { player.addToQueue(listOf(track)) }
+            ContextAction("Add to queue") { player.addToQueue(listOf(track)) },
+            // InstantMix from this track: GET /Items/{trackId}/InstantMix,
+            // ~50 tracks replacing the queue (AURA_MIX breadcrumb in Mixes).
+            ContextAction("Start radio") {
+                scope.launch {
+                    Mixes.playMix(
+                        api = app.jellyfin.api,
+                        userId = app.jellyfin.auth.session!!.userId,
+                        player = player,
+                        kind = Mixes.Kind.TRACK,
+                        seed = track
+                    )
+                }
+            }
         )
         // Reorder actions lead the playlist menu: they are what the long-press
         // is reached for on a TV.

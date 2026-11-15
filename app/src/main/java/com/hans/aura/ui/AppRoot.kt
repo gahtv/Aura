@@ -501,7 +501,7 @@ fun AppRoot() {
                             recursive = true, sortBy = "Random", limit = 1, startIndex = 0
                         )
                     )
-                    if (result.items.isNotEmpty()) player.playQueue(result.items, 0)
+                    if (result.items.isNotEmpty()) player.playQueue(result.items, 0, resume = false)
                     android.util.Log.d(
                         "AURA_NAV",
                         "autoplay queued ${result.items.size} track(s): ${result.items.firstOrNull()?.name} id=${result.items.firstOrNull()?.id}"
@@ -711,7 +711,7 @@ fun AppRoot() {
                         onOpenSearch = { push(Screen.Search) },
                         onOpenCollection = { push(Screen.Collection(it)) },
                         onOpenArtist = { push(Screen.Artist(it)) },
-                        onPlayTrack = { _, queue, idx -> player.playQueue(queue, idx) },
+                        onPlayTrack = { _, queue, idx -> player.playQueue(queue, idx, resume = true) },
                         refreshKey = refreshKey,
                         focusTick = focusTick
                     )

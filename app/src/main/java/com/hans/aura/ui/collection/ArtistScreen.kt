@@ -107,8 +107,11 @@ fun ArtistScreen(
             runCatching {
                 app.jellyfin.api.getSimilarArtists(artist.id, session.userId, limit = 20).items
             }.onSuccess {
+                android.util.Log.i("AURA_SIMILAR", "artist=${artist.id} n=${it.size}")
                 LibraryCache.put("artist_similar:${artist.id}", it)
                 similar = it
+            }.onFailure {
+                android.util.Log.w("AURA_SIMILAR", "artist=${artist.id} failed: ${it.message}")
             }
         }
 
@@ -284,7 +287,7 @@ fun ArtistScreen(
                             isCurrent = track.id == current?.id,
                             atmos = track.albumId != null && track.albumId in atmosAlbumIds,
                             accent = accent,
-                            onClick = { player.playQueue(list, i) },
+                            onClick = { player.playQueue(list, i, resume = true) },
                             focusKeeper = focusKeeper,
                             onFocused = { focusedId = it },
                             onLongPress = {

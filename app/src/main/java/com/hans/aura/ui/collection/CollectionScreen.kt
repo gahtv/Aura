@@ -258,11 +258,11 @@ fun CollectionScreen(
                     // the title/bio above grows.
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         androidx.tv.material3.Button(onClick = {
-                            tracks?.let { player.playQueue(it, 0) }
+                            tracks?.let { player.playQueue(it, 0, resume = false) }
                         }) { androidx.tv.material3.Text("Play") }
                         androidx.tv.material3.Button(onClick = {
                             tracks?.let { list ->
-                                player.playQueue(list.shuffled(), 0)
+                                player.playQueue(list.shuffled(), 0, resume = false)
                             }
                         }) { androidx.tv.material3.Text("Shuffle") }
                         // Radio: GET /Items/{albumId}/InstantMix — albums sound
@@ -324,7 +324,7 @@ fun CollectionScreen(
                         isCurrent = track.id == currentId?.id,
                         atmos = track.albumId != null && track.albumId in atmosAlbumIds,
                         accent = accent,
-                        onClick = { player.playQueue(tracks!!, i) },
+                        onClick = { player.playQueue(tracks!!, i, resume = true) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedTrackId = it },
                         onRemove = removeFromPlaylist,

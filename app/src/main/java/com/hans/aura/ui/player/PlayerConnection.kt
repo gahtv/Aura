@@ -274,10 +274,12 @@ class PlayerConnection(
                     "AURA_RESUME",
                     "item=${tapped.id} at=$resumeMs dur=${tapped.durationMs}"
                 )
-            } else if (tapped.userData == null) {
-                // Browse queries don't always carry UserData (LibraryFilter's
-                // DEFAULT_FIELDS predates this feature): fetch the item once and
-                // seek if the position is a real resume point.
+            } else {
+                // No usable position on the item we were handed: either the
+                // browse query didn't carry UserData, or LibraryCache served a
+                // copy fetched BEFORE this track was last played (a cached
+                // position of 0 is stale, not "never played"). One item fetch
+                // settles it, and it only happens on an explicit tap.
                 resumeAfterFetch(c, tapped)
             }
         }
@@ -298,8 +300,14 @@ class PlayerConnection(
      * Shorter than 15s in is "just started"; inside the last 10s is "finished".
      */
     private fun resumePositionMs(item: JellyfinItem?): Long? {
-        val ticks = item?.userData?.playbackPositionTicks ?: return null
-        val pos = ticks / 10_000L
+        if (item == null) return null
+        // A locally remembered position wins: Jellyfin 12.2.0 never writes
+        // UserData.PlaybackPositionTicks from playback reports (verified against
+        // the live server), so the server value is only a fallback for clients
+        // that did manage to set it.
+        val local = com.hans.aura.data.ResumePoints.position(item.id)
+        val ticks = item.userData?.playbackPositionTicks
+        val pos = local ?: (ticks?.let { it / 10_000L } ?: return null)
         if (pos <= RESUME_MIN_MS) return null
         val dur = item.durationMs
         if (dur > 0 && pos >= dur - RESUME_TAIL_MS) return null
@@ -314,6 +322,11 @@ class PlayerConnection(
                 jellyfin.api.getItem(session.userId, item.id)
             }.getOrNull() ?: return@launch
             synchronized(registry) { registry[item.id] = full }
+            android.util.Log.d(
+                "AURA_RESUME",
+                "fetched item=${item.id} ticks=${full.userData?.playbackPositionTicks ?: -1} " +
+                    "dur=${full.durationMs}"
+            )
             val ms = resumePositionMs(full) ?: return@launch
             onMainThread {
                 // Only when the track actually started from the top; a user who
@@ -456,13 +469,20 @@ class PlayerConnection(
      * preference is off, or twice for the same seed.
      */
     private fun maybeAutoplay(c: MediaController) {
-        if (!Prefs.autoplayMusic) return
-        if (c.repeatMode != Player.REPEAT_MODE_OFF) return
-        if (c.mediaItemCount == 0) return
-        if (!c.playWhenReady) return
-        if (autoplayInFlight) return
+        fun skip(why: String) {
+            android.util.Log.d("AURA_AUTOPLAY", "skip: $why")
+        }
+        if (!Prefs.autoplayMusic) return skip("pref off")
+        if (c.repeatMode != Player.REPEAT_MODE_OFF) return skip("repeat on")
+        if (c.mediaItemCount == 0) return skip("empty queue")
+        // Deliberately NOT gated on playWhenReady: a player that has just
+        // reached the end of its last item can report playWhenReady=false even
+        // though the user never asked to stop, and gating on it meant the queue
+        // simply died (seen on the emulator). Ending at the last item IS the
+        // signal; a user-initiated stop does not produce STATE_ENDED.
+        if (autoplayInFlight) return skip("in flight")
         val seed = c.getMediaItemAt(c.mediaItemCount - 1).mediaId
-        if (seed == lastAutoplaySeed) return
+        if (seed == lastAutoplaySeed) return skip("same seed $seed")
         val session = sessionProvider() ?: return
         val serverUrl = session.serverUrl
         // Read the player on the main thread; the coroutine below must not.

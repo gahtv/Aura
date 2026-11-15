@@ -88,6 +88,6 @@ object Mixes {
         }
         Log.d(TAG, "kind=${kind.wire} seed=${seed.id} count=${items.size}")
         if (items.isEmpty()) return
-        withContext(Dispatchers.Main) { player.playQueue(items, 0) }
+        withContext(Dispatchers.Main) { player.playQueue(items, 0, resume = false) }
     }
 }

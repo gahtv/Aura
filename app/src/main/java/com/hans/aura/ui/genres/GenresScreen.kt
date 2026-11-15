@@ -294,7 +294,7 @@ fun GenreScreen(
                         track = track,
                         isCurrent = track.id == current?.id,
                         atmos = track.albumId?.let { it in atmosAlbumIds } == true,
-                        onClick = { player.playQueue(tracks ?: listOf(track), i) },
+                        onClick = { player.playQueue(tracks ?: listOf(track), i, resume = true) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedId = it }
                     )

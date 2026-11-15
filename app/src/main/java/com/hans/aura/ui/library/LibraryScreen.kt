@@ -435,7 +435,7 @@ fun LibraryScreen(
                         track = track,
                         isCurrent = track.id == current?.id,
                         atmos = track.albumId != null && track.albumId in atmosAlbumIds,
-                        onClick = { player.playQueue(items, i) },
+                        onClick = { player.playQueue(items, i, resume = true) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedId = it },
                         onLongPress = { trackMenu(track) },

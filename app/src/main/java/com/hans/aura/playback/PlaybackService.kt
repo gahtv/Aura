@@ -199,6 +199,8 @@ internal class PlaybackReporter(
     private var handler: android.os.Handler? = null
     private var lastProgressAt = 0L
     private var lastPausedReported: Boolean? = null
+    /** Last position seen for [currentItemId] — the stop report needs it. */
+    private var lastTicksForCurrent = 0L
 
     fun start() {
         val h = android.os.Handler(android.os.Looper.getMainLooper())
@@ -222,13 +224,21 @@ internal class PlaybackReporter(
                     if (id != currentItemId) {
                         android.util.Log.i("AuraReport", "start $id")
                         currentItemId?.let { oldId ->
+                            // The position belongs to the OLD item: `ticks` here
+                            // is read from the player AFTER it switched to the
+                            // new track (0:00), which saved every skipped track
+                            // at position 0 and made resume-where-you-left-off
+                            // impossible. Use the last position seen for it.
+                            val oldTicks = lastTicksForCurrent.coerceAtLeast(0)
+                            com.hans.aura.data.ResumePoints.save(oldId, oldTicks / 10_000L)
+                            android.util.Log.i("AuraReport", "switch stop old=$oldId at=$oldTicks")
                             scope.launch {
                                 runCatching {
                                     jellyfin.api.reportPlaybackStopped(
                                         com.hans.aura.data.PlaybackStopInfo(
                                             itemId = oldId,
                                             playSessionId = playSessionId,
-                                            positionTicks = ticks,
+                                            positionTicks = oldTicks,
                                             mediaSourceId = oldId
                                         )
                                     )
@@ -238,6 +248,7 @@ internal class PlaybackReporter(
                             }
                         }
                         currentItemId = id
+                        lastTicksForCurrent = ticks
                         playSessionId = java.util.UUID.randomUUID().toString()
                         lastProgressAt = android.os.SystemClock.elapsedRealtime()
                         scope.launch {
@@ -263,6 +274,11 @@ internal class PlaybackReporter(
                         val now = android.os.SystemClock.elapsedRealtime()
                         // Push a progress report right away when paused state
                         // flips so the web remote's play/pause stays in sync.
+                        lastTicksForCurrent = ticks
+                        // Remember where this track is for resume-where-you-left-
+                        // off: the server does not store it (Jellyfin 12.2.0
+                        // ignores PositionTicks on the report endpoints).
+                        com.hans.aura.data.ResumePoints.save(id, p.currentPosition)
                         val pausedChanged = lastPausedReported != paused
                         if (pausedChanged) lastProgressAt = 0L
                         if (now - lastProgressAt >= 10_000L) {

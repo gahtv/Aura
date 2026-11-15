@@ -167,7 +167,7 @@ fun SearchScreen(
                 },
                 onOpen = { _, idx ->
                     // Play the clicked track with the rest of the track results queued behind it.
-                    tracks?.let { list -> player.playQueue(list, idx.coerceIn(0, list.lastIndex)) }
+                    tracks?.let { list -> player.playQueue(list, idx.coerceIn(0, list.lastIndex), resume = true) }
                 }
             )
 

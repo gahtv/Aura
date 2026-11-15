@@ -49,6 +49,9 @@ object Prefs {
 
     private fun p(): SharedPreferences? = prefs
 
+    /** The aura_prefs file, for the small stores that live beside the toggles. */
+    internal fun file(): SharedPreferences? = prefs
+
     /**
      * Libraries the user switched OFF. Empty = show everything (and the data
      * layer keeps its single-query path).
@@ -93,4 +96,78 @@ object Prefs {
         set(value) {
             p()?.edit()?.putBoolean(KEY_AUTOPLAY, value)?.apply()
         }
+}
+
+/**
+ * Resume points, kept LOCALLY.
+ *
+ * Jellyfin 12.2.0 does not write UserData.PlaybackPositionTicks from
+ * /Sessions/Playing/Progress or /Stopped — verified against the live server by
+ * posting spec-shaped reports with a 70 s position and reading the item back
+ * (still 0). So "resume where you left off" has to be remembered by Aura.
+ *
+ * Stored as one JSON map itemId -> "positionMs:epochMs", pruned to the newest
+ * [POSITION_LIMIT] entries and expired after [POSITION_TTL_MS].
+ */
+object ResumePoints {
+    private const val TAG = "AURA_RESUME"
+    private const val KEY = "resume_points"
+    private const val POSITION_LIMIT = 400
+    private const val POSITION_TTL_MS = 30L * 24 * 60 * 60 * 1000
+
+    private val lock = Any()
+    private var cache: MutableMap<String, String>? = null
+
+    private fun prefs() = Prefs.file()
+
+    private fun load(): MutableMap<String, String> = synchronized(lock) {
+        cache?.let { return it }
+        val raw = prefs()?.getString(KEY, null)
+        // Entries are "itemId:positionMs:epochMs" — the id is everything before
+        // the FIRST colon (a Guid cannot contain one), the value is the rest.
+        val parsed = if (raw.isNullOrBlank()) mutableMapOf() else
+            runCatching {
+                raw.split('|').mapNotNull { entry ->
+                    val id = entry.substringBefore(':', "")
+                    val value = entry.substringAfter(':', "")
+                    if (id.isBlank() || value.isBlank()) null else id to value
+                }.toMap().toMutableMap()
+            }.getOrElse { mutableMapOf() }
+        cache = parsed
+        parsed
+    }
+
+    /** Remember where [itemId] was left. Called from the reporter every ~10 s. */
+    fun save(itemId: String, positionMs: Long) {
+        if (itemId.isBlank() || positionMs < 5_000L) return
+        synchronized(lock) {
+            val map = load()
+            map[itemId] = "$positionMs:${System.currentTimeMillis()}"
+            if (map.size > POSITION_LIMIT) {
+                // Drop the oldest by timestamp, not by insertion order.
+                val keep = map.entries.sortedByDescending { it.value.substringAfter(':').toLongOrNull() ?: 0L }
+                    .take(POSITION_LIMIT).associate { it.key to it.value }
+                map.clear(); map.putAll(keep)
+            }
+            prefs()?.edit()?.putString(KEY, map.entries.joinToString("|") { "${it.key}:${it.value}" })?.apply()
+        }
+    }
+
+    /** Saved position for [itemId], or null when stale/unknown. */
+    fun position(itemId: String): Long? = synchronized(lock) {
+        val entry = load()[itemId] ?: return null
+        val ms = entry.substringBefore(':').toLongOrNull() ?: return null
+        val at = entry.substringAfter(':').toLongOrNull() ?: return null
+        if (System.currentTimeMillis() - at > POSITION_TTL_MS) return null
+        ms
+    }
+
+    fun forget(itemId: String) {
+        synchronized(lock) {
+            val map = load()
+            if (map.remove(itemId) != null) {
+                prefs()?.edit()?.putString(KEY, map.entries.joinToString("|") { "${it.key}:${it.value}" })?.apply()
+            }
+        }
+    }
 }

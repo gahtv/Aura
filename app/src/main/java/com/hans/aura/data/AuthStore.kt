@@ -38,7 +38,11 @@ class AuthStore(context: Context) {
     var session: Session?
         get() {
             if (!loaded) {
-                cached = prefs.getString(KEY_SESSION, null)?.let { json.decodeFromString<Session>(it) }
+                // Corrupt/older-shaped prefs must read as "signed out", not
+                // crash the process on the first API call at startup.
+                cached = prefs.getString(KEY_SESSION, null)?.let { raw ->
+                    runCatching { json.decodeFromString<Session>(raw) }.getOrNull()
+                }
                 loaded = true
             }
             return cached

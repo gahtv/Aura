@@ -6,22 +6,22 @@ import coil.ImageLoaderFactory
 import coil.decode.BitmapFactoryDecoder
 import coil.memory.MemoryCache
 import com.hans.aura.data.JellyfinClient
+import com.hans.aura.di.AppContainer
 
 class AuraApp : Application(), ImageLoaderFactory {
-    lateinit var jellyfin: JellyfinClient
+
+    /** The app's single dependency graph (stores, client, repository). */
+    lateinit var container: AppContainer
         private set
+
+    /** Kept for existing callers; the client now lives in [container]. */
+    val jellyfin: JellyfinClient get() = container.jellyfin
 
     override fun onCreate() {
         super.onCreate()
-        jellyfin = JellyfinClient(this)
-        com.hans.aura.data.LibraryCache.init(this)
-        // Library selection (hidden library ids + the last known library list).
-        com.hans.aura.data.Prefs.init(this)
-        // "Only Atmos" preference mirrored as Compose state (browse filters read it).
-        com.hans.aura.data.AtmosFilter.load()
-        // Device name + mirror-link pairing state (Settings.Global.DEVICE_NAME,
-        // i.e. the same name the Cast/Google Home UI shows).
-        com.hans.aura.ui.MirrorLink.init(this)
+        // Build order (Prefs -> LibraryCache -> AtmosFilter -> MirrorServer ->
+        // JellyfinClient -> MediaRepository) is documented in AppContainer.
+        container = AppContainer(this)
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.hans.aura.data
 
 import android.content.Context
+import com.hans.aura.BuildConfig
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -8,12 +9,20 @@ import retrofit2.Retrofit
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 const val APP_NAME = "Aura"
-const val APP_VERSION = "0.1.0"
+
+/**
+ * Reported to the server as the client version.
+ *
+ * Was a hardcoded "0.1.0" while the app was 0.4.0, so every session/capability
+ * report announced a version the build never had. Always the build's own value.
+ */
+val APP_VERSION: String get() = BuildConfig.VERSION_NAME
 
 /** Retrofit-backed Jellyfin client; URL + auth headers swap when the session changes. */
 class JellyfinClient(context: Context) {
 
-    private val deviceId = AuthStore.newDeviceId(context)
+    /** This install's Jellyfin device id — the player reports the SAME id. */
+    val deviceId = AuthStore.newDeviceId(context)
     val auth = AuthStore(context)
 
     private val json = Json {
@@ -69,8 +78,6 @@ class JellyfinClient(context: Context) {
         }
     }
 
-    val imageCacheBust: Long get() = 0
-
     private fun buildApi(baseUrl: String): JellyfinApi {
         val retrofit = Retrofit.Builder()
             .baseUrl(baseUrl)
@@ -121,12 +128,9 @@ class JellyfinClient(context: Context) {
 
     suspend fun signIn(serverUrlRaw: String, username: String, password: String): Session {
         val serverUrl = serverUrlRaw.trimEnd('/')
-        val retrofit = Retrofit.Builder()
-            .baseUrl("$serverUrl/")
-            .client(http)
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
-        val api = retrofit.create(JellyfinApi::class.java)
+        // Reuse the cached api builder: signing in twice (or to the same server
+        // again) must not rebuild a duplicate Retrofit/OkHttp stack each time.
+        val api = apiForServer(serverUrl)
         val resp = api.authenticateByName(AuthRequest(username, password))
         val session = Session(
             serverUrl = serverUrl,

@@ -2,15 +2,17 @@ package com.hans.aura.playback
 
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import androidx.media3.common.Player
 import com.hans.aura.data.APP_VERSION
 import com.hans.aura.data.CapabilitiesDto
 import com.hans.aura.data.JellyfinClient
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.util.AuraLog
+import com.hans.aura.util.AuraTag
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -76,13 +78,14 @@ class PlaybackRemote(
             )
             .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), body))
             .build()
-        client!!.newCall(req).enqueue(object : okhttp3.Callback {
+        val http = client ?: return
+        http.newCall(req).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
-                Log.w(TAG, "capabilities failed: ${e.message}")
+                AuraLog.w(AuraTag.REMOTE, "capabilities failed: ${e.message}")
             }
 
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                Log.i(TAG, "capabilities posted: ${response.code}")
+                AuraLog.i(AuraTag.REMOTE, "capabilities posted: ${response.code}")
                 response.close()
             }
         })
@@ -109,20 +112,19 @@ class PlaybackRemote(
         val auth = "MediaBrowser Client=\"$APP_NAME\", Device=\"${com.hans.aura.data.DeviceNames.get()}\", " +
             "DeviceId=\"$deviceId\", Version=\"$APP_VERSION\", Token=\"$token\""
         // Reuse one client so reconnects don't pile up connection pools/threads.
-        if (client == null) {
-            client = OkHttpClient.Builder()
-                .pingInterval(java.time.Duration.ofSeconds(30))
-                .build()
-        }
+        val http = client ?: OkHttpClient.Builder()
+            .pingInterval(java.time.Duration.ofSeconds(30))
+            .build()
+            .also { client = it }
         val request = Request.Builder()
             .url(wsUrl)
             .header("Authorization", auth)
             .build()
 
         isSocketClosed = false
-        ws = client!!.newWebSocket(request, object : WebSocketListener() {
+        ws = http.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.i(TAG, "websocket connected")
+                AuraLog.i(AuraTag.REMOTE, "websocket connected")
                 isSocketClosed = false
                 // Subscribe to session messages like the official clients; the
                 // server attaches the remote-control controller to the session.
@@ -138,12 +140,12 @@ class PlaybackRemote(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.w(TAG, "socket failure: ${t.message}", t)
+                AuraLog.w(AuraTag.REMOTE, "socket failure: ${t.message}", t)
                 isSocketClosed = true
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.i(TAG, "socket closed: code=$code reason=$reason")
+                AuraLog.i(AuraTag.REMOTE, "socket closed: code=$code reason=$reason")
                 isSocketClosed = true
             }
         })
@@ -152,7 +154,7 @@ class PlaybackRemote(
     private fun handle(text: String) {
         val obj = runCatching { json.decodeFromString<JsonObject>(text) }.getOrNull() ?: return
         val type = obj["MessageType"]?.jsonPrimitive?.content ?: return
-        if (type != "KeepAlive") Log.i(TAG, "ws message: ${text.take(300)}")
+        if (type != "KeepAlive") AuraLog.i(AuraTag.REMOTE, "ws message: ${text.take(300)}")
         val data = obj["Data"] as? JsonObject
 
         when (type) {
@@ -177,10 +179,12 @@ class PlaybackRemote(
                 // and the user had to skip manually.
                 val startIndex = data?.get("StartIndex")?.jsonPrimitive?.content
                     ?.toIntOrNull() ?: 0
-                Log.i(TAG, "remote play: $command startIndex=$startIndex $ids")
+                AuraLog.i(AuraTag.REMOTE, "remote play: $command startIndex=$startIndex $ids")
                 scope.launch {
                     runCatching {
-                        val userId = jellyfin.auth.session!!.userId
+                        // The session can be dropped while the socket lingers
+                        // (sign-out) — never assert it into a crash.
+                        val userId = jellyfin.auth.session?.userId ?: return@launch
                         val items = ids.map { jellyfin.api.getItem(userId, it) }
                         when (command) {
                             "PlayNext" ->
@@ -191,13 +195,13 @@ class PlaybackRemote(
                                 onPlayItems(items, MODE_APPEND_END, startMs, 0)
                             else -> onPlayItems(items, MODE_REPLACE, startMs, startIndex)
                         }
-                    }.onFailure { Log.w(TAG, "remote play failed", it) }
+                    }.onFailure { AuraLog.w(AuraTag.REMOTE, "remote play failed", it) }
                 }
             }
 
             "Playstate" -> {
                 val cmd = data?.get("Command")?.jsonPrimitive?.content
-                Log.i(TAG, "remote playstate: $cmd")
+                AuraLog.i(AuraTag.REMOTE, "remote playstate: $cmd")
                 when (cmd) {
                     "Play", "Unpause" -> onMainThread { player.play() }
                     "Pause" -> onMainThread { player.pause() }
@@ -225,7 +229,7 @@ class PlaybackRemote(
                     ?: data?.get("Data")?.jsonPrimitive?.content?.let { raw ->
                         runCatching { json.decodeFromString<JsonObject>(raw) }.getOrNull()
                     }
-                Log.i(TAG, "remote general command: $name args=$args")
+                AuraLog.i(AuraTag.REMOTE, "remote general command: $name args=$args")
                 fun arg(key: String): String? =
                     args?.get(key)?.jsonPrimitive?.content
                 when (name) {
@@ -243,21 +247,21 @@ class PlaybackRemote(
                             "RepeatAll" -> Player.REPEAT_MODE_ALL
                             else -> Player.REPEAT_MODE_OFF
                         }
-                        Log.i(TAG, "remote set repeat: $mode")
+                        AuraLog.i(AuraTag.REMOTE, "remote set repeat: $mode")
                         onMainThread { player.repeatMode = mode }
                     }
                     "SetShuffleQueue" -> {
                         // Arguments: {Shuffle: "true"|"false"}
                         val enabled = (arg("Shuffle") ?: arg("Enabled") ?: "false")
                             .equals("true", true)
-                        Log.i(TAG, "remote set shuffle: $enabled")
+                        AuraLog.i(AuraTag.REMOTE, "remote set shuffle: $enabled")
                         onMainThread { player.shuffleModeEnabled = enabled }
                     }
                     // Volume is deliberately not remote-controllable: the AVR owns level
                     // and the bitstream must stay at unity gain. Ignore (and say so in
                     // logcat) instead of silently applying a remote attenuation.
                     "SetVolume", "VolumeUp", "VolumeDown" ->
-                        Log.i(TAG, "remote $name ignored (volume is AVR-controlled)")
+                        AuraLog.i(AuraTag.REMOTE, "remote $name ignored (volume is AVR-controlled)")
                 }
             }
         }
@@ -277,10 +281,25 @@ class PlaybackRemote(
         main.post(block)
     }
 
+    /**
+     * Full shutdown, called from PlaybackService.onDestroy().
+     *
+     * Cancelling the scope FIRST is what stops `connectWithRetry` from waking
+     * 5s later and reconnecting a zombie WebSocket after the service is gone;
+     * the socket close is only the polite half. The client's dispatcher pool and
+     * connection pool are shut down too, otherwise their threads outlive the
+     * service and keep the process's network stack alive.
+     */
     fun stop() {
-        ws?.close(1001, "app closing")
+        scope.cancel()
+        runCatching { ws?.close(1001, "app closing") }
         ws = null
         isSocketClosed = true
+        client?.let { c ->
+            runCatching { c.dispatcher.executorService.shutdown() }
+            runCatching { c.connectionPool.evictAll() }
+        }
+        client = null
     }
 
     companion object {
@@ -288,7 +307,6 @@ class PlaybackRemote(
         const val MODE_REPLACE = 0        // Replace queue, start at first item
         const val MODE_INSERT_NEXT = 1    // Insert after the current track ("Play Next")
         const val MODE_APPEND_END = 2     // Append at the end of the queue ("Play Last")
-        private const val TAG = "AuraRemote"
         private const val APP_NAME = "Aura"
     }
 }

@@ -13,12 +13,19 @@ import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.hans.aura.AuraApp
+import com.hans.aura.BuildConfig
+import com.hans.aura.data.APP_NAME
 import com.hans.aura.data.APP_VERSION
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.Session
+import com.hans.aura.util.AuraLog
+import com.hans.aura.util.AuraTag
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
@@ -52,7 +59,7 @@ class PlaybackService : MediaSessionService() {
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (player.volume != 1f) {
-                    android.util.Log.i("AuraVol", "restoring unity gain (was ${player.volume})")
+                    AuraLog.i(AuraTag.VOL, "restoring unity gain (was ${player.volume})")
                     player.volume = 1f
                 }
             }
@@ -118,18 +125,13 @@ class PlaybackService : MediaSessionService() {
     private fun buildPlayer(app: AuraApp): ExoPlayer {
         val context = this
 
-        // Direct-play HTTP source with auth headers.
-        val session = app.jellyfin.auth.session
-        val httpFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
-            .setDefaultRequestProperties(
-                mapOf(
-                    "Authorization" to
-                        "MediaBrowser Client=\"Aura\", Device=\"${com.hans.aura.data.DeviceNames.get()}\", " +
-                            "DeviceId=\"playback\", Version=\"$APP_VERSION\"" +
-                            (session?.accessToken?.let { ", Token=\"$it\"" } ?: "")
-                )
-            )
+        // Direct-play HTTP source. The Authorization header is resolved per
+        // DataSource creation, not once at service construction: a server switch
+        // or a re-sign-in must never stream with the previous token/host.
+        val httpFactory = AuthDataSourceFactory(
+            sessionProvider = { app.jellyfin.auth.session },
+            deviceIdProvider = { app.jellyfin.deviceId }
+        )
 
         val renderersFactory = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
@@ -184,6 +186,36 @@ class PlaybackService : MediaSessionService() {
 }
 
 /**
+ * DataSource factory that resolves the Jellyfin Authorization header EVERY time
+ * a data source is created.
+ *
+ * The old code baked one header into the factory at service construction, so a
+ * change of server or a re-sign-in kept streaming with the previous token and
+ * the previous device id ("playback", which was not even this install's).
+ * Reading session + device id lazily costs nothing and cannot go stale.
+ */
+private class AuthDataSourceFactory(
+    private val sessionProvider: () -> Session?,
+    private val deviceIdProvider: () -> String
+) : DataSource.Factory {
+
+    override fun createDataSource(): DataSource =
+        DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .setDefaultRequestProperties(
+                mapOf(
+                    "Authorization" to AuthStore.authHeader(
+                        sessionProvider(),
+                        deviceIdProvider(),
+                        APP_NAME,
+                        BuildConfig.VERSION_NAME
+                    )
+                )
+            )
+            .createDataSource()
+}
+
+/**
  * Reports playback start/progress/stop to Jellyfin so server-side
  * play counts, "Recently Played" and resume positions stay accurate.
  */
@@ -222,7 +254,7 @@ internal class PlaybackReporter(
                     val repeatMode = repeatModeString(p)
                     val playbackOrder = if (p.shuffleModeEnabled) "Shuffle" else "Default"
                     if (id != currentItemId) {
-                        android.util.Log.i("AuraReport", "start $id")
+                        AuraLog.i(AuraTag.REPORT, "start $id")
                         currentItemId?.let { oldId ->
                             // The position belongs to the OLD item: `ticks` here
                             // is read from the player AFTER it switched to the
@@ -230,33 +262,41 @@ internal class PlaybackReporter(
                             // at position 0 and made resume-where-you-left-off
                             // impossible. Use the last position seen for it.
                             val oldTicks = lastTicksForCurrent.coerceAtLeast(0)
+                            // Capture the OLD play session id on THIS (main)
+                            // tick: `playSessionId` is reassigned below, and the
+                            // coroutine on Dispatchers.IO reads the field later —
+                            // it raced and stopped the NEW session instead of the
+                            // one being replaced.
+                            val oldSessionId = playSessionId
                             com.hans.aura.data.ResumePoints.save(oldId, oldTicks / 10_000L)
-                            android.util.Log.i("AuraReport", "switch stop old=$oldId at=$oldTicks")
+                            AuraLog.i(AuraTag.REPORT, "switch stop old=$oldId at=$oldTicks")
                             scope.launch {
                                 runCatching {
                                     jellyfin.api.reportPlaybackStopped(
                                         com.hans.aura.data.PlaybackStopInfo(
                                             itemId = oldId,
-                                            playSessionId = playSessionId,
+                                            playSessionId = oldSessionId,
                                             positionTicks = oldTicks,
                                             mediaSourceId = oldId
                                         )
                                     )
                                 }.onFailure {
-                                    android.util.Log.w("AuraReport", "stop failed: ${it.message}")
+                                    AuraLog.w(AuraTag.REPORT, "stop failed: ${it.message}")
                                 }
                             }
                         }
                         currentItemId = id
                         lastTicksForCurrent = ticks
                         playSessionId = java.util.UUID.randomUUID().toString()
+                        // Same capture rule for the start report below.
+                        val newSessionId = playSessionId
                         lastProgressAt = android.os.SystemClock.elapsedRealtime()
                         scope.launch {
                             runCatching {
                                 jellyfin.api.reportPlaybackStart(
                                     com.hans.aura.data.PlaybackStartInfo(
                                         itemId = id,
-                                        playSessionId = playSessionId,
+                                        playSessionId = newSessionId,
                                         canSeek = true,
                                         isPaused = paused,
                                         positionTicks = ticks,
@@ -267,7 +307,7 @@ internal class PlaybackReporter(
                                     )
                                 )
                             }.onFailure {
-                                android.util.Log.w("AuraReport", "playbackStart failed: ${it.message}")
+                                AuraLog.w(AuraTag.REPORT, "playbackStart failed: ${it.message}")
                             }
                         }
                     } else {
@@ -299,7 +339,7 @@ internal class PlaybackReporter(
                                         )
                                     )
                                 }.onFailure {
-                                    android.util.Log.w("AuraReport", "progress failed: ${it.message}")
+                                    AuraLog.w(AuraTag.REPORT, "progress failed: ${it.message}")
                                 }
                             }
                         }
@@ -307,22 +347,25 @@ internal class PlaybackReporter(
                 } else if (currentItemId != null && idle) {
                     // Track ended or playback was stopped (incl. remote Stop):
                     // clear the server session's NowPlayingItem.
-                    val oldId = currentItemId!!
-                    val ticks = p.currentPosition.coerceAtLeast(0) * 10_000L
-                    android.util.Log.i("AuraReport", "session stopped $oldId")
-                    currentItemId = null
-                    scope.launch {
-                        runCatching {
-                            jellyfin.api.reportPlaybackStopped(
-                                com.hans.aura.data.PlaybackStopInfo(
-                                    itemId = oldId,
-                                    playSessionId = playSessionId,
-                                    positionTicks = ticks,
-                                    mediaSourceId = oldId
+                    currentItemId?.let { oldId ->
+                        val ticks = p.currentPosition.coerceAtLeast(0) * 10_000L
+                        // Capture before the coroutine reads it off-thread.
+                        val sessionId = playSessionId
+                        AuraLog.i(AuraTag.REPORT, "session stopped $oldId")
+                        currentItemId = null
+                        scope.launch {
+                            runCatching {
+                                jellyfin.api.reportPlaybackStopped(
+                                    com.hans.aura.data.PlaybackStopInfo(
+                                        itemId = oldId,
+                                        playSessionId = sessionId,
+                                        positionTicks = ticks,
+                                        mediaSourceId = oldId
+                                    )
                                 )
-                            )
-                        }.onFailure {
-                            android.util.Log.w("AuraReport", "stop failed: ${it.message}")
+                            }.onFailure {
+                                AuraLog.w(AuraTag.REPORT, "stop failed: ${it.message}")
+                            }
                         }
                     }
                 }

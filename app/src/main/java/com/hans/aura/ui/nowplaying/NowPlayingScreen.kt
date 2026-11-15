@@ -320,6 +320,12 @@ fun NowPlayingScreen(
                             // (only while it is closed; once it is up, the
                             // overlay owns the D-pad).
                             modifier = Modifier.onPreviewKeyEvent { e ->
+                                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown) {
+                                    android.util.Log.d(
+                                        "AURA_PEEK",
+                                        "down: peek=$peekSize upcoming=${upcoming.size} idx=$queueIndexState"
+                                    )
+                                }
                                 if (e.type == KeyEventType.KeyDown &&
                                     e.key == Key.DirectionDown &&
                                     peekSize == 0

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -46,6 +47,7 @@ import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 
 /**
  * Whole-library views: Artists, Albums, Tracks, Playlists.
@@ -80,6 +82,12 @@ private object LibrarySortPrefs {
     fun set(kind: String, mode: SortMode) { byKind[kind] = mode }
 }
 
+/** Session-scoped "Liked" filter for the Tracks tab (a pill, not a 6th tab —
+ *  the 960dp top bar has no room for another tab). */
+private object LibraryLikedPrefs {
+    var on: Boolean = false
+}
+
 @Composable
 fun LibraryScreen(
     app: AuraApp,
@@ -93,9 +101,18 @@ fun LibraryScreen(
     val session = app.jellyfin.auth.session!!
     var sort by remember { mutableStateOf(LibrarySortPrefs.get(kind)) }
     var desc by remember { mutableStateOf(sort.defaultDesc) }
+    // "Liked" is only offered on the Tracks tab, and it narrows the SAME paged
+    // list rather than adding a top-bar tab.
+    var likedOnly by remember {
+        mutableStateOf(kind == "Tracks" && LibraryLikedPrefs.on)
+    }
     // Sort-specific keys: switching sort reloads fresh and BACK restores the
     // exact list + scroll of the sort that was active.
-    val cacheKey = "lib_${kind.lowercase()}:${session.userId}:${sort.sortBy}:$desc"
+    val cacheKey = if (likedOnly) {
+        "lib_liked:${session.userId}:${sort.sortBy}:$desc"
+    } else {
+        "lib_${kind.lowercase()}:${session.userId}:${sort.sortBy}:$desc"
+    }
     var items by remember { mutableStateOf<List<JellyfinItem>>(emptyList()) }
     var initialized by remember { mutableStateOf(false) }
     var total by remember { mutableStateOf(Int.MAX_VALUE) }
@@ -132,7 +149,18 @@ fun LibraryScreen(
         loading = true
         runCatching {
             val order = if (desc) "Descending" else "Ascending"
-            val result = when (kind) {
+            val result = if (likedOnly) {
+                // Favourites go through the same paged/LibraryFilter path as
+                // every other tab, so the library-selection filter still applies.
+                com.hans.aura.data.Favorites.browseLiked(
+                    api = app.jellyfin.api,
+                    userId = session.userId,
+                    sortBy = sort.sortBy,
+                    sortOrder = order,
+                    startIndex = items.size,
+                    limit = PAGE_SIZE
+                )
+            } else when (kind) {
                 "Artists" -> com.hans.aura.data.LibraryFilter.queryAlbumArtists(
                     app.jellyfin.api, userId = session.userId, sortBy = sort.sortBy, sortOrder = order,
                     limit = PAGE_SIZE, startIndex = items.size
@@ -237,6 +265,19 @@ fun LibraryScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Liked pill lives INSIDE the Tracks sort row: the 960dp top bar
+            // cannot fit a sixth tab, and this reads as a filter, not a place.
+            if (kind == "Tracks") {
+                SortPill(
+                    label = if (likedOnly) "\u2665 Liked" else "\u2661 Liked",
+                    selected = likedOnly,
+                    onClick = {
+                        likedOnly = !likedOnly
+                        LibraryLikedPrefs.on = likedOnly
+                    }
+                )
+                Spacer(Modifier.width(18.dp))
+            }
             sortModesFor(kind).forEach { mode ->
                 val active = mode == sort
                 SortPill(
@@ -264,7 +305,10 @@ fun LibraryScreen(
                 androidx.tv.material3.Text("Loading\u2026", color = TextSecondary, fontSize = 16.sp)
             }
             items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text("Nothing here", color = TextSecondary, fontSize = 16.sp)
+                androidx.tv.material3.Text(
+                    if (likedOnly) "No liked songs yet" else "Nothing here",
+                    color = TextSecondary, fontSize = 16.sp
+                )
             }
             kind == "Tracks" -> LazyColumn(
                 state = listState,
@@ -283,7 +327,15 @@ fun LibraryScreen(
                         onClick = { player.playQueue(items, i) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedId = it },
-                        onLongPress = { trackMenu(track) }
+                        onLongPress = { trackMenu(track) },
+                        favorite = com.hans.aura.data.Favorites.isFavorite(track),
+                        onToggleFavorite = {
+                            scope.launch {
+                                com.hans.aura.data.Favorites.toggle(
+                                    app.jellyfin.api, session.userId, track
+                                )
+                            }
+                        }
                     )
                 }
                 item {
@@ -317,6 +369,18 @@ fun LibraryScreen(
                         onFocused = { focusedId = it },
                         onLongPress = if (kind != "Artists") {
                             { albumMenu(item) }
+                        } else null,
+                        favorite = if (kind == "Albums") {
+                            com.hans.aura.data.Favorites.isFavorite(item)
+                        } else null,
+                        onToggleFavorite = if (kind == "Albums") {
+                            {
+                                scope.launch {
+                                    com.hans.aura.data.Favorites.toggle(
+                                        app.jellyfin.api, session.userId, item
+                                    )
+                                }
+                            }
                         } else null
                     ) {
                         when (kind) {

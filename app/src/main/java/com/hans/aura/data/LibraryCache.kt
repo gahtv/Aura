@@ -53,6 +53,14 @@ object LibraryCache {
 
     fun evict(key: String) { store.remove(k(key)) }
 
+    /** Drops every cached list whose (full, already suffixed) key matches.
+     *  Needed for mutations that touch a whole FAMILY of keys — a favourite
+     *  toggle invalidates every sorted/paged Tracks list, and the sort+dir
+     *  suffix means there is no single key to name. */
+    fun evictWhere(predicate: (String) -> Boolean) {
+        store.keys.filter(predicate).forEach { store.remove(it) }
+    }
+
     /**
      * Every key is scoped to the library selection, so a list fetched while
      * library X was visible can never be served after X is hidden (and vice

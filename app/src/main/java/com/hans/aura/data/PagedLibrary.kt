@@ -19,6 +19,11 @@ object PagedLibrary {
     val size: Int get() = store.size
     fun clear() = store.clear()
 
+    /** Same family eviction as LibraryCache.evictWhere, for the paged store. */
+    fun evictWhere(predicate: (String) -> Boolean) {
+        store.keys.filter(predicate).forEach { store.remove(it) }
+    }
+
     /** Paged lists are scoped to the library selection, same as LibraryCache. */
     private fun k(key: String): String = key + LibraryFilter.cacheSuffix()
 }

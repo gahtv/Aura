@@ -124,6 +124,9 @@ object ContextMenus {
         onRemoveFromPlaylist?.let {
             actions.add(ContextAction("Remove from playlist") { it() })
         }
+        // Liked songs sit FIRST — above "Play next" and above the playlist
+        // reorder rows (inserted after them so nothing can push it down).
+        actions.add(0, favoriteAction(app, scope, track))
         return ContextMenuSpec(
             title = track.name,
             subtitle = track.artistNames.ifBlank { null },
@@ -167,8 +170,27 @@ object ContextMenus {
         return ContextMenuSpec(
             title = album.name,
             subtitle = album.albumArtist ?: album.artistNames.ifBlank { null },
-            actions = actions
+            actions = listOf(favoriteAction(app, scope, album)) + actions
         )
+    }
+
+    /**
+     * "Add to / Remove from favorites" — the label is decided when the menu
+     * opens from the session's favourite state, and the toggle itself is
+     * optimistic (Favorites reverts it if the server rejects the request).
+     */
+    private fun favoriteAction(
+        app: AuraApp,
+        scope: CoroutineScope,
+        item: JellyfinItem
+    ): ContextAction {
+        val liked = com.hans.aura.data.Favorites.isFavorite(item)
+        return ContextAction(if (liked) "Remove from favorites" else "Add to favorites") {
+            scope.launch {
+                val userId = app.jellyfin.auth.session?.userId ?: return@launch
+                com.hans.aura.data.Favorites.toggle(app.jellyfin.api, userId, item)
+            }
+        }
     }
 
     /**

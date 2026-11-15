@@ -61,6 +61,9 @@ fun ArtworkCard(
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
+    // Liked state for album cards (null = draw no heart, e.g. artists).
+    favorite: Boolean? = null,
+    onToggleFavorite: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -126,6 +129,16 @@ fun ArtworkCard(
                             )
                         }
                     }
+                    // Liked albums: heart badge on the cover (ATMOS badge owns
+                    // the bottom corner, so this sits top-end).
+                    if (favorite != null) {
+                        HeartToggle(
+                            favorite = favorite,
+                            accent = accent,
+                            onClick = onToggleFavorite,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                        )
+                    }
                 }
             } else {
                 Box(Modifier.fillMaxSize().background(SurfaceHigh), Alignment.Center) {
@@ -175,7 +188,11 @@ fun TrackRow(
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
-    onLongPress: (() -> Unit)? = null
+    onLongPress: (() -> Unit)? = null,
+    // Liked state (null = draw no heart). Kept after every existing parameter
+    // so no call site's trailing lambda can bind to it by accident.
+    favorite: Boolean? = null,
+    onToggleFavorite: (() -> Unit)? = null
 ) {
     var focused by remember { mutableStateOf(false) }
     val bg by animateColorAsState(
@@ -254,6 +271,16 @@ fun TrackRow(
             fontSize = 13.sp,
             modifier = Modifier.padding(start = 24.dp)
         )
+        // Heart sits at the trailing edge, after the duration: filled accent =
+        // liked, hollow grey = not.
+        if (favorite != null) {
+            androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+            HeartToggle(
+                favorite = favorite,
+                accent = accent,
+                onClick = onToggleFavorite
+            )
+        }
         if (onRemove != null) {
             androidx.tv.material3.Text(
                 "\u2715",
@@ -264,6 +291,53 @@ fun TrackRow(
                     .clickable { onRemove() }
             )
         }
+    }
+}
+
+/**
+ * Small heart toggle (filled accent = liked, hollow grey = not).
+ *
+ * It is its own focus target inside a row/card, so it carries the app cursor
+ * language: `.onFocusChanged {}` BEFORE `.clickable {}` (after it, the flag
+ * never flips and the ring silently never renders).
+ */
+@Composable
+fun HeartToggle(
+    favorite: Boolean,
+    accent: Color,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    fontSize: androidx.compose.ui.unit.TextUnit = 18.sp
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(50)
+    Box(
+        modifier
+            .clip(shape)
+            .background(
+                when {
+                    focused -> accent.copy(alpha = 0.25f)
+                    else -> Color.Transparent
+                }
+            )
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) Color(0xFFD6CCBE) else Color.Transparent,
+                shape = shape
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(
+                enabled = onClick != null,
+                onClickLabel = if (favorite) "Remove from favorites" else "Add to favorites"
+            ) { onClick?.invoke() }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.tv.material3.Text(
+            if (favorite) "\u2665" else "\u2661",
+            color = if (favorite) accent else TextSecondary,
+            fontSize = fontSize
+        )
     }
 }
 

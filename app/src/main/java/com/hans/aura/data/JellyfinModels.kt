@@ -100,7 +100,11 @@ data class NameId(
 data class UserData(
     @SerialName("PlaybackPositionTicks") val playbackPositionTicks: Long? = null,
     @SerialName("PlayCount") val playCount: Int? = null,
-    @SerialName("LastPlayedDate") val lastPlayedDate: String? = null
+    @SerialName("LastPlayedDate") val lastPlayedDate: String? = null,
+    // Server truth for the heart. Present whenever EnableUserData is on (the
+    // /Items default, and explicit on getItems); also the response body of
+    // POST/DELETE UserFavoriteItems.
+    @SerialName("IsFavorite") val isFavorite: Boolean? = null
 )
 
 @Serializable

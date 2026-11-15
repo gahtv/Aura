@@ -22,8 +22,8 @@ android {
         applicationId = "com.hans.aura"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.2.0-alpha.3"
+        versionCode = 5
+        versionName = "0.3.0-alpha.1"
     }
 
     buildTypes {

@@ -45,6 +45,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSizes
+import com.hans.aura.ui.theme.AuraSpacing
+import com.hans.aura.ui.theme.AuraTypography
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.FocusOutline
 import com.hans.aura.ui.theme.Surface
@@ -167,23 +172,23 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
     }
     DisposableEffect(Unit) { onDispose { OverlayVisibility.dialogOpen = false } }
 
-    Box(Modifier.fillMaxSize().background(Color(0xE60E0C0A)).then(swallowOk)) {
+    Box(Modifier.fillMaxSize().background(AuraColors.Scrim).then(swallowOk)) {
         Column(
             Modifier
                 .align(Alignment.Center)
-                .widthIn(max = 520.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .widthIn(max = AuraSizes.contextMenuWidth)
+                .clip(RoundedCornerShape(AuraShapes.md))
                 .background(Surface)
                 .focusProperties { exit = { FocusRequester.Cancel } }
-                .padding(28.dp)
+                .padding(AuraSpacing.lg)
         ) {
-            androidx.tv.material3.Text(spec.title, fontSize = 22.sp, color = TextPrimary,
+            androidx.tv.material3.Text(spec.title, fontSize = AuraTypography.title, color = TextPrimary,
                 maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             spec.subtitle?.let {
-                androidx.tv.material3.Text(it, fontSize = 13.sp, color = TextSecondary,
+                androidx.tv.material3.Text(it, fontSize = AuraTypography.label, color = TextSecondary,
                     maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(AuraSpacing.md))
             Column(
                 Modifier
                     .verticalScroll(rememberScrollState())
@@ -199,7 +204,7 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
                         onDismiss()
                         action.onSelect()
                     }
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(AuraSpacing.xxs))
                 }
             }
         }
@@ -242,43 +247,43 @@ private fun MenuAction(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(6.dp)
+    val shape = RoundedCornerShape(AuraShapes.card)
     Row(
         modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(AuraSizes.minTarget)
             .clip(shape)
             .background(if (focused) SurfaceHigh else Color.Transparent)
             .then(
-                if (focused) Modifier.border(2.dp, FocusOutline, shape) else Modifier
+                if (focused) Modifier.border(AuraSizes.focusBorder, FocusOutline, shape) else Modifier
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = AuraSpacing.sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             Modifier
-                .width(4.dp)
-                .height(26.dp)
+                .width(AuraSizes.rowAccentBarWidth)
+                .height(AuraSpacing.lg)
                 .background(
                     if (focused) Accent else Color.Transparent,
-                    RoundedCornerShape(2.dp)
+                    RoundedCornerShape(AuraShapes.xs)
                 )
         )
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(AuraSpacing.sm))
         if (icon != null) {
             androidx.compose.material3.Icon(
                 painter = androidx.compose.ui.res.painterResource(icon),
                 contentDescription = null,
                 tint = if (focused) Accent else TextSecondary,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(AuraSizes.iconSmall)
             )
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(AuraSpacing.sm))
         }
         androidx.tv.material3.Text(
             label,
-            fontSize = 18.sp,
+            fontSize = AuraTypography.subtitle,
             color = if (focused) TextPrimary else TextSecondary
         )
     }

@@ -39,6 +39,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
+import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSizes
+import com.hans.aura.ui.theme.AuraSpacing
+import com.hans.aura.ui.theme.AuraTypography
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -215,23 +220,23 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(horizontal = 120.dp),
+                .padding(horizontal = AuraSizes.loginHorizontalInset),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = "Aura",
-                fontSize = 64.sp,
+                fontSize = AuraTypography.hero,
                 letterSpacing = 8.sp,
                 color = MaterialTheme.colorScheme.onBackground
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(AuraSpacing.xs))
             Text(
                 text = "Your Jellyfin library, direct to your receiver",
-                fontSize = 16.sp,
+                fontSize = AuraTypography.body,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(AuraSpacing.xxl))
 
             TextField(
                 value = serverUrl,
@@ -239,18 +244,18 @@ fun LoginScreen(
                 placeholder = { Text("http://server:8096") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                modifier = Modifier.width(480.dp)
+                modifier = Modifier.width(AuraSizes.loginFormWidth)
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(AuraSpacing.md))
             TextField(
                 value = username,
                 onValueChange = { username = it },
                 placeholder = { Text("Username") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                modifier = Modifier.width(480.dp).focusRequester(usernameFocus)
+                modifier = Modifier.width(AuraSizes.loginFormWidth).focusRequester(usernameFocus)
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(AuraSpacing.md))
             TextField(
                 value = password,
                 onValueChange = { password = it },
@@ -259,28 +264,28 @@ fun LoginScreen(
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { submitPassword() }),
-                modifier = Modifier.width(480.dp)
+                modifier = Modifier.width(AuraSizes.loginFormWidth)
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(AuraSpacing.lg))
 
             error?.let {
-                Text(text = it, color = Color(0xFFE06C5A), fontSize = 14.sp)
-                Spacer(Modifier.height(12.dp))
+                Text(text = it, color = AuraColors.ErrorText, fontSize = AuraTypography.bodySmall)
+                Spacer(Modifier.height(AuraSpacing.sm))
             }
 
             Button(
                 onClick = { submitPassword() },
                 enabled = !busy && serverUrl.isNotBlank() && username.isNotBlank(),
-                modifier = Modifier.width(480.dp)
+                modifier = Modifier.width(AuraSizes.loginFormWidth)
             ) {
                 Text(if (busy) "Signing in..." else "Sign in")
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(AuraSpacing.sm))
             // Sign in from a phone/computer: no password typed on the TV remote.
             Button(
                 onClick = { startQuickConnect() },
                 enabled = !busy && serverUrl.isNotBlank(),
-                modifier = Modifier.width(480.dp)
+                modifier = Modifier.width(AuraSizes.loginFormWidth)
             ) {
                 Text("Sign in with a code")
             }
@@ -299,45 +304,53 @@ fun LoginScreen(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color(0xE60A0806)),
+                    .background(AuraColors.DialogScrimSoft),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
                     Modifier
-                        .width(680.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .width(AuraSizes.loginPanelWidth)
+                        .clip(RoundedCornerShape(AuraShapes.lg))
                         .background(MaterialTheme.colorScheme.surface)
-                        .border(1.dp, com.hans.aura.ui.theme.Border, RoundedCornerShape(12.dp))
+                        .border(
+                            AuraSizes.hairline,
+                            com.hans.aura.ui.theme.Border,
+                            RoundedCornerShape(AuraShapes.lg)
+                        )
                         // Trap the cursor inside the panel; DOWN must not fall
                         // back into the login form behind the scrim.
                         .focusProperties { exit = { FocusRequester.Cancel } }
-                        .padding(36.dp),
+                        .padding(AuraSpacing.xl),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Quick Connect", fontSize = 26.sp, color = MaterialTheme.colorScheme.onSurface)
-                    Spacer(Modifier.height(12.dp))
+                    Text("Quick Connect", fontSize = AuraTypography.headline, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(AuraSpacing.sm))
                     Text(
                         "On your phone or computer, open Jellyfin, then Settings \u2192 " +
                             "Quick Connect, and enter this code:",
-                        fontSize = 15.sp,
+                        fontSize = AuraTypography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(AuraSpacing.lg))
                     Text(
                         text = panel.code,
-                        fontSize = 64.sp,
+                        fontSize = AuraTypography.hero,
                         letterSpacing = 12.sp,
                         color = com.hans.aura.ui.theme.Accent
                     )
-                    Spacer(Modifier.height(16.dp))
-                    Text(panel.serverUrl, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(AuraSpacing.md))
                     Text(
-                        if (panel.demo) "Demo panel (debug build)" else "Waiting for approval\u2026",
-                        fontSize = 13.sp,
+                        panel.serverUrl,
+                        fontSize = AuraTypography.label,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(28.dp))
+                    Spacer(Modifier.height(AuraSpacing.xs))
+                    Text(
+                        if (panel.demo) "Demo panel (debug build)" else "Waiting for approval\u2026",
+                        fontSize = AuraTypography.label,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(AuraSpacing.lg))
                     Button(
                         onClick = { cancelQuickConnect() },
                         modifier = Modifier.focusRequester(cancelFocus)

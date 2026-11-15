@@ -24,13 +24,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import com.hans.aura.ui.common.ContextMenuHost
 import com.hans.aura.ui.common.ContextMenus
@@ -38,6 +38,10 @@ import com.hans.aura.ui.common.InitialFocusOnPush
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSizes
+import com.hans.aura.ui.theme.AuraSpacing
+import com.hans.aura.ui.theme.AuraTypography
 import com.hans.aura.ui.theme.FocusOutline
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
@@ -61,7 +65,7 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
     val repeatMode by player.repeatMode.collectAsState()
     val smart by player.smartShuffle.collectAsState()
 
-    val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val contentFocus = remember { FocusRequester() }
     InitialFocusOnPush(initialFocus, contentFocus)
 
     val upcoming = (queue.size - (queueIndex + 1)).coerceAtLeast(0)
@@ -70,12 +74,17 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
         Modifier
             .fillMaxSize()
             .background(Surface)
-            .padding(horizontal = 48.dp, vertical = 28.dp)
+            .padding(
+                horizontal = AuraSpacing.xxl,
+                vertical = AuraSpacing.queueHeaderVertical
+            )
     ) {
+        // Budget note: the title + seven actions must fit 960dp of TV width, so
+        // this row keeps the compact 38dp / 13sp / 11dp metrics from AuraSizes.
         Row(verticalAlignment = Alignment.CenterVertically) {
             androidx.tv.material3.Text(
                 "Queue \u00B7 ${queue.size}",
-                fontSize = 22.sp, color = TextPrimary
+                fontSize = AuraTypography.title, color = TextPrimary
             )
             Spacer(Modifier.weight(1f))
             HeaderActionButton(
@@ -84,7 +93,7 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
                 onClick = { player.setShuffle(!shuffle) }
             )
             // Smart shuffle: least-played / longest-unplayed first, reversible.
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(AuraSpacing.xs))
             HeaderActionButton(
                 label = if (smart) "Normal order" else "Smart",
                 active = smart,
@@ -92,7 +101,7 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
                     if (smart) player.restoreNormalOrder() else player.applySmartOrder()
                 }
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(AuraSpacing.xs))
             HeaderActionButton(
                 label = when (repeatMode) {
                     Player.REPEAT_MODE_ALL -> "Repeat all"
@@ -110,21 +119,21 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
             // Only meaningful while something is actually queued behind the
             // current track; the current track keeps playing either way.
             if (upcoming > 0) {
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(AuraSpacing.xs))
                 HeaderActionButton(
                     label = "Clear ($upcoming)",
                     onClick = { player.clearUpcoming() }
                 )
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(AuraSpacing.xs))
             // Sleep timer lives on the QUEUE screen: that is the screen you are
             // on when you decide how much longer the music should run, and Now
             // Playing stays transport-only.
             SleepChip(player)
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(AuraSpacing.sm))
             HeaderActionButton(label = "Back", onClick = onBack)
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(AuraSpacing.md))
 
         if (queue.isEmpty()) {
             Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -157,13 +166,14 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
                     )
                 }
                 item {
-                    Spacer(Modifier.height(60.dp))
+                    Spacer(Modifier.height(AuraSizes.minTarget))
                     androidx.tv.material3.Text(
                         "Queue ends here",
-                        color = TextSecondary, fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 24.dp)
+                        color = TextSecondary, fontSize = AuraTypography.caption,
+                        modifier = Modifier.padding(horizontal = AuraSpacing.lg)
                     )
-                    Spacer(Modifier.height(120.dp)) // room for the now-playing bar
+                    // Room for the now-playing bar.
+                    Spacer(Modifier.height(AuraSizes.bottomBarClearance))
                 }
             }
         }
@@ -183,24 +193,24 @@ private fun HeaderActionButton(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(6.dp)
+    val shape = RoundedCornerShape(AuraShapes.card)
     Box(
         Modifier
-            // 38dp tall and 12dp of side padding: seven actions plus the title
+            // 38dp tall and 11dp of side padding: seven actions plus the title
             // have to fit 960dp of TV width, and the sleep chip was the one that
             // overflowed the row.
-            .height(38.dp)
+            .height(AuraSizes.compactHeaderActionHeight)
             .clip(shape)
             .background(if (focused) SurfaceHigh else Color.Transparent)
-            .then(if (focused) Modifier.border(2.dp, FocusOutline, shape) else Modifier)
+            .then(if (focused) Modifier.border(AuraSizes.focusBorder, FocusOutline, shape) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
-            .padding(horizontal = 11.dp),
+            .padding(horizontal = AuraSizes.compactHeaderActionPadding),
         contentAlignment = Alignment.Center
     ) {
         androidx.tv.material3.Text(
             label,
-            fontSize = 13.sp,
+            fontSize = AuraTypography.label,
             color = when {
                 active -> Accent
                 focused -> TextPrimary
@@ -226,12 +236,13 @@ private fun SleepChip(player: PlayerConnection) {
     androidx.compose.runtime.LaunchedEffect(remaining != null) {
         if (remaining == null) step = 0
     }
+    val remainingMs = remaining
     val label = when {
-        remaining != null -> "Sleep " + sleepClock(remaining!!)
+        remainingMs != null -> "Sleep " + sleepClock(remainingMs)
         step in 1..4 -> "Sleep ${presets[step - 1]} min"
         else -> "Sleep off"
     }
-    HeaderActionButton(label = label, active = remaining != null) {
+    HeaderActionButton(label = label, active = remainingMs != null) {
         step = (step + 1) % (presets.size + 1)
         if (step == 0) {
             player.cancelSleepTimer()

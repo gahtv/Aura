@@ -27,6 +27,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSizes
+import com.hans.aura.ui.theme.AuraSpacing
+import com.hans.aura.ui.theme.AuraTypography
 import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.TextPrimary
@@ -74,27 +79,27 @@ fun ConfirmDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xCC0A0806)),
+            .background(AuraColors.DialogScrim),
         contentAlignment = Alignment.Center
     ) {
         Column(
             Modifier
-                .widthIn(max = 640.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .widthIn(max = AuraSizes.dialogWidth)
+                .clip(RoundedCornerShape(AuraShapes.md))
                 .background(Surface)
-                .border(1.dp, Border, RoundedCornerShape(10.dp))
+                .border(AuraSizes.hairline, Border, RoundedCornerShape(AuraShapes.md))
                 // Trap the cursor: without this DOWN escapes to the content
                 // behind the scrim and the user ends up in the settings list.
                 .focusProperties { exit = { FocusRequester.Cancel } }
-                .padding(32.dp)
+                .padding(AuraSpacing.xl)
         ) {
-            androidx.tv.material3.Text(title, fontSize = 24.sp, color = TextPrimary)
-            Spacer(Modifier.height(12.dp))
-            androidx.tv.material3.Text(message, fontSize = 15.sp, color = TextSecondary)
-            Spacer(Modifier.height(28.dp))
+            androidx.tv.material3.Text(title, fontSize = AuraTypography.title, color = TextPrimary)
+            Spacer(Modifier.height(AuraSpacing.sm))
+            androidx.tv.material3.Text(message, fontSize = AuraTypography.bodySmall, color = TextSecondary)
+            Spacer(Modifier.height(AuraSpacing.lg))
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md)
             ) {
                 androidx.tv.material3.Button(
                     onClick = onDismiss,

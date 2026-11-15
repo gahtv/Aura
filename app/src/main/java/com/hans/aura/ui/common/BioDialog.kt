@@ -36,6 +36,11 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSizes
+import com.hans.aura.ui.theme.AuraSpacing
+import com.hans.aura.ui.theme.AuraTypography
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
@@ -83,24 +88,24 @@ fun BioDialog(title: String, subtitle: String?, text: String, onDismiss: () -> U
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xE60E0C0A))
+            .background(AuraColors.Scrim)
     ) {
         Column(
             Modifier
                 .align(Alignment.Center)
-                .widthIn(max = 900.dp)
+                .widthIn(max = AuraSizes.bioWidth)
                 .fillMaxHeight(0.85f)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(AuraShapes.md))
                 .background(com.hans.aura.ui.theme.Surface)
                 // Trap focus: the screen behind the dialog must never receive it.
                 .focusProperties { exit = { FocusRequester.Cancel } }
-                .padding(36.dp)
+                .padding(AuraSpacing.xl)
         ) {
-            androidx.tv.material3.Text(title, fontSize = 26.sp, color = TextPrimary)
+            androidx.tv.material3.Text(title, fontSize = AuraTypography.headline, color = TextPrimary)
             subtitle?.let {
-                androidx.tv.material3.Text(it, fontSize = 14.sp, color = TextSecondary)
+                androidx.tv.material3.Text(it, fontSize = AuraTypography.bodySmall, color = TextSecondary)
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(AuraSpacing.md))
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -116,9 +121,9 @@ fun BioDialog(title: String, subtitle: String?, text: String, onDismiss: () -> U
             ) {
                 androidx.tv.material3.Text(
                     text,
-                    fontSize = 15.sp,
+                    fontSize = AuraTypography.bodySmall,
                     color = TextPrimary,
-                    lineHeight = 24.sp
+                    lineHeight = AuraTypography.lineHeight
                 )
             }
         }

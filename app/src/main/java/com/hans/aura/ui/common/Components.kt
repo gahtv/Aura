@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,12 +22,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.composed
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,14 +34,19 @@ import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.hans.aura.R
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.ui.theme.Border
+import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSizes
+import com.hans.aura.ui.theme.AuraSpacing
+import com.hans.aura.ui.theme.AuraTypography
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
@@ -87,15 +91,15 @@ fun ArtworkCard(
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(if (focused) 6.dp else 4.dp))
+                .clip(RoundedCornerShape(if (focused) AuraShapes.card else AuraShapes.xs))
                 .background(bg)
-                .padding(if (focused) 2.dp else 0.dp)
+                .padding(if (focused) AuraSizes.focusBorder else 0.dp)
                 .then(
                     // Unmistakable focus outline: accent ring on the artwork.
                     if (focused) Modifier.border(
-                        width = 3.dp,
+                        width = AuraSizes.focusBorderLoud,
                         color = accent,
-                        shape = RoundedCornerShape(6.dp)
+                        shape = RoundedCornerShape(AuraShapes.card)
                     ) else Modifier
                 )
         ) {
@@ -103,8 +107,7 @@ fun ArtworkCard(
             // Tracks often carry no Primary image of their own; fall back to the album art.
             val imageItem = when {
                 tag != null -> item.id
-                item.albumId != null -> item.albumId!!
-                else -> null
+                else -> item.albumId
             }
             if (imageItem != null) {
                 Box {
@@ -118,15 +121,18 @@ fun ArtworkCard(
                         Box(
                             Modifier
                                 .align(Alignment.BottomEnd)
-                                .padding(6.dp)
-                                .background(Color(0xCC14100C), RoundedCornerShape(3.dp))
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                .padding(AuraSpacing.xxs)
+                                .background(
+                                    AuraColors.BadgeScrim,
+                                    RoundedCornerShape(AuraShapes.xs)
+                                )
+                                .padding(horizontal = AuraSpacing.xxs, vertical = 2.dp)
                         ) {
                             androidx.tv.material3.Text(
                                 label,
                                 color = badgeColor,
-                                fontSize = 9.sp,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                fontSize = AuraTypography.caption,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -139,7 +145,7 @@ fun ArtworkCard(
                             favorite = favorite,
                             accent = accent,
                             interactive = false,
-                            modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                            modifier = Modifier.align(Alignment.TopEnd).padding(AuraSpacing.xxs)
                         )
                     }
                 }
@@ -147,7 +153,7 @@ fun ArtworkCard(
                 Box(Modifier.fillMaxSize().background(SurfaceHigh), Alignment.Center) {
                     androidx.tv.material3.Text(
                         item.name.take(1).uppercase(),
-                        fontSize = 40.sp,
+                        fontSize = AuraTypography.display,
                         color = TextSecondary
                     )
                 }
@@ -155,16 +161,16 @@ fun ArtworkCard(
         }
         androidx.tv.material3.Text(
             item.name,
-            color = if (focused) TextPrimary else TextPrimary,
-            fontSize = 14.sp,
+            color = TextPrimary,
+            fontSize = AuraTypography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.padding(top = AuraSpacing.xs)
         )
         androidx.tv.material3.Text(
             subtitleOf(item),
             color = TextSecondary,
-            fontSize = 12.sp,
+            fontSize = AuraTypography.caption,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -208,10 +214,10 @@ fun TrackRow(
         },
         label = "trackRow"
     )
-    androidx.compose.foundation.layout.Row(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .height(AuraSizes.trackRowHeight)
             .background(bg)
             .then(
                 if (focusKeeper != null) {
@@ -224,37 +230,37 @@ fun TrackRow(
                 if (it.isFocused) onFocused?.invoke(track.id)
             }
             .clickable { onClick() }
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = AuraSpacing.lg),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Left accent bar marks keyboard focus on rows.
         if (focused) {
             Box(
                 Modifier
-                    .width(4.dp)
-                    .height(40.dp)
+                    .width(AuraSizes.rowAccentBarWidth)
+                    .height(AuraSizes.rowAccentBarHeight)
                     .background(accent)
             )
-            androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(AuraSpacing.md))
         }
         androidx.tv.material3.Text(
             text = if (isCurrent) "\u25B6" else index.toString(),
             color = if (isCurrent) accent else TextSecondary,
-            fontSize = 14.sp,
-            modifier = Modifier.width(36.dp)
+            fontSize = AuraTypography.bodySmall,
+            modifier = Modifier.width(AuraSizes.trackIndexWidth)
         )
-        androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-            androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 androidx.tv.material3.Text(
                     track.name,
                     color = if (isCurrent) accent else TextPrimary,
-                    fontSize = 15.sp,
+                    fontSize = AuraTypography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
                 if (atmos) {
-                    androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(AuraSpacing.xs))
                     AtmosChip(color = accent)
                 }
             }
@@ -262,7 +268,7 @@ fun TrackRow(
                 androidx.tv.material3.Text(
                     track.artistNames,
                     color = TextSecondary,
-                    fontSize = 12.sp,
+                    fontSize = AuraTypography.caption,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -271,13 +277,13 @@ fun TrackRow(
         androidx.tv.material3.Text(
             formatDuration(track.durationMs),
             color = TextSecondary,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(start = 24.dp)
+            fontSize = AuraTypography.label,
+            modifier = Modifier.padding(start = AuraSpacing.lg)
         )
         // Heart sits at the trailing edge, after the duration: filled accent =
         // liked, hollow grey = not.
         if (favorite != null) {
-            androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(AuraSpacing.xs))
             HeartToggle(
                 favorite = favorite,
                 accent = accent,
@@ -286,223 +292,16 @@ fun TrackRow(
         }
         if (onRemove != null) {
             androidx.compose.material3.Icon(
-                painter = androidx.compose.ui.res.painterResource(
-                    com.hans.aura.R.drawable.ic_close
-                ),
+                painter = androidx.compose.ui.res.painterResource(R.drawable.ic_close),
                 contentDescription = "Remove",
                 tint = TextSecondary,
                 modifier = Modifier
-                    .padding(start = 16.dp)
-                    .size(18.dp)
+                    .padding(start = AuraSpacing.md)
+                    .size(AuraSizes.iconBadge)
                     .clickable { onRemove() }
             )
         }
     }
-}
-
-/**
- * Small heart (filled accent = liked, hollow grey = not).
- *
- * Two modes on purpose:
- *  - `interactive = false` on cards and rows: a pure INDICATOR. A focusable
- *    child inside a focusable card is unreachable with a D-pad (focus search
- *    does not descend into a clickable parent), so a heart you could only hit
- *    with a finger is a trap on a TV. Favouriting is done from the context
- *    menu (hold OK) or from the Now Playing transport row.
- *  - `interactive = true` where it sits in a normal button row (Now Playing):
- *    then it carries the app cursor language, and `.onFocusChanged {}` must
- *    come BEFORE `.clickable {}` (after it the flag never flips and the ring
- *    silently never renders).
- */
-@Composable
-fun HeartToggle(
-    favorite: Boolean,
-    accent: Color,
-    onClick: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
-    iconSize: androidx.compose.ui.unit.Dp = 20.dp,
-    interactive: Boolean = true
-) {
-    var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(50)
-    val focusableModifier = if (!interactive) {
-        modifier
-    } else {
-        modifier
-            .clip(shape)
-            .background(
-                when {
-                    focused -> accent.copy(alpha = 0.25f)
-                    else -> Color.Transparent
-                }
-            )
-            .border(
-                width = if (focused) 2.dp else 0.dp,
-                color = if (focused) Color(0xFFD6CCBE) else Color.Transparent,
-                shape = shape
-            )
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(
-                enabled = onClick != null,
-                onClickLabel = if (favorite) "Remove from favorites" else "Add to favorites"
-            ) { onClick?.invoke() }
-    }
-    Box(
-        focusableModifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        androidx.compose.material3.Icon(
-            painter = androidx.compose.ui.res.painterResource(
-                if (favorite) com.hans.aura.R.drawable.ic_favorite_fill1
-                else com.hans.aura.R.drawable.ic_favorite
-            ),
-            contentDescription = null,
-            tint = if (favorite) accent else TextSecondary,
-            modifier = Modifier.size(iconSize)
-        )
-    }
-}
-
-/**
- * "Only Atmos" view filter, icon-only on purpose (user decision 2026-11-15): the
- * library pill row already carries 8-9 pills and the artist header is tight, so a
- * text label does not fit. spatial_audio = filter on, spatial_audio_off = off.
- * The wording lives in Settings, which explains the feature in words.
- *
- * House rule: `.onFocusChanged` BEFORE `.clickable`, or the focus ring never
- * renders and the control reads as dead on a TV.
- */
-@Composable
-fun AtmosFilterPill(
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    accent: Color = com.hans.aura.ui.theme.Accent
-) {
-    var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
-    Box(
-        modifier
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClickLabel = "Only Atmos") { onClick() }
-            .clip(shape)
-            .background(
-                when {
-                    selected -> accent
-                    focused -> Color(0xFF3A322A)
-                    else -> Color.Transparent
-                }
-            )
-            .border(
-                width = if (focused) 3.dp else 0.dp,
-                color = if (focused) Color(0xFFF2EDE6) else Color.Transparent,
-                shape = shape
-            )
-            .padding(horizontal = 10.dp, vertical = 7.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        androidx.compose.material3.Icon(
-            painter = androidx.compose.ui.res.painterResource(
-                if (selected) com.hans.aura.R.drawable.ic_spatial_audio
-                else com.hans.aura.R.drawable.ic_spatial_audio_off
-            ),
-            contentDescription = "Only Atmos",
-            tint = if (selected) Color(0xFF191410) else TextPrimary,
-            modifier = Modifier.size(18.dp)
-        )
-    }
-}
-
-/** Set while a full-screen overlay (bio popup, playlist picker) is open —
- *  the now-playing bar hides so overlays sit on top and keep focus. */
-object OverlayVisibility {
-    var dialogOpen by mutableStateOf(false)
-}
-
-/** Tracks which item last held focus in a screen so BACK can restore it exactly. */
-class FocusKeeper {
-    private val requesters = mutableMapOf<String, androidx.compose.ui.focus.FocusRequester>()
-
-    fun requesterFor(id: String): androidx.compose.ui.focus.FocusRequester =
-        synchronized(requesters) {
-            requesters.getOrPut(id) { androidx.compose.ui.focus.FocusRequester() }
-        }
-}
-
-/**
- * Pulls focus into a screen's content group after BACK navigation.
- * Restores the exact previously-focused item when known; otherwise falls back
- * to the content group. Delayed so the restored scroll position settles first.
- */
-@Composable
-fun RestoreFocusOnBack(
-    focusTick: Int,
-    containerRequester: androidx.compose.ui.focus.FocusRequester,
-    focusedId: String? = null,
-    keeper: FocusKeeper? = null
-) {
-    LaunchedEffect(focusTick) {
-        if (focusTick <= 0) return@LaunchedEffect
-        kotlinx.coroutines.delay(350)
-        val target = focusedId?.let { id -> keeper?.requesterFor(id) }
-        if (target != null) {
-            val result = runCatching { target.requestFocus() }
-            if (result.isSuccess) return@LaunchedEffect
-        }
-        runCatching { containerRequester.requestFocus() }
-    }
-}
-
-/**
- * Pushed screens on TV get no automatic focus — without this, a newly opened
- * screen has no focused item and D-pad presses do nothing until focus is
- * found by accident. Runs once per screen entry.
- */
-@Composable
-fun InitialFocusOnPush(shouldFocus: Boolean, requester: androidx.compose.ui.focus.FocusRequester) {
-    LaunchedEffect(shouldFocus) {
-        if (!shouldFocus) return@LaunchedEffect
-        kotlinx.coroutines.delay(150)
-        repeat(5) {
-            val ok = runCatching { requester.requestFocus() }.isSuccess
-            if (ok) return@LaunchedEffect
-            kotlinx.coroutines.delay(100)
-        }
-    }
-}
-
-fun formatDuration(ms: Long): String {
-    val total = ms / 1000
-    return "${total / 60}:${(total % 60).toString().padStart(2, '0')}"
-}
-
-/** Small ATMOS marker used on rows (the card equivalent is ArtworkCard's badge). */
-@Composable
-fun AtmosChip(color: Color = com.hans.aura.ui.theme.Accent) {
-    androidx.tv.material3.Text(
-        "ATMOS",
-        color = color,
-        fontSize = 9.sp,
-        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-        modifier = Modifier
-            .background(Color(0xCC14100C), RoundedCornerShape(3.dp))
-            .padding(horizontal = 5.dp, vertical = 2.dp)
-    )
-}
-
-/** Loads (session-cached) the set of album ids containing an Atmos track. */
-@Composable
-fun rememberAtmosAlbumIds(
-    api: com.hans.aura.data.JellyfinApi,
-    userId: String
-): Set<String> {
-    var ids by remember { mutableStateOf<Set<String>>(emptySet()) }
-    LaunchedEffect(userId) {
-        ids = runCatching {
-            com.hans.aura.data.AtmosCatalog.albumIds(api, userId)
-        }.getOrDefault(emptySet())
-    }
-    return ids
 }
 
 /**
@@ -518,7 +317,7 @@ fun ItemShelf(
     focusKeeper: FocusKeeper,
     onFocused: (String) -> Unit,
     onOpen: (JellyfinItem, Int) -> Unit,
-    size: Dp = 180.dp,
+    size: Dp = AuraSizes.shelfCardWidth,
     showLoading: Boolean = true,
     badgeFor: ((JellyfinItem) -> String?)? = null,
     onLongPress: ((JellyfinItem) -> Unit)? = null
@@ -530,27 +329,27 @@ fun ItemShelf(
         items == null -> {
             if (showLoading) {
                 androidx.tv.material3.Text(
-                    "$title \u2026", color = TextSecondary, fontSize = 14.sp,
-                    modifier = Modifier.padding(horizontal = 56.dp)
+                    "$title \u2026", color = TextSecondary, fontSize = AuraTypography.bodySmall,
+                    modifier = Modifier.padding(horizontal = AuraSpacing.screenHorizontal)
                 )
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(AuraSpacing.md))
             }
         }
         shown.isNullOrEmpty() -> {}
         else -> {
             androidx.tv.material3.Text(
-                title, fontSize = 20.sp, color = TextPrimary,
-                modifier = Modifier.padding(horizontal = 56.dp)
+                title, fontSize = AuraTypography.titleSmall, color = TextPrimary,
+                modifier = Modifier.padding(horizontal = AuraSpacing.screenHorizontal)
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(AuraSpacing.sm))
             Row(
                 Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
                     .focusRestorer(),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md)
             ) {
-                Spacer(Modifier.width(40.dp))
+                Spacer(Modifier.width(AuraSizes.shelfEdgeSpacer))
                 shown.forEachIndexed { idx, item ->
                     ArtworkCard(
                         item = item,
@@ -564,11 +363,16 @@ fun ItemShelf(
                         onOpen(item, idx)
                     }
                 }
-                Spacer(Modifier.width(40.dp))
+                Spacer(Modifier.width(AuraSizes.shelfEdgeSpacer))
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(AuraSpacing.md))
         }
     }
+}
+
+fun formatDuration(ms: Long): String {
+    val total = ms / 1000
+    return "${total / 60}:${(total % 60).toString().padStart(2, '0')}"
 }
 
 /**

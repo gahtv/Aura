@@ -38,6 +38,13 @@ interface JellyfinApi {
         @retrofit2.http.Path("itemId") itemId: String
     ): JellyfinItem
 
+    /** The user's libraries (Settings > Libraries shown in Aura, and the list the
+     *  per-library query strategy filters). */
+    @GET("UserViews")
+    suspend fun getUserViews(
+        @Query("userId") userId: String
+    ): ItemsResponse
+
     @GET("Artists/AlbumArtists")
     suspend fun getAlbumArtists(
         @Query("userId") userId: String,
@@ -46,7 +53,9 @@ interface JellyfinApi {
         @Query("Limit") limit: Int = 200,
         @Query("StartIndex") startIndex: Int = 0,
         @Query("Fields") fields: String = "PrimaryImageAspectRatio",
-        @Query("ImageTypeLimit") imageTypeLimit: Int = 1
+        @Query("ImageTypeLimit") imageTypeLimit: Int = 1,
+        // Per-library filtering for library selection (see data/LibraryFilter.kt).
+        @Query("ParentId") parentId: String? = null
     ): ItemsResponse
 
     // ---- Playlists ----

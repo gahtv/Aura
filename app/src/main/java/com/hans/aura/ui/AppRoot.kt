@@ -408,9 +408,12 @@ fun AppRoot() {
             if (link.autoplay) {
                 runCatching {
                     val session = app.jellyfin.auth.session ?: return@collect
-                    val result = app.jellyfin.api.getItems(
-                        userId = session.userId, includeItemTypes = "Audio",
-                        recursive = true, sortBy = "Random", limit = 1, startIndex = 0
+                    val result = com.hans.aura.data.LibraryFilter.queryItems(
+                        app.jellyfin.api, session.userId,
+                        com.hans.aura.data.LibraryFilter.ItemsQuery(
+                            includeItemTypes = "Audio",
+                            recursive = true, sortBy = "Random", limit = 1, startIndex = 0
+                        )
                     )
                     if (result.items.isNotEmpty()) player.playQueue(result.items, 0)
                     android.util.Log.d(
@@ -515,6 +518,18 @@ fun AppRoot() {
 
     // Bumped by Settings > Refresh library; keys into data LaunchedEffects.
     var refreshKey by remember { mutableStateOf(0) }
+
+    // Library selection: refresh the known /UserViews list once per launch when
+    // something is hidden. A library added on the server must be visible by
+    // default, not silently filtered out by a stale "known libraries" list.
+    LaunchedEffect(Unit) {
+        if (com.hans.aura.data.LibraryFilter.hidden().isNotEmpty()) {
+            val session = app.jellyfin.auth.session ?: return@LaunchedEffect
+            runCatching {
+                com.hans.aura.data.LibraryFilter.refreshLibraryList(app.jellyfin.api, session.userId)
+            }.onFailure { android.util.Log.w("AURA_LIBS", "library list refresh failed: ${it.message}") }
+        }
+    }
 
     // Keep the screen awake while music plays (no screensaver mid-album).
     val isPlayingNow by player.isPlaying.collectAsState()
@@ -626,7 +641,8 @@ fun AppRoot() {
                         onSignOut = {
                             app.jellyfin.auth.clear()
                             signedIn = false
-                        }
+                        },
+                        onLibrariesChanged = { refreshKey++ }
                     )
 
                     Screen.Search -> SearchScreen(

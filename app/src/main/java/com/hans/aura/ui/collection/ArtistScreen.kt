@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
+import com.hans.aura.data.LibraryFilter
 import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
@@ -96,20 +97,26 @@ fun ArtistScreen(
         runCatching {
             val api = app.jellyfin.api
             if (albums == null) {
-                api.getItems(
-                    userId = session.userId, includeItemTypes = "MusicAlbum",
-                    albumArtistIds = artist.id, recursive = true,
-                    sortBy = "ProductionYear", sortOrder = "Descending", limit = 100
+                LibraryFilter.queryItems(
+                    api, session.userId,
+                    LibraryFilter.ItemsQuery(
+                        includeItemTypes = "MusicAlbum",
+                        albumArtistIds = artist.id, recursive = true,
+                        sortBy = "ProductionYear", sortOrder = "Descending", limit = 100
+                    )
                 ).items.also {
                     LibraryCache.put("artist_albums:${artist.id}", it)
                     albums = it
                 }
             }
             if (topTracks == null) {
-                api.getItems(
-                    userId = session.userId, includeItemTypes = "Audio",
-                    albumArtistIds = artist.id, recursive = true,
-                    sortBy = "PlayCount", sortOrder = "Descending", limit = 10
+                LibraryFilter.queryItems(
+                    api, session.userId,
+                    LibraryFilter.ItemsQuery(
+                        includeItemTypes = "Audio",
+                        albumArtistIds = artist.id, recursive = true,
+                        sortBy = "PlayCount", sortOrder = "Descending", limit = 10
+                    )
                 ).items.also {
                     LibraryCache.put("artist_top:${artist.id}", it)
                     topTracks = it

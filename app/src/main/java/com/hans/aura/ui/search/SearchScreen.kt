@@ -61,10 +61,14 @@ fun SearchScreen(
         searching = true
         runCatching {
             val api = app.jellyfin.api
-            val result = api.getItems(
-                userId = session.userId, searchTerm = q, recursive = true,
-                includeItemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
-                limit = 50
+            // Search is a browse query: hidden libraries are not queried.
+            val result = com.hans.aura.data.LibraryFilter.queryItems(
+                api, session.userId,
+                com.hans.aura.data.LibraryFilter.ItemsQuery(
+                    searchTerm = q, recursive = true,
+                    includeItemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
+                    limit = 50
+                )
             )
             tracks = result.items.filter { it.type == "Audio" }
             albums = result.items.filter { it.type == "MusicAlbum" || it.type == "Playlist" }

@@ -1,5 +1,6 @@
 package com.hans.aura.ui
 
+import android.content.Intent
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -39,5 +40,27 @@ object DebugNav {
         auth: String? = null
     ) {
         request.value = Link(screen, autoplay, menuItem, menuAction, queueAction, auth)
+    }
+
+    /**
+     * Parses the debug extras off a launch intent. Returns null when the intent
+     * carries no `aura_debug_screen` — the shared entry point for both
+     * onCreate and onNewIntent.
+     */
+    fun fromIntent(intent: Intent?): Link? {
+        val screen = intent?.getStringExtra("aura_debug_screen") ?: return null
+        return Link(
+            screen = screen,
+            autoplay = intent.getBooleanExtra("aura_debug_autoplay", false),
+            menuItem = intent.getStringExtra("aura_debug_menu"),
+            menuAction = intent.getIntExtra("aura_debug_menu_action", -1),
+            queueAction = intent.getStringExtra("aura_debug_queue"),
+            auth = intent.getStringExtra("aura_debug_auth")
+        )
+    }
+
+    /** Posts the link carried by [intent], if any. */
+    fun postFromIntent(intent: Intent?) {
+        fromIntent(intent)?.let { request.value = it }
     }
 }

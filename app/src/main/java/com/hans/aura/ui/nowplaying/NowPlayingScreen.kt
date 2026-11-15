@@ -193,6 +193,8 @@ fun NowPlayingScreen(
                     label = if (showLyrics) "Track" else "Lyrics",
                     onClick = { showLyrics = !showLyrics }
                 )
+                Spacer(Modifier.width(12.dp))
+                SleepChip(player)
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -747,7 +749,12 @@ fun AtmosBadge(color: Color = Accent) {
  * moment focus lands.
  */
 @Composable
-private fun NpControlButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun NpControlButton(
+    label: String,
+    enabled: Boolean = true,
+    active: Boolean = false,
+    onClick: () -> Unit
+) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
     val bg by animateColorAsState(
@@ -773,9 +780,39 @@ private fun NpControlButton(label: String, enabled: Boolean = true, onClick: () 
     ) {
         androidx.tv.material3.Text(
             label,
-            color = if (enabled) TextPrimary else TextSecondary,
+            color = when {
+                !enabled -> TextSecondary
+                active -> Color(0xFFE8A44C)
+                else -> TextPrimary
+            },
             fontSize = 15.sp,
             fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Normal
         )
+    }
+}
+
+/**
+ * Sleep timer chip: cycles Off -> 15 -> 30 -> 45 -> 60 minutes and shows the
+ * time left while it runs. The timer only PAUSES playback (queue intact), so
+ * the chip is a convenience, not a stop button.
+ */
+@Composable
+private fun SleepChip(player: PlayerConnection) {
+    val remaining by player.sleepRemaining.collectAsState()
+    // 0 = off, 1..4 = the preset index currently armed.
+    var step by remember { mutableStateOf(0) }
+    val presets = listOf(15, 30, 45, 60)
+    // A fired/cancelled timer (remaining -> null) puts the chip back to Off,
+    // including when the Settings row drove it.
+    LaunchedEffect(remaining != null) { if (remaining == null) step = 0 }
+    val label = when {
+        remaining != null -> "Sleep " + formatDuration(remaining!!)
+        step in 1..4 -> "Sleep ${presets[step - 1]} min"
+        else -> "Sleep off"
+    }
+    NpControlButton(label = label, active = remaining != null) {
+        step = (step + 1) % (presets.size + 1)
+        if (step == 0) player.cancelSleepTimer()
+        else player.startSleepTimer(presets[step - 1] * 60)
     }
 }

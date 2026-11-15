@@ -11,7 +11,9 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.Prefs
 import com.hans.aura.playback.PlaybackService
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,6 +64,15 @@ class PlayerConnection(
     @Volatile
     private var tornDown = false
 
+    /** Seed id of the last autoplay continuation, so one track end appends once. */
+    private var lastAutoplaySeed: String? = null
+    private var autoplayInFlight = false
+
+    /** Upcoming order before [applySmartOrder], so "Normal order" can restore it. */
+    private var normalOrderIds: List<String>? = null
+
+    private var sleepJob: kotlinx.coroutines.Job? = null
+
     private val _controller = MutableStateFlow<MediaController?>(null)
     private val _currentItem = MutableStateFlow<JellyfinItem?>(null)
     private val _isPlaying = MutableStateFlow(false)
@@ -71,6 +82,13 @@ class PlayerConnection(
     private val _queueIndex = MutableStateFlow(0)
     private val _shuffleEnabled = MutableStateFlow(false)
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
+    private val _sleepRemaining = MutableStateFlow<Long?>(null)
+    private val _smartShuffle = MutableStateFlow(false)
+
+    /** Milliseconds left on the sleep timer, null when no timer is running. */
+    val sleepRemaining: StateFlow<Long?> = _sleepRemaining
+    /** True while the queue's upcoming items are in smart (least-played) order. */
+    val smartShuffle: StateFlow<Boolean> = _smartShuffle
 
     val current: StateFlow<JellyfinItem?> = _currentItem
     val isPlaying: StateFlow<Boolean> = _isPlaying
@@ -135,6 +153,8 @@ class PlayerConnection(
 
             override fun onPlaybackStateChanged(state: Int) {
                 readQueue(c)
+                // Queue ran out at the last track: keep the music going.
+                if (state == Player.STATE_ENDED) maybeAutoplay(c)
             }
 
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
@@ -206,7 +226,22 @@ class PlayerConnection(
 
     // ---- Commands ----
 
-    fun playQueue(items: List<JellyfinItem>, startIndex: Int, playWhenReady: Boolean = true) {
+    /**
+     * Start playback of [items] at [startIndex].
+     *
+     * Resume-where-you-left-off: a DELIBERATE single-track tap starts at the
+     * user's saved position (UserData.PlaybackPositionTicks) when that position
+     * is past the first 15s and not within the last 10s. Play-all / shuffle /
+     * Play Next / Add to queue must never resume, which is what [resume] is for:
+     * null means "infer" — a list started at its first entry is a
+     * play-all-from-here and starts at 0, anything else is a tap on a row.
+     */
+    fun playQueue(
+        items: List<JellyfinItem>,
+        startIndex: Int,
+        playWhenReady: Boolean = true,
+        resume: Boolean? = null
+    ) {
         val c = _controller.value ?: return
         val serverUrl = sessionProvider()?.serverUrl ?: return
 
@@ -226,11 +261,73 @@ class PlayerConnection(
             return
         }
 
+        // A new queue means a new autoplay chain and no smart order to undo.
+        lastAutoplaySeed = null
+        _smartShuffle.value = false
+        normalOrderIds = null
+
+        val resumeAllowed = playWhenReady && (resume ?: (startIndex > 0 || items.size == 1))
+        val resumeMs = if (resumeAllowed) resumePositionMs(tapped) else null
+        if (tapped != null && resumeAllowed) {
+            if (resumeMs != null) {
+                android.util.Log.d(
+                    "AURA_RESUME",
+                    "item=${tapped.id} at=$resumeMs dur=${tapped.durationMs}"
+                )
+            } else if (tapped.userData == null) {
+                // Browse queries don't always carry UserData (LibraryFilter's
+                // DEFAULT_FIELDS predates this feature): fetch the item once and
+                // seek if the position is a real resume point.
+                resumeAfterFetch(c, tapped)
+            }
+        }
+
         synchronized(registry) { items.forEach { registry[it.id] = it } }
         queueSnapshot = items.map { it.id }
-        c.setMediaItems(items.map { toMediaItem(it, serverUrl) }, startIndex, 0)
+        c.setMediaItems(
+            items.map { toMediaItem(it, serverUrl) },
+            startIndex,
+            resumeMs ?: 0L
+        )
         c.playWhenReady = playWhenReady
         c.prepare()
+    }
+
+    /**
+     * Resume position for [item], or null when starting at zero is right.
+     * Shorter than 15s in is "just started"; inside the last 10s is "finished".
+     */
+    private fun resumePositionMs(item: JellyfinItem?): Long? {
+        val ticks = item?.userData?.playbackPositionTicks ?: return null
+        val pos = ticks / 10_000L
+        if (pos <= RESUME_MIN_MS) return null
+        val dur = item.durationMs
+        if (dur > 0 && pos >= dur - RESUME_TAIL_MS) return null
+        return pos
+    }
+
+    /** Late resume for items whose UserData the browse query didn't return. */
+    private fun resumeAfterFetch(c: MediaController, item: JellyfinItem) {
+        scope.launch {
+            val full = runCatching {
+                val session = sessionProvider() ?: return@launch
+                jellyfin.api.getItem(session.userId, item.id)
+            }.getOrNull() ?: return@launch
+            synchronized(registry) { registry[item.id] = full }
+            val ms = resumePositionMs(full) ?: return@launch
+            onMainThread {
+                // Only when the track actually started from the top; a user who
+                // already scrubbed or skipped must not be moved back.
+                if (c.currentMediaItem?.mediaId == item.id && c.currentPosition < 5_000) {
+                    c.seekTo(ms)
+                    _positionMs.value = ms
+                    android.util.Log.d(
+                        "AURA_RESUME",
+                        "item=${item.id} at=$ms dur=${full.durationMs} (late)"
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -347,6 +444,168 @@ class PlayerConnection(
     fun setShuffle(enabled: Boolean) { _controller.value?.shuffleModeEnabled = enabled }
     fun setRepeat(mode: Int) { _controller.value?.repeatMode = mode }
 
+    // ---- Keep the music going (autoplay when the queue runs out) ----------
+
+    /**
+     * The queue reached its last item and would END. Append an Instant Mix
+     * seeded from that track (minus anything already queued, max 20) so the
+     * music keeps playing.
+     *
+     * Never fires when the user pressed stop (that lands in STATE_IDLE, not
+     * ENDED), when repeat is on (a repeat handles the end itself), when the
+     * preference is off, or twice for the same seed.
+     */
+    private fun maybeAutoplay(c: MediaController) {
+        if (!Prefs.autoplayMusic) return
+        if (c.repeatMode != Player.REPEAT_MODE_OFF) return
+        if (c.mediaItemCount == 0) return
+        if (!c.playWhenReady) return
+        if (autoplayInFlight) return
+        val seed = c.getMediaItemAt(c.mediaItemCount - 1).mediaId
+        if (seed == lastAutoplaySeed) return
+        val session = sessionProvider() ?: return
+        val serverUrl = session.serverUrl
+        // Read the player on the main thread; the coroutine below must not.
+        val known = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }.toSet()
+
+        lastAutoplaySeed = seed
+        autoplayInFlight = true
+        scope.launch {
+            val added = runCatching {
+                val resp = jellyfin.api.getInstantMix(seed, session.userId, limit = 40)
+                val fresh = resp.items
+                    .filter { it.id !in known && it.type != "MusicAlbum" }
+                    .distinctBy { it.id }
+                    .take(20)
+                fresh
+            }.onFailure {
+                android.util.Log.w("AURA_AUTOPLAY", "instant mix failed: ${it.message}")
+            }.getOrDefault(emptyList())
+
+            onMainThread {
+                autoplayInFlight = false
+                if (added.isEmpty()) {
+                    // Allow a later end on the same track to try again.
+                    if (lastAutoplaySeed == seed) lastAutoplaySeed = null
+                    android.util.Log.d("AURA_AUTOPLAY", "appended=0 seed=$seed")
+                    return@onMainThread
+                }
+                synchronized(registry) { added.forEach { registry[it.id] = it } }
+                val atEnd = c.mediaItemCount
+                c.addMediaItems(added.map { toMediaItem(it, serverUrl) })
+                queueSnapshot = queueSnapshot?.toMutableList()?.also { snap ->
+                    snap.addAll(added.map { it.id })
+                }
+                // ENDED + appended items: step onto the first new track and
+                // re-prepare, otherwise the player sits on the finished last one.
+                c.seekToDefaultPosition(atEnd)
+                c.prepare()
+                c.playWhenReady = true
+                android.util.Log.d("AURA_AUTOPLAY", "appended=${added.size} seed=$seed")
+            }
+        }
+    }
+
+    // ---- Sleep timer -------------------------------------------------------
+
+    /**
+     * Pause playback after [seconds] (UI passes minutes * 60; tests pass 5).
+     * On expiry the player is PAUSED — never stopped, never unqueued — so the
+     * user can pick up where the timer cut in.
+     */
+    fun startSleepTimer(seconds: Int) {
+        if (seconds <= 0) {
+            cancelSleepTimer()
+            return
+        }
+        sleepJob?.cancel()
+        android.util.Log.d("AURA_SLEEP", "start=$seconds")
+        _sleepRemaining.value = seconds * 1000L
+        sleepJob = scope.launch {
+            var left = seconds * 1000L
+            while (left > 0) {
+                delay(SLEEP_TICK_MS)
+                left = (left - SLEEP_TICK_MS).coerceAtLeast(0)
+                _sleepRemaining.value = left
+            }
+            _sleepRemaining.value = null
+            sleepJob = null
+            onMainThread { _controller.value?.pause() }
+            android.util.Log.d("AURA_SLEEP", "fired")
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepJob?.cancel()
+        sleepJob = null
+        val wasRunning = _sleepRemaining.value != null
+        _sleepRemaining.value = null
+        if (wasRunning) android.util.Log.d("AURA_SLEEP", "cancel")
+    }
+
+    // ---- Smart shuffle -----------------------------------------------------
+
+    /**
+     * Reorders the UPCOMING items least-played / longest-unplayed first, keeping
+     * ~20% of the slots for well-loved tracks ([smartOrder]). The current track
+     * keeps playing and its position is untouched: only the entries after it are
+     * removed and re-added in the new order.
+     */
+    fun applySmartOrder() = onMainThread {
+        val c = _controller.value ?: return@onMainThread
+        val serverUrl = sessionProvider()?.serverUrl ?: return@onMainThread
+        val cur = c.currentMediaItemIndex
+        val count = c.mediaItemCount
+        if (cur < 0 || cur + 1 >= count) {
+            android.util.Log.d("AURA_SMART", "reordered=0 kept=none (nothing upcoming)")
+            return@onMainThread
+        }
+        val upcoming = (cur + 1 until count).mapNotNull { i ->
+            val id = c.getMediaItemAt(i).mediaId
+            synchronized(registry) { registry[id] }
+        }
+        if (upcoming.size < 2) {
+            android.util.Log.d("AURA_SMART", "reordered=0 kept=${c.currentMediaItem?.mediaId}")
+            return@onMainThread
+        }
+        if (normalOrderIds == null) normalOrderIds = upcoming.map { it.id }
+        val reordered = smartOrder(upcoming)
+        val prefix = (0..cur).map { c.getMediaItemAt(it).mediaId }
+        c.removeMediaItems(cur + 1, count)
+        c.addMediaItems(reordered.map { toMediaItem(it, serverUrl) })
+        queueSnapshot = prefix + reordered.map { it.id }
+        _smartShuffle.value = true
+        android.util.Log.d(
+            "AURA_SMART",
+            "reordered=${reordered.size} kept=${c.currentMediaItem?.mediaId}"
+        )
+    }
+
+    /** Puts the upcoming items back in the order they had before [applySmartOrder]. */
+    fun restoreNormalOrder() = onMainThread {
+        val c = _controller.value ?: return@onMainThread
+        val serverUrl = sessionProvider()?.serverUrl ?: return@onMainThread
+        val saved = normalOrderIds ?: return@onMainThread
+        val cur = c.currentMediaItemIndex
+        if (cur < 0 || cur + 1 >= c.mediaItemCount) {
+            _smartShuffle.value = false
+            normalOrderIds = null
+            return@onMainThread
+        }
+        val live = (cur + 1 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
+        // Keep the saved order, but only for entries still queued; anything
+        // appended since (autoplay) keeps its place at the end.
+        val target = saved.filter { it in live } + live.filter { it !in saved }
+        val items = target.mapNotNull { id -> synchronized(registry) { registry[id] } }
+        val count = c.mediaItemCount
+        c.removeMediaItems(cur + 1, count)
+        c.addMediaItems(items.map { toMediaItem(it, serverUrl) })
+        queueSnapshot = (0..cur).map { c.getMediaItemAt(it).mediaId } + target
+        normalOrderIds = null
+        _smartShuffle.value = false
+        android.util.Log.d("AURA_SMART", "restored=${items.size} kept=${c.currentMediaItem?.mediaId}")
+    }
+
     /** Media3 player access is main-thread-only; run now when already there. */
     private fun onMainThread(block: () -> Unit) {
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
@@ -392,6 +651,11 @@ class PlayerConnection(
         _queueIndex.value = 0
         _shuffleEnabled.value = false
         _repeatMode.value = Player.REPEAT_MODE_OFF
+        _sleepRemaining.value = null
+        _smartShuffle.value = false
+        sleepJob = null
+        normalOrderIds = null
+        lastAutoplaySeed = null
         // The ticker and any in-flight metadata fetch belong to the dead session.
         scope.cancel()
         runCatching {
@@ -404,6 +668,61 @@ class PlayerConnection(
 
     companion object {
         private val itemJson = Json { ignoreUnknownKeys = true; coerceInputValues = true }
+
+        /** Resume only past the first 15s of a track… */
+        private const val RESUME_MIN_MS = 15_000L
+        /** …and never inside its last 10s (that would replay a finished track). */
+        private const val RESUME_TAIL_MS = 10_000L
+        private const val SLEEP_TICK_MS = 1_000L
+
+        /**
+         * Smart shuffle: least-played and longest-unplayed first, with ~20% of
+         * the slots reserved for well-loved tracks so the mix still feels
+         * familiar. Pure and deterministic (no RNG) — same input, same order —
+         * so it is unit-testable and its result can be undone by restoring the
+         * list the caller kept.
+         */
+        fun smartOrder(items: List<JellyfinItem>): List<JellyfinItem> {
+            if (items.size < 3) return items
+            val ranked = items.sortedWith(
+                compareBy<JellyfinItem> { it.userData?.playCount ?: 0 }
+                    .thenBy { lastPlayedEpochMs(it.userData?.lastPlayedDate) }
+                    .thenBy { it.id }
+            )
+            val lovedCount = (ranked.size * 0.2f).roundToInt()
+            if (lovedCount <= 0) return ranked
+            val loved = ranked.takeLast(lovedCount) // most-played
+            val fresh = ranked.take(ranked.size - lovedCount)
+            if (fresh.isEmpty()) return ranked
+            // Deterministic interleave: one loved track after every `step`
+            // fresh ones, so favourites arrive steadily instead of in a block.
+            val step = maxOf(1, fresh.size / loved.size)
+            val out = ArrayList<JellyfinItem>(ranked.size)
+            var li = 0
+            fresh.forEachIndexed { i, item ->
+                out.add(item)
+                if ((i + 1) % step == 0 && li < loved.size) out.add(loved[li++])
+            }
+            while (li < loved.size) out.add(loved[li++])
+            return out
+        }
+
+        /** ISO-8601 UTC stamp -> epoch millis; 0 (oldest) when absent/unparsable. */
+        private fun lastPlayedEpochMs(raw: String?): Long {
+            if (raw.isNullOrBlank()) return 0L
+            val m = Regex("(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})").find(raw)
+                ?: return 0L
+            val g = m.groupValues
+            return runCatching {
+                val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+                cal.clear()
+                cal.set(
+                    g[1].toInt(), g[2].toInt() - 1, g[3].toInt(),
+                    g[4].toInt(), g[5].toInt(), g[6].toInt()
+                )
+                cal.timeInMillis
+            }.getOrDefault(0L)
+        }
 
         fun serialize(item: JellyfinItem): String = itemJson.encodeToString(item)
         fun deserialize(raw: String): JellyfinItem? =

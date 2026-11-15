@@ -18,6 +18,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,7 +60,11 @@ fun SettingsScreen(
     onSignInAgain: () -> Unit,
     onChangeServer: () -> Unit,
     onSignOut: () -> Unit,
-    onLibrariesChanged: () -> Unit = {}
+    onLibrariesChanged: () -> Unit = {},
+    // Optional so the existing call site keeps compiling; AppRoot wires it.
+    // Without a player the Playback section still shows the autoplay toggle
+    // (a plain preference) and hides the sleep-timer row.
+    player: com.hans.aura.ui.player.PlayerConnection? = null
 ) {
     val session = app.jellyfin.auth.session!!
     // Stamps live in LibraryCache (plain fields), so bump a local counter after
@@ -236,6 +241,26 @@ fun SettingsScreen(
             }
 
             item {
+                androidx.tv.material3.Text("Playback", fontSize = 18.sp, color = TextPrimary)
+                androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
+                var autoplay by remember { mutableStateOf(Prefs.autoplayMusic) }
+                SettingsToggleRow(
+                    title = "Keep the music going",
+                    subtitle = "When the queue reaches its last track, add an instant mix " +
+                        "based on it instead of stopping.",
+                    checked = autoplay,
+                    onToggle = {
+                        autoplay = !autoplay
+                        Prefs.autoplayMusic = autoplay
+                        android.util.Log.i("AURA_AUTOPLAY", "pref=${autoplay}")
+                    }
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                player?.let { p -> SleepTimerRow(p) }
+                androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
+            }
+
+            item {
                 androidx.tv.material3.Text("Session", fontSize = 18.sp, color = TextPrimary)
                 androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
                 // AppRoot owns the teardown + auth clearing for every exit path.
@@ -278,7 +303,81 @@ fun SettingsScreen(
 }
 
 /**
- * One library on/off row. focusable via clickable, so the focus flag must be
+ * Generic on/off row for the Playback section. Focus flag wired BEFORE
+ * .clickable (the app-wide rule) so the focused border actually renders.
+ */
+@Composable
+private fun SettingsToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onToggle: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(8.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .background(if (focused) SurfaceHigh else Color.Transparent, shape)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) FocusOutline else Border,
+                shape = shape
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onToggle() }
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(Modifier.padding(end = 16.dp)) {
+            androidx.tv.material3.Text(title, fontSize = 16.sp, color = TextPrimary)
+            androidx.tv.material3.Text(subtitle, fontSize = 12.sp, color = TextSecondary)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color(0xFF191410),
+                checkedTrackColor = Accent,
+                uncheckedThumbColor = TextSecondary,
+                uncheckedTrackColor = SurfaceHigh
+            )
+        )
+    }
+}
+
+/**
+ * Sleep-timer row for Settings: the same Off -> 15 -> 30 -> 45 -> 60 cycle as
+ * the Now Playing chip, showing the time left. The timer pauses playback and
+ * leaves the queue intact.
+ */
+@Composable
+private fun SleepTimerRow(player: com.hans.aura.ui.player.PlayerConnection) {
+    val remaining by player.sleepRemaining.collectAsState()
+    var step by remember { mutableStateOf(0) }
+    val presets = listOf(15, 30, 45, 60)
+    LaunchedEffect(remaining != null) { if (remaining == null) step = 0 }
+    val value = when {
+        remaining != null -> com.hans.aura.ui.common.formatDuration(remaining!!) + " left"
+        step in 1..4 -> "${presets[step - 1]} min"
+        else -> "Off"
+    }
+    SettingsToggleRow(
+        title = "Sleep timer",
+        subtitle = "Pauses playback after $value — the queue stays where it is.",
+        checked = remaining != null,
+        onToggle = {
+            step = (step + 1) % (presets.size + 1)
+            if (step == 0) player.cancelSleepTimer()
+            else player.startSleepTimer(presets[step - 1] * 60)
+        }
+    )
+}
+
+/**
+ * One library on/off row. Focusable via clickable, so the focus flag must be
  * wired BEFORE .clickable or the styling never renders.
  */
 @Composable

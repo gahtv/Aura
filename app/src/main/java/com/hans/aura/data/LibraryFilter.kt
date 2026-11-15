@@ -64,6 +64,30 @@ object LibraryFilter {
     /** True when browse queries have to be split per visible library. */
     fun isActive(): Boolean = Prefs.hiddenLibraries.isNotEmpty() && Prefs.knownLibraries.isNotEmpty()
 
+    /** Item types that can only live in a music library. */
+    private val MUSIC_TYPES = setOf("audio", "musicalbum", "musicartist", "audiobook")
+
+    /**
+     * The libraries a query should fan out to.
+     *
+     * A music query must not be pointed at a movies/tvshows/playlists library:
+     * those roots do hold stray items of the requested type (a playlist's
+     * albums, for instance), so asking them for MusicAlbum makes albums appear
+     * on the Albums tab even when every music library is switched off — seen on
+     * the emulator. Unknown/absent collectionType is always included, because a
+     * mixed-content library can legitimately hold music.
+     */
+    private fun librariesFor(includeItemTypes: String?): List<LibraryRef> {
+        val libs = visibleLibraries()
+        val wanted = includeItemTypes
+            ?.split(',')?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() }
+            .orEmpty()
+        if (wanted.none { it in MUSIC_TYPES }) return libs
+        return libs.filter {
+            it.collectionType == null || it.collectionType.equals("music", ignoreCase = true)
+        }
+    }
+
     /**
      * Suffix appended to every cache key (LibraryCache + PagedLibrary) so data
      * fetched under one selection can never be served under another. Empty when
@@ -120,7 +144,7 @@ object LibraryFilter {
                 imageTypeLimit = q.imageTypeLimit
             )
         }
-        val libs = visibleLibraries()
+        val libs = librariesFor(q.includeItemTypes)
         if (libs.isEmpty()) {
             // Everything hidden: return nothing rather than falling back to an
             // unfiltered query that would show what the user just switched off.
@@ -195,9 +219,9 @@ object LibraryFilter {
                 fields = fields, imageTypeLimit = imageTypeLimit
             )
         }
-        val libs = visibleLibraries()
+        val libs = librariesFor("MusicArtist")
         if (libs.isEmpty()) {
-            Log.w(TAG, "all libraries hidden — returning empty artist result")
+            Log.w(TAG, "all music libraries hidden — returning empty artist result")
             return ItemsResponse()
         }
         val perLibraryLimit = (startIndex + limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)

@@ -66,6 +66,8 @@ private sealed interface Screen {
     data object Settings : Screen
     data object NowPlaying : Screen
     data object Queue : Screen
+    data object Genres : Screen
+    data class Genre(val name: String) : Screen
     data class Collection(val item: JellyfinItem) : Screen
     data class Artist(val item: JellyfinItem) : Screen
 
@@ -89,6 +91,8 @@ private sealed interface Screen {
             is Settings -> "settings"
             is NowPlaying -> "nowplaying"
             is Queue -> "queue"
+            is Genres -> "genres"
+            is Genre -> "genre:${s.name}"
             is Collection -> "col:${s.item.id}"
             is Artist -> "artist:${s.item.id}"
         }
@@ -418,6 +422,11 @@ fun AppRoot() {
             is Screen.Settings -> "settings" to null
             is Screen.NowPlaying -> "nowplaying" to null
             is Screen.Queue -> "queue" to null
+            // Genres are reached from the Albums tab and are the remote's
+            // vocabulary only as far as "you are browsing albums": publish the
+            // parent tab rather than inventing a screen kind senders don't know.
+            is Screen.Genres -> "albums" to null
+            is Screen.Genre -> "albums" to null
         }
         MirrorLink.publish(kind, itemId)
     }
@@ -712,7 +721,8 @@ fun AppRoot() {
                         refreshKey = refreshKey,
                         focusTick = focusTick,
                         onOpenCollection = { push(Screen.Collection(it)) },
-                        onOpenArtist = { push(Screen.Artist(it)) }
+                        onOpenArtist = { push(Screen.Artist(it)) },
+                        onOpenGenres = { push(Screen.Genres) }
                     )
 
                     Screen.Tracks -> LibraryScreen(
@@ -765,6 +775,25 @@ fun AppRoot() {
 
                     Screen.Queue -> QueueScreen(player = player, onBack = pop, initialFocus = pendingFocus)
 
+                    Screen.Genres -> com.hans.aura.ui.genres.GenresScreen(
+                        app = app,
+                        player = player,
+                        onBack = pop,
+                        onOpenGenre = { push(Screen.Genre(it)) },
+                        focusTick = focusTick,
+                        initialFocus = pendingFocus
+                    )
+
+                    is Screen.Genre -> com.hans.aura.ui.genres.GenreScreen(
+                        app = app,
+                        player = player,
+                        genreName = top.name,
+                        onBack = pop,
+                        onOpenCollection = { push(Screen.Collection(it)) },
+                        focusTick = focusTick,
+                        initialFocus = pendingFocus
+                    )
+
                     is Screen.Collection -> CollectionScreen(
                         app = app,
                         collection = top.item,
@@ -782,7 +811,8 @@ fun AppRoot() {
                         onBack = pop,
                         focusTick = focusTick,
                         initialFocus = pendingFocus,
-                        onOpenCollection = { push(Screen.Collection(it)) }
+                        onOpenCollection = { push(Screen.Collection(it)) },
+                        onOpenArtist = { push(Screen.Artist(it)) }
                     )
                 }
                 }

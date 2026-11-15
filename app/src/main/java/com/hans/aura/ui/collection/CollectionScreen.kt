@@ -42,6 +42,7 @@ import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
+import com.hans.aura.data.Mixes
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.nowplaying.AtmosBadge
 import kotlinx.coroutines.launch
@@ -264,6 +265,21 @@ fun CollectionScreen(
                                 player.playQueue(list.shuffled(), 0)
                             }
                         }) { androidx.tv.material3.Text("Shuffle") }
+                        // Radio: GET /Items/{albumId}/InstantMix — albums sound
+                        // right as a seed; playlists do not, so they are skipped.
+                        if (collection.type != "Playlist") {
+                            androidx.tv.material3.Button(onClick = {
+                                scope.launch {
+                                    Mixes.playMix(
+                                        api = app.jellyfin.api,
+                                        userId = session.userId,
+                                        player = player,
+                                        kind = Mixes.Kind.ALBUM,
+                                        seed = shown
+                                    )
+                                }
+                            }) { androidx.tv.material3.Text("Radio") }
+                        }
                         androidx.tv.material3.Button(onClick = onBack) {
                             androidx.tv.material3.Text("Back")
                         }

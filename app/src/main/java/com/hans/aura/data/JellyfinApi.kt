@@ -51,7 +51,10 @@ interface JellyfinApi {
         @Query("Limit") limit: Int = 100,
         @Query("StartIndex") startIndex: Int = 0,
         @Query("Fields") fields: String = "PrimaryImageAspectRatio,MediaSources,ChildCount,Path",
-        @Query("ImageTypeLimit") imageTypeLimit: Int = 1
+        @Query("ImageTypeLimit") imageTypeLimit: Int = 1,
+        // A-Z jump. Spec (12.4.0, GET /Items): `nameStartsWithOrGreater`, a string
+        // compared against SortName, so it only makes sense with SortBy=SortName.
+        @Query("nameStartsWithOrGreater") nameStartsWithOrGreater: String? = null
     ): ItemsResponse
 
     @GET("Users/{userId}/Items/{itemId}")
@@ -77,7 +80,53 @@ interface JellyfinApi {
         @Query("Fields") fields: String = "PrimaryImageAspectRatio",
         @Query("ImageTypeLimit") imageTypeLimit: Int = 1,
         // Per-library filtering for library selection (see data/LibraryFilter.kt).
-        @Query("ParentId") parentId: String? = null
+        @Query("ParentId") parentId: String? = null,
+        // A-Z jump on the Artists grid (same param as /Items).
+        @Query("nameStartsWithOrGreater") nameStartsWithOrGreater: String? = null
+    ): ItemsResponse
+
+    // ---- Discovery (radio / similar / genres) ----
+    // All verified against references/jellyfin-openapi-stable.json (12.4.0):
+    //   GET /Items/{itemId}/InstantMix     - userId, limit, fields
+    //   GET /Artists/{itemId}/InstantMix   - same query params
+    //   GET /Songs/{itemId}/InstantMix     - same (songs are Items; /Items covers tracks)
+    //   GET /MusicGenres/{name}/InstantMix - path is the genre NAME, not an id
+    //   GET /Artists/{itemId}/Similar      - excludeArtistIds, userId, limit, fields
+    // Responses are ItemsResponse (QueryResult<BaseItemDto>).
+
+    @GET("Items/{itemId}/InstantMix")
+    suspend fun instantMix(
+        @retrofit2.http.Path("itemId") itemId: String,
+        @Query("userId") userId: String,
+        @Query("limit") limit: Int = 50,
+        @Query("Fields") fields: String = "PrimaryImageAspectRatio,MediaSources,ChildCount",
+        @Query("ImageTypeLimit") imageTypeLimit: Int = 1
+    ): ItemsResponse
+
+    @GET("Artists/{itemId}/InstantMix")
+    suspend fun artistInstantMix(
+        @retrofit2.http.Path("itemId") itemId: String,
+        @Query("userId") userId: String,
+        @Query("limit") limit: Int = 50,
+        @Query("Fields") fields: String = "PrimaryImageAspectRatio,MediaSources,ChildCount",
+        @Query("ImageTypeLimit") imageTypeLimit: Int = 1
+    ): ItemsResponse
+
+    @GET("MusicGenres/{name}/InstantMix")
+    suspend fun genreInstantMix(
+        @retrofit2.http.Path("name") name: String,
+        @Query("userId") userId: String,
+        @Query("limit") limit: Int = 50,
+        @Query("Fields") fields: String = "PrimaryImageAspectRatio,MediaSources,ChildCount",
+        @Query("ImageTypeLimit") imageTypeLimit: Int = 1
+    ): ItemsResponse
+
+    @GET("Artists/{itemId}/Similar")
+    suspend fun getSimilarArtists(
+        @retrofit2.http.Path("itemId") itemId: String,
+        @Query("userId") userId: String,
+        @Query("limit") limit: Int = 20,
+        @Query("Fields") fields: String = "PrimaryImageAspectRatio"
     ): ItemsResponse
 
     // ---- Playlists ----

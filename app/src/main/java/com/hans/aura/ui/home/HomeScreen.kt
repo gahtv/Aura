@@ -67,12 +67,19 @@ fun HomeScreen(
 
     var recentlyPlayed by remember(refreshKey) { mutableStateOf(LibraryCache.get("home_recent:$userId")) }
     var recentAlbums by remember(refreshKey) { mutableStateOf(LibraryCache.get("home_new:$userId")) }
+    // Discovery shelves (24h LibraryCache like every other Home shelf):
+    //  - artists sorted by DatePlayed (MusicArtist supports that sort)
+    //  - albums already known to be Atmos, from the session-cached AtmosCatalog
+    var recentArtists by remember(refreshKey) { mutableStateOf(LibraryCache.get("home_recent_artists:$userId")) }
+    var atmosAlbums by remember(refreshKey) { mutableStateOf(LibraryCache.get("home_atmos:$userId")) }
     var artists by remember(refreshKey) { mutableStateOf(LibraryCache.get("home_artists:$userId")) }
     var playlists by remember(refreshKey) { mutableStateOf(LibraryCache.get("home_playlists:$userId")) }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(refreshKey) {
-        if (recentlyPlayed != null && recentAlbums != null && artists != null && playlists != null) {
+        if (recentlyPlayed != null && recentAlbums != null && recentArtists != null &&
+            atmosAlbums != null && artists != null && playlists != null
+        ) {
             return@LaunchedEffect // fully cached
         }
         runCatching {
@@ -102,6 +109,39 @@ fun HomeScreen(
                     LibraryCache.put("home_new:$userId", it)
                     recentAlbums = it
                 }
+            }
+            if (recentArtists == null) {
+                LibraryFilter.queryItems(
+                    api, userId,
+                    LibraryFilter.ItemsQuery(
+                        includeItemTypes = "MusicArtist", recursive = true,
+                        sortBy = "DatePlayed", sortOrder = "Descending", limit = 20
+                    )
+                ).items.also {
+                    LibraryCache.put("home_recent_artists:$userId", it)
+                    recentArtists = it
+                }
+            }
+            if (atmosAlbums == null) {
+                // Reuse the session-cached AtmosCatalog — never a second
+                // whole-library scan. Its ids are matched against the already
+                // fetched "Recently added" page first (zero extra queries); only
+                // when that page holds no Atmos album do we page the album list.
+                val atmosIds = runCatching {
+                    com.hans.aura.data.AtmosCatalog.albumIds(api, userId)
+                }.getOrDefault(emptySet())
+                var picks = recentAlbums.orEmpty().filter { it.id in atmosIds }.take(20)
+                if (picks.isEmpty() && atmosIds.isNotEmpty()) {
+                    picks = LibraryFilter.queryItems(
+                        api, userId,
+                        LibraryFilter.ItemsQuery(
+                            includeItemTypes = "MusicAlbum", recursive = true,
+                            sortBy = "DateCreated", sortOrder = "Descending", limit = 120
+                        )
+                    ).items.filter { it.id in atmosIds }.take(20)
+                }
+                LibraryCache.put("home_atmos:$userId", picks)
+                atmosAlbums = picks
             }
             if (artists == null) {
                 LibraryFilter.queryAlbumArtists(api, userId, limit = 100).items.also {
@@ -160,6 +200,24 @@ fun HomeScreen(
                 serverUrl = serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { focusedCardId = it },
+                onLongPress = { albumMenu(it) },
+                onOpen = { item, _ -> onOpenCollection(item) }
+            )
+            com.hans.aura.ui.common.ItemShelf(
+                title = "Recently played artists",
+                items = recentArtists,
+                serverUrl = serverUrl,
+                focusKeeper = focusKeeper,
+                onFocused = { focusedCardId = it },
+                onOpen = { item, _ -> onOpenArtist(item) }
+            )
+            com.hans.aura.ui.common.ItemShelf(
+                title = "Your Atmos",
+                items = atmosAlbums,
+                serverUrl = serverUrl,
+                focusKeeper = focusKeeper,
+                onFocused = { focusedCardId = it },
+                badgeFor = { "ATMOS" },
                 onLongPress = { albumMenu(it) },
                 onOpen = { item, _ -> onOpenCollection(item) }
             )

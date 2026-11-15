@@ -6,7 +6,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import com.hans.aura.data.Mixes
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,7 +53,7 @@ import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 
-/** Artist page: albums grid plus top tracks. */
+/** Artist page: albums grid, similar artists, top tracks. */
 @Composable
 fun ArtistScreen(
     app: AuraApp,
@@ -57,11 +62,16 @@ fun ArtistScreen(
     onBack: () -> Unit,
     focusTick: Int = 0,
     initialFocus: Boolean = false,
-    onOpenCollection: (JellyfinItem) -> Unit
+    onOpenCollection: (JellyfinItem) -> Unit,
+    // Similar artists open as another artist page (same screen, pushed).
+    onOpenArtist: (JellyfinItem) -> Unit = {}
 ) {
     val session = app.jellyfin.auth.session!!
     var albums by remember { mutableStateOf(LibraryCache.get("artist_albums:${artist.id}")) }
     var topTracks by remember { mutableStateOf(LibraryCache.get("artist_top:${artist.id}")) }
+    // GET /Artists/{itemId}/Similar (userId, limit) — the same collaboration
+    // graph Jellyfin Web's "Similar artists" row uses.
+    var similar by remember { mutableStateOf(LibraryCache.get("artist_similar:${artist.id}")) }
     var overview by remember { mutableStateOf<String?>(null) }
     // The screen is often entered with a STUB artist (id + name only, e.g. from
     // "View artist" in a context menu), which carries no PrimaryImageTag — so
@@ -91,6 +101,15 @@ fun ArtistScreen(
         }.onSuccess { full ->
             fetchedArtist = full
             overview = full.overview?.takeIf { o -> o.isNotBlank() }
+        }
+
+        if (similar == null) {
+            runCatching {
+                app.jellyfin.api.getSimilarArtists(artist.id, session.userId, limit = 20).items
+            }.onSuccess {
+                LibraryCache.put("artist_similar:${artist.id}", it)
+                similar = it
+            }
         }
 
         if (albums != null && topTracks != null) return@LaunchedEffect
@@ -176,6 +195,21 @@ fun ArtistScreen(
                 }
             }
             Spacer(Modifier.width(24.dp))
+            // Radio: GET /Artists/{id}/InstantMix, ~50 tracks, queue replaces.
+            ArtistRadioButton(
+                onClick = {
+                    scope.launch {
+                        Mixes.playMix(
+                            api = app.jellyfin.api,
+                            userId = session.userId,
+                            player = player,
+                            kind = Mixes.Kind.ARTIST,
+                            seed = shownArtist
+                        )
+                    }
+                }
+            )
+            Spacer(Modifier.width(12.dp))
             androidx.tv.material3.Button(onClick = onBack) {
                 androidx.tv.material3.Text("Back")
             }
@@ -222,6 +256,19 @@ fun ArtistScreen(
                         }
                     }
                     Spacer(Modifier.height(28.dp))
+                }
+            }
+
+            similar?.let { list ->
+                if (list.isNotEmpty()) {
+                    com.hans.aura.ui.common.ItemShelf(
+                        title = "Similar artists",
+                        items = list,
+                        serverUrl = session.serverUrl,
+                        focusKeeper = focusKeeper,
+                        onFocused = { focusedId = it },
+                        onOpen = { item, _ -> onOpenArtist(item) }
+                    )
                 }
             }
 
@@ -281,6 +328,34 @@ private fun SectionHeader(title: String, accent: Color) {
                 .width(56.dp)
                 .height(3.dp)
                 .background(accent, androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+        )
+    }
+}
+
+/**
+ * "Radio" pill in the artist header. Starts GET /Artists/{id}/InstantMix and
+ * replaces the queue with ~50 tracks (Mixes.playMix logs AURA_MIX).
+ * Amber fill = action; grey ring = the D-pad cursor is here.
+ */
+@Composable
+private fun ArtistRadioButton(onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+    Box(
+        Modifier
+            // onFocusChanged BEFORE clickable, or the ring never renders.
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onClick() }
+            .clip(shape)
+            .background(if (focused) Color(0xFFF0B667) else Color(0xFFE8A44C))
+            .border(3.dp, if (focused) Color(0xFFF2EDE6) else Color.Transparent, shape)
+            .padding(horizontal = 18.dp, vertical = 10.dp)
+    ) {
+        androidx.tv.material3.Text(
+            "Radio",
+            color = Color(0xFF191410),
+            fontSize = 15.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
         )
     }
 }

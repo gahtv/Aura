@@ -1,0 +1,91 @@
+package com.hans.aura.data
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** LRC parsing: synced stamps, multi-stamp lines, and the plain-text fallback. */
+class LyricsStoreTest {
+
+    @Test
+    fun `plain text without stamps becomes unsynced lines`() {
+        val lines = LyricsStore.parseLrcText("First line\nSecond line")
+
+        assertEquals(2, lines.size)
+        assertEquals(listOf("First line", "Second line"), lines.map { it.text })
+        assertTrue(lines.none { it.isSynced })
+        assertTrue(lines.all { it.startMs == 0L })
+    }
+
+    @Test
+    fun `synced stamps are parsed to milliseconds`() {
+        val lines = LyricsStore.parseLrcText("[00:12.34]Hello\n[00:15.00]World")
+
+        assertEquals(2, lines.size)
+        assertEquals(12_340L, lines[0].startMs)
+        assertEquals("Hello", lines[0].text)
+        assertEquals(15_000L, lines[1].startMs)
+        assertTrue(lines.all { it.isSynced })
+    }
+
+    @Test
+    fun `minutes roll into milliseconds correctly`() {
+        val lines = LyricsStore.parseLrcText("[02:05.50]Later")
+
+        assertEquals(1, lines.size)
+        assertEquals(125_500L, lines[0].startMs)
+    }
+
+    @Test
+    fun `a line with several stamps yields one entry per stamp`() {
+        val lines = LyricsStore.parseLrcText("[00:10.00][00:20.00]Chorus")
+
+        assertEquals(2, lines.size)
+        assertEquals(listOf(10_000L, 20_000L), lines.map { it.startMs })
+        assertEquals(listOf("Chorus", "Chorus"), lines.map { it.text })
+    }
+
+    @Test
+    fun `out-of-order stamps are sorted by time`() {
+        val lines = LyricsStore.parseLrcText(
+            "[00:30.00]Third\n[00:10.00]First\n[00:20.00]Second"
+        )
+
+        assertEquals(listOf("First", "Second", "Third"), lines.map { it.text })
+        assertEquals(listOf(10_000L, 20_000L, 30_000L), lines.map { it.startMs })
+    }
+
+    @Test
+    fun `blank and whitespace-only lines are skipped`() {
+        val lines = LyricsStore.parseLrcText("Real line\n\n   \nAnother line")
+
+        assertEquals(listOf("Real line", "Another line"), lines.map { it.text })
+        assertTrue(lines.none { it.isSynced })
+    }
+
+    @Test
+    fun `empty text produces no lines`() {
+        assertTrue(LyricsStore.parseLrcText("").isEmpty())
+        assertTrue(LyricsStore.parseLrcText("   \n \n").isEmpty())
+    }
+
+    @Test
+    fun `a mixed file keeps the stamped lines and drops the unstamped ones`() {
+        val lines = LyricsStore.parseLrcText("intro note\n[00:05.00]Sung line")
+
+        assertEquals(1, lines.size)
+        assertEquals("Sung line", lines[0].text)
+        assertTrue(lines[0].isSynced)
+    }
+
+    @Test
+    fun `stamps using a comma or colon separator are still understood`() {
+        // Some writers emit [mm:ss:xx]; the parser normalises ':' to '.'.
+        val lines = LyricsStore.parseLrcText("[00:07:50]Odd separator")
+
+        assertEquals(1, lines.size)
+        assertEquals(7_500L, lines[0].startMs)
+        assertFalse(lines[0].text.contains("["))
+    }
+}

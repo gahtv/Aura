@@ -42,6 +42,20 @@ class PlayerConnection(
     /** mediaId -> full item (for UI metadata, Atmos badge, lyrics, reporting). */
     private val registry = HashMap<String, JellyfinItem>()
 
+    /**
+     * The queue's mediaIds in playback order, as Aura built it.
+     *
+     * The "re-tapping the already-playing row opens Now Playing instead of
+     * restarting it" check reads this. A reorder changes the player's order but
+     * NOT the order of the list the user tapped (a playlist/album still holds
+     * its server order), so comparing the tapped list against the live player
+     * order turned a reordered queue into "restart the track". Every queue
+     * mutation below mutates this snapshot too; [sameQueue] additionally
+     * verifies it against the real player order so a mutation Aura did not make
+     * (remote Play Next/Last) falls back to the strict comparison.
+     */
+    private var queueSnapshot: List<String>? = null
+
     private val _controller = MutableStateFlow<MediaController?>(null)
     private val _currentItem = MutableStateFlow<JellyfinItem?>(null)
     private val _isPlaying = MutableStateFlow(false)
@@ -201,18 +215,28 @@ class PlayerConnection(
         }
 
         synchronized(registry) { items.forEach { registry[it.id] = it } }
+        queueSnapshot = items.map { it.id }
         c.setMediaItems(items.map { toMediaItem(it, serverUrl) }, startIndex, 0)
         c.playWhenReady = playWhenReady
         c.prepare()
     }
 
-    /** True when the player's current queue is exactly [items] (same ids, same order). */
+    /**
+     * True when the tapped list is the queue that is playing.
+     *
+     * Content is compared as a multiset, not in order: after a Move the queue's
+     * order legitimately differs from the tapped list's order, and an
+     * order-sensitive check would restart the current track instead of opening
+     * Now Playing. Duplicate ids (a playlist can hold the same track twice) are
+     * preserved by sorting the two lists rather than deduping into a Set.
+     */
     private fun sameQueue(c: androidx.media3.common.Player, items: List<JellyfinItem>): Boolean {
-        if (c.mediaItemCount != items.size) return false
-        for (i in 0 until c.mediaItemCount) {
-            if (c.getMediaItemAt(i).mediaId != items[i].id) return false
-        }
-        return true
+        val live = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
+        if (live.sorted() != items.map { it.id }.sorted()) return false
+        // If the queue was mutated behind Aura's back (remote Play Next/Last),
+        // the snapshot is stale — fall back to requiring the exact same order.
+        val snapshot = queueSnapshot
+        return snapshot == null || snapshot == live
     }
 
     /** Insert after the current track ("Play Next"); starts playback if idle. */
@@ -227,6 +251,11 @@ class PlayerConnection(
             "playNext ${items.map { it.name }} at=$at size=${c.mediaItemCount}"
         )
         c.addMediaItems(at, items.map { toMediaItem(it, serverUrl) })
+        queueSnapshot = queueSnapshot?.toMutableList()?.also { snap ->
+            // A remote Play Next can arrive between our captures; clamp so the
+            // snapshot never indexes past its own end.
+            snap.addAll(at.coerceIn(0, snap.size), items.map { it.id })
+        }
         if (wasEmpty) { c.prepare(); c.playWhenReady = true }
     }
 
@@ -241,6 +270,9 @@ class PlayerConnection(
             "addToQueue ${items.map { it.name }} size=${c.mediaItemCount}"
         )
         c.addMediaItems(items.map { toMediaItem(it, serverUrl) })
+        queueSnapshot = queueSnapshot?.toMutableList()?.also { snap ->
+            snap.addAll(items.map { it.id })
+        }
         if (wasEmpty) { c.prepare(); c.playWhenReady = true }
     }
 
@@ -249,9 +281,68 @@ class PlayerConnection(
     fun previous() { _controller.value?.seekToPreviousMediaItem() }
     fun seekTo(ms: Long) { _controller.value?.seekTo(ms) }
     fun skipToQueue(index: Int) { _controller.value?.seekTo(index, 0) }
-    fun removeFromQueue(index: Int) { _controller.value?.removeMediaItem(index) }
+
+    fun removeFromQueue(index: Int) = onMainThread {
+        val c = _controller.value ?: return@onMainThread
+        if (index !in 0 until c.mediaItemCount) return@onMainThread
+        c.removeMediaItem(index)
+        queueSnapshot = queueSnapshot?.toMutableList()?.also { snap ->
+            if (index in snap.indices) snap.removeAt(index)
+        }
+        android.util.Log.d("AURA_QUEUE", "remove index $index, ${c.mediaItemCount} left")
+    }
+
+    /**
+     * Moves the queue entry at [from] to position [to] (menu-driven reorder —
+     * there is no pointer on a TV).
+     *
+     * MediaController calls throw "Player is accessed on the wrong thread" from
+     * anything but main, so the command is marshalled onto the main thread when
+     * a caller is not already there. The queue mirror itself is refreshed by the
+     * Player.Listener's onTimelineChanged, which Media3 fires for this mutation
+     * (the ordering of registry reads is id-derived, so no registry edit is
+     * needed — only the id snapshot, which is what the re-tap check reads).
+     */
+    fun moveInQueue(from: Int, to: Int) = onMainThread {
+        val c = _controller.value ?: return@onMainThread
+        val count = c.mediaItemCount
+        if (from !in 0 until count || to !in 0 until count || from == to) return@onMainThread
+        c.moveMediaItem(from, to)
+        queueSnapshot = queueSnapshot?.toMutableList()?.also { snap ->
+            if (from in snap.indices) snap.add(to, snap.removeAt(from))
+        }
+        android.util.Log.d("AURA_QUEUE", "move from=$from to=$to of $count")
+    }
+
+    /**
+     * Drops every entry AFTER the current one and keeps playing what is
+     * playing. Deliberately not a full queue clear / stop: the current track
+     * must not even hiccup, and the user's "up next" is the only thing going.
+     */
+    fun clearUpcoming() = onMainThread {
+        val c = _controller.value ?: return@onMainThread
+        val current = c.currentMediaItemIndex
+        val count = c.mediaItemCount
+        if (current < 0 || current + 1 >= count) {
+            android.util.Log.d("AURA_QUEUE", "clearUpcoming: nothing after index $current")
+            return@onMainThread
+        }
+        c.removeMediaItems(current + 1, count)
+        queueSnapshot = queueSnapshot?.take(current + 1)
+        android.util.Log.d("AURA_QUEUE", "clearUpcoming: removed ${count - (current + 1)}, kept ${current + 1}")
+    }
+
     fun setShuffle(enabled: Boolean) { _controller.value?.shuffleModeEnabled = enabled }
     fun setRepeat(mode: Int) { _controller.value?.repeatMode = mode }
+
+    /** Media3 player access is main-thread-only; run now when already there. */
+    private fun onMainThread(block: () -> Unit) {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            block()
+        } else {
+            android.os.Handler(android.os.Looper.getMainLooper()).post(block)
+        }
+    }
 
     companion object {
         private val itemJson = Json { ignoreUnknownKeys = true; coerceInputValues = true }

@@ -83,6 +83,18 @@ interface JellyfinApi {
         @Query("UserId") userId: String? = null
     ): retrofit2.Response<Unit>
 
+    /**
+     * Moves a playlist entry to [newIndex]. Verified against the bundled
+     * OpenAPI spec (operationId MoveItem): POST, all three params in the path,
+     * no query/body, 204 on success. Returns 4xx/5xx as a Response, never throws.
+     */
+    @POST("Playlists/{playlistId}/Items/{itemId}/Move/{newIndex}")
+    suspend fun movePlaylistItem(
+        @retrofit2.http.Path("playlistId") playlistId: String,
+        @retrofit2.http.Path("itemId") itemId: String,
+        @retrofit2.http.Path("newIndex") newIndex: Int
+    ): retrofit2.Response<Unit>
+
     @DELETE("Playlists/{playlistId}/Items")
     suspend fun removeFromPlaylist(
         @retrofit2.http.Path("playlistId") playlistId: String,

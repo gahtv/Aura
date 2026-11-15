@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +33,7 @@ import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.LibraryRef
 import com.hans.aura.data.Prefs
+import com.hans.aura.ui.common.ConfirmDialog
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.FocusOutline
@@ -40,16 +42,22 @@ import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 
 /**
- * Settings: server/session info, manual library refresh, which Jellyfin
- * libraries Aura shows, sign out.
+ * Settings: server/session info and the three ways out of a session (sign in
+ * again on this server, change server, sign out), manual library refresh, and
+ * which Jellyfin libraries Aura shows.
  *
  * LazyColumn, not a Column: the library list makes the page taller than the
- * screen and a plain scrollable Column does not follow D-pad focus.
+ * screen and a plain scrollable Column does not follow D-pad focus. The confirm
+ * overlays are drawn at the SCREEN ROOT (see the Box below) — a dialog nested in
+ * the scrolling column is measured against that subtree and renders as an
+ * invisible sliver.
  */
 @Composable
 fun SettingsScreen(
     app: AuraApp,
     onRefreshLibrary: () -> Unit,
+    onSignInAgain: () -> Unit,
+    onChangeServer: () -> Unit,
     onSignOut: () -> Unit,
     onLibrariesChanged: () -> Unit = {}
 ) {
@@ -57,6 +65,10 @@ fun SettingsScreen(
     // Stamps live in LibraryCache (plain fields), so bump a local counter after
     // a manual refresh or the labels would keep showing the pre-refresh values.
     var refreshTick by remember { mutableStateOf(0) }
+
+    // Both session-ending actions are confirmed: a failed login on a TV has no
+    // recovery path without adb, so a single mistaken OK must not be enough.
+    var confirm by remember { mutableStateOf<String?>(null) }
 
     // ---- Libraries shown in Aura -------------------------------------------
     var libraries by remember { mutableStateOf<List<LibraryRef>?>(null) }
@@ -97,123 +109,170 @@ fun SettingsScreen(
         onLibrariesChanged()
     }
 
-    LazyColumn(
-        Modifier
-            .fillMaxSize()
-            .padding(horizontal = 56.dp, vertical = 8.dp)
-    ) {
-        item {
-            androidx.tv.material3.Text("Settings", fontSize = 32.sp, color = TextPrimary)
-            androidx.compose.foundation.layout.Spacer(Modifier.height(24.dp))
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 56.dp, vertical = 8.dp)
+        ) {
+            item {
+                androidx.tv.material3.Text("Settings", fontSize = 32.sp, color = TextPrimary)
+                androidx.compose.foundation.layout.Spacer(Modifier.height(24.dp))
 
-            androidx.tv.material3.Text("Server", fontSize = 18.sp, color = TextPrimary)
-            androidx.tv.material3.Text(session.serverUrl, fontSize = 14.sp, color = TextSecondary)
-            androidx.compose.foundation.layout.Spacer(Modifier.height(6.dp))
-            androidx.tv.material3.Text(
-                "Signed in as ${session.userName}",
-                fontSize = 14.sp, color = TextSecondary
-            )
-            androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
-
-            androidx.tv.material3.Text("Library", fontSize = 18.sp, color = TextPrimary)
-            androidx.tv.material3.Text(
-                "Home screens and library lists refresh automatically every 24 hours.",
-                fontSize = 13.sp, color = TextSecondary
-            )
-            androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
-            val lastManual = remember(refreshTick) { LibraryCache.lastManualRefreshAtMs }
-            val lastLoaded = remember(refreshTick) { LibraryCache.lastLoadedAtMs }
-            androidx.tv.material3.Text(
-                "Last manual refresh: " + com.hans.aura.ui.common.relativeTime(lastManual),
-                fontSize = 14.sp, color = TextPrimary
-            )
-            androidx.tv.material3.Text(
-                "Data loaded: " + com.hans.aura.ui.common.relativeTime(lastLoaded),
-                fontSize = 14.sp, color = TextSecondary
-            )
-            androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
-            Row {
-                androidx.tv.material3.Button(
-                    onClick = {
-                        onRefreshLibrary()
-                        refreshTick++
-                    }
-                ) {
-                    androidx.tv.material3.Text("Refresh library now")
-                }
-                androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))
-            }
-            androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
-
-            androidx.tv.material3.Text("Libraries shown in Aura", fontSize = 18.sp, color = TextPrimary)
-            androidx.tv.material3.Text(
-                "Switch a library off and Aura stops querying it — its music disappears " +
-                    "from Home, the library tabs and search.",
-                fontSize = 13.sp, color = TextSecondary
-            )
-            androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
-        }
-
-        when {
-            libsLoading && libraries == null -> item {
+                androidx.tv.material3.Text("Server", fontSize = 18.sp, color = TextPrimary)
+                androidx.tv.material3.Text(session.serverUrl, fontSize = 14.sp, color = TextSecondary)
+                androidx.compose.foundation.layout.Spacer(Modifier.height(6.dp))
                 androidx.tv.material3.Text(
-                    "Loading libraries\u2026", fontSize = 14.sp, color = TextSecondary
+                    "Signed in as ${session.userName}",
+                    fontSize = 14.sp, color = TextSecondary
                 )
                 androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
-            }
-            libsError != null && libraries == null -> item {
+                Row {
+                    // Same server, new token: keeps the URL on the login screen.
+                    androidx.tv.material3.Button(onClick = { confirm = "again" }) {
+                        androidx.tv.material3.Text("Sign in again")
+                    }
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))
+                    // Different server: forgets the address too.
+                    androidx.tv.material3.Button(onClick = { confirm = "server" }) {
+                        androidx.tv.material3.Text("Change server")
+                    }
+                }
+                androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
                 androidx.tv.material3.Text(
-                    "Could not load libraries: $libsError", fontSize = 14.sp, color = TextPrimary
+                    "Sign in again keeps this server and the URL filled in. " +
+                        "Change server clears the address so you can enter a different one.",
+                    fontSize = 13.sp, color = TextSecondary
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
+
+                androidx.tv.material3.Text("Library", fontSize = 18.sp, color = TextPrimary)
+                androidx.tv.material3.Text(
+                    "Home screens and library lists refresh automatically every 24 hours.",
+                    fontSize = 13.sp, color = TextSecondary
                 )
                 androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
-                androidx.tv.material3.Button(onClick = { libsTick++ }) {
-                    androidx.tv.material3.Text("Retry")
-                }
-                androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
-            }
-            libraries.isNullOrEmpty() -> item {
+                val lastManual = remember(refreshTick) { LibraryCache.lastManualRefreshAtMs }
+                val lastLoaded = remember(refreshTick) { LibraryCache.lastLoadedAtMs }
                 androidx.tv.material3.Text(
-                    "No libraries returned by the server.", fontSize = 14.sp, color = TextSecondary
+                    "Last manual refresh: " + com.hans.aura.ui.common.relativeTime(lastManual),
+                    fontSize = 14.sp, color = TextPrimary
                 )
-                androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
-            }
-            else -> {
-                val libs = libraries!!
-                items(libs.size, key = { libs[it].id }) { i ->
-                    val lib = libs[i]
-                    LibraryToggleRow(
-                        library = lib,
-                        shown = lib.id !in hidden,
-                        onToggle = { toggleLibrary(lib) }
-                    )
+                androidx.tv.material3.Text(
+                    "Data loaded: " + com.hans.aura.ui.common.relativeTime(lastLoaded),
+                    fontSize = 14.sp, color = TextSecondary
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
+                Row {
+                    androidx.tv.material3.Button(
+                        onClick = {
+                            onRefreshLibrary()
+                            refreshTick++
+                        }
+                    ) {
+                        androidx.tv.material3.Text("Refresh library now")
+                    }
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))
                 }
-                item {
-                    if (libsError != null) {
-                        androidx.tv.material3.Text(
-                            "Showing the last known list \u2014 $libsError",
-                            fontSize = 12.sp, color = TextSecondary
+                androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
+
+                androidx.tv.material3.Text("Libraries shown in Aura", fontSize = 18.sp, color = TextPrimary)
+                androidx.tv.material3.Text(
+                    "Switch a library off and Aura stops querying it — its music disappears " +
+                        "from Home, the library tabs and search.",
+                    fontSize = 13.sp, color = TextSecondary
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
+            }
+
+            when {
+                libsLoading && libraries == null -> item {
+                    androidx.tv.material3.Text(
+                        "Loading libraries\u2026", fontSize = 14.sp, color = TextSecondary
+                    )
+                    androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
+                }
+                libsError != null && libraries == null -> item {
+                    androidx.tv.material3.Text(
+                        "Could not load libraries: $libsError", fontSize = 14.sp, color = TextPrimary
+                    )
+                    androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                    androidx.tv.material3.Button(onClick = { libsTick++ }) {
+                        androidx.tv.material3.Text("Retry")
+                    }
+                    androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
+                }
+                libraries.isNullOrEmpty() -> item {
+                    androidx.tv.material3.Text(
+                        "No libraries returned by the server.", fontSize = 14.sp, color = TextSecondary
+                    )
+                    androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
+                }
+                else -> {
+                    val libs = libraries!!
+                    items(libs.size, key = { libs[it].id }) { i ->
+                        val lib = libs[i]
+                        LibraryToggleRow(
+                            library = lib,
+                            shown = lib.id !in hidden,
+                            onToggle = { toggleLibrary(lib) }
                         )
                     }
-                    androidx.tv.material3.Text(
-                        (libs.size - hidden.count { id -> libs.any { it.id == id } }).toString() +
-                            " of ${libs.size} shown",
-                        fontSize = 12.sp, color = TextSecondary
-                    )
-                    androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
+                    item {
+                        if (libsError != null) {
+                            androidx.tv.material3.Text(
+                                "Showing the last known list \u2014 $libsError",
+                                fontSize = 12.sp, color = TextSecondary
+                            )
+                        }
+                        androidx.tv.material3.Text(
+                            (libs.size - hidden.count { id -> libs.any { it.id == id } }).toString() +
+                                " of ${libs.size} shown",
+                            fontSize = 12.sp, color = TextSecondary
+                        )
+                        androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
+                    }
                 }
+            }
+
+            item {
+                androidx.tv.material3.Text("Session", fontSize = 18.sp, color = TextPrimary)
+                androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
+                // AppRoot owns the teardown + auth clearing for every exit path.
+                androidx.tv.material3.Button(onClick = { onSignOut() }) {
+                    androidx.tv.material3.Text("Sign out")
+                }
+
+                androidx.compose.foundation.layout.Spacer(Modifier.height(120.dp))
             }
         }
 
-        item {
-            androidx.tv.material3.Text("Session", fontSize = 18.sp, color = TextPrimary)
-            androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
-            androidx.tv.material3.Button(onClick = {
-                app.jellyfin.auth.clear()
-                LibraryFilter.clearCaches()
-                onSignOut()
-            }) { androidx.tv.material3.Text("Sign out") }
+        when (confirm) {
+            "again" -> ConfirmDialog(
+                title = "Sign in again?",
+                message = "Playback stops and the cached library is cleared. " +
+                    "You'll come back to the login screen with ${session.serverUrl} " +
+                    "filled in — you only need to enter your username and password again.",
+                confirmLabel = "Sign in again",
+                onConfirm = {
+                    confirm = null
+                    onSignInAgain()
+                },
+                onDismiss = { confirm = null }
+            )
 
-            androidx.compose.foundation.layout.Spacer(Modifier.height(120.dp))
+            "server" -> ConfirmDialog(
+                title = "Change server?",
+                message = "Playback stops, the cached library is cleared and this " +
+                    "server's address is forgotten. You'll return to the login screen " +
+                    "and have to type the new server's URL.",
+                confirmLabel = "Change server",
+                onConfirm = {
+                    confirm = null
+                    onChangeServer()
+                },
+                onDismiss = { confirm = null }
+            )
         }
     }
 }

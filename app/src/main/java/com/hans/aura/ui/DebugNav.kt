@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
  *    (-1 = open the menu but don't select anything)
  *  - aura_debug_queue <op>    drive a queue mutation without DPAD keys:
  *    "move:<from>,<to>" or "clear" (clear upcoming)
+ *  - aura_debug_auth <what>   end the session without a confirm dialog:
+ *    "signinagain" (keeps the server URL) | "changeserver" | "signout"
  */
 object DebugNav {
     data class Link(
@@ -22,7 +24,8 @@ object DebugNav {
         val autoplay: Boolean,
         val menuItem: String? = null,
         val menuAction: Int = -1,
-        val queueAction: String? = null
+        val queueAction: String? = null,
+        val auth: String? = null
     )
 
     val request = MutableStateFlow<Link?>(null)
@@ -32,8 +35,9 @@ object DebugNav {
         autoplay: Boolean = false,
         menuItem: String? = null,
         menuAction: Int = -1,
-        queueAction: String? = null
+        queueAction: String? = null,
+        auth: String? = null
     ) {
-        request.value = Link(screen, autoplay, menuItem, menuAction, queueAction)
+        request.value = Link(screen, autoplay, menuItem, menuAction, queueAction, auth)
     }
 }

@@ -15,24 +15,86 @@ data class Session(
     val deviceId: String
 )
 
-/** Persists the Jellyfin session; also builds auth headers and media URLs. */
+/**
+ * Persists the Jellyfin session; also builds auth headers and media URLs.
+ *
+ * The server ADDRESS is stored separately from the session (key
+ * [KEY_LAST_SERVER]) so it can outlive a sign-out: "Sign in again" drops only
+ * the token and the login screen comes back with the old URL prefilled, while
+ * "Change server" drops both (see [clearSession] / [clearServer]).
+ */
 class AuthStore(context: Context) {
     private val prefs = context.getSharedPreferences("aura_session", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
 
+    // Decoded once and kept in memory: `session` is read on every API call
+    // (JellyfinClient resolves its baseUrl from it), and a prefs read plus a
+    // JSON decode each time is wasteful. Mutators below keep it in step.
+    @Volatile
+    private var cached: Session? = null
+    @Volatile
+    private var loaded = false
+
     var session: Session?
-        get() = prefs.getString("session", null)?.let { json.decodeFromString<Session>(it) }
+        get() {
+            if (!loaded) {
+                cached = prefs.getString(KEY_SESSION, null)?.let { json.decodeFromString<Session>(it) }
+                loaded = true
+            }
+            return cached
+        }
         private set(value) {
-            prefs.edit().putString("session", value?.let { json.encodeToString(it) } ?: null).apply()
+            cached = value
+            loaded = true
+            prefs.edit().putString(KEY_SESSION, value?.let { json.encodeToString(it) }).apply()
         }
 
     val isSignedIn: Boolean get() = session != null
 
-    fun save(session: Session) { this.session = session }
+    /**
+     * The last server this device signed in to, kept even when signed out so
+     * the login screen can prefill the URL. Null after [clearServer].
+     */
+    val lastServerUrl: String? get() = prefs.getString(KEY_LAST_SERVER, null)
 
-    fun clear() { prefs.edit().clear().apply() }
+    fun save(session: Session) {
+        this.session = session
+        prefs.edit().putString(KEY_LAST_SERVER, session.serverUrl).apply()
+    }
+
+    /**
+     * Sign out of THIS server, keeping its address: the token (and the cached
+     * user) go, [lastServerUrl] stays so the login screen can prefill the URL.
+     * Use for "Sign in again".
+     */
+    fun clearSession() {
+        cached = null
+        loaded = true
+        prefs.edit().remove(KEY_SESSION).apply()
+    }
+
+    /**
+     * Leave the current server entirely: no token AND no remembered address,
+     * so the login screen starts with an empty URL field. Use for
+     * "Change server".
+     */
+    fun clearServer() {
+        cached = null
+        loaded = true
+        prefs.edit().remove(KEY_SESSION).remove(KEY_LAST_SERVER).apply()
+    }
+
+    /** Wholesale wipe of the prefs file (session + remembered server). */
+    fun clear() {
+        cached = null
+        loaded = true
+        prefs.edit().clear().apply()
+    }
 
     companion object {
+        private const val KEY_SESSION = "session"
+        private const val KEY_LAST_SERVER = "last_server_url"
+
         fun newDeviceId(context: Context): String {
             val prefs = context.getSharedPreferences("aura_device", Context.MODE_PRIVATE)
             return prefs.getString("id", null) ?: UUID.randomUUID().toString().also {
@@ -64,5 +126,12 @@ class AuthStore(context: Context) {
         ): String? =
             "$serverUrl/Items/$itemId/Images/Primary?maxWidth=$maxWidth" +
                 (tag?.let { "&tag=$it" } ?: "")
+
+        /** Short host form for logs: http://192.168.2.10:8096/ -> 192.168.2.10:8096 */
+        fun host(url: String?): String = url
+            ?.removePrefix("https://")
+            ?.removePrefix("http://")
+            ?.trimEnd('/')
+            ?: "<none>"
     }
 }

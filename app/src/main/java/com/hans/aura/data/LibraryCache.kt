@@ -60,6 +60,9 @@ object LibraryCache {
      */
     private fun k(key: String): String = key + LibraryFilter.cacheSuffix()
 
+    /** Number of cached lists (logged when a session ends). */
+    val size: Int get() = store.size
+
     /** Wipes cached lists but keeps the stamps: Settings should still be able to
      *  report when the previous batch of data was fetched. */
     fun clear() = store.clear()

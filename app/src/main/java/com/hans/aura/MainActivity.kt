@@ -21,7 +21,8 @@ class MainActivity : ComponentActivity() {
                     intent.getBooleanExtra("aura_debug_autoplay", false),
                     intent.getStringExtra("aura_debug_menu"),
                     intent.getIntExtra("aura_debug_menu_action", -1),
-                    intent.getStringExtra("aura_debug_queue")
+                    intent.getStringExtra("aura_debug_queue"),
+                    intent.getStringExtra("aura_debug_auth")
                 )
             }
         }
@@ -44,7 +45,8 @@ class MainActivity : ComponentActivity() {
                     newIntent.getBooleanExtra("aura_debug_autoplay", false),
                     newIntent.getStringExtra("aura_debug_menu"),
                     newIntent.getIntExtra("aura_debug_menu_action", -1),
-                    newIntent.getStringExtra("aura_debug_queue")
+                    newIntent.getStringExtra("aura_debug_queue"),
+                    newIntent.getStringExtra("aura_debug_auth")
                 )
             }
         }

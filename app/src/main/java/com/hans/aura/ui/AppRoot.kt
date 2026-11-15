@@ -286,7 +286,22 @@ fun AppRoot() {
 
     if (!signedIn) {
         Box(Modifier.fillMaxSize()) {
-            LoginScreen(app = app, onSignedIn = { signedIn = true })
+            // "Sign in again" leaves the server address behind, so the login
+            // screen comes back with the URL already filled in; "change server"
+            // clears it and this is null.
+            LoginScreen(
+                app = app,
+                initialServerUrl = app.jellyfin.auth.lastServerUrl,
+                onSignedIn = {
+                    signedIn = true
+                    val s = app.jellyfin.auth.session
+                    android.util.Log.i(
+                        "AURA_AUTH",
+                        "signed in: server=${com.hans.aura.data.AuthStore.host(s?.serverUrl)} " +
+                            "user=${s?.userName}"
+                    )
+                }
+            )
             // A remote can pair before anyone signs in on the TV.
             MirrorPairingHost()
         }
@@ -294,6 +309,46 @@ fun AppRoot() {
     }
 
     val player = remember { PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session } }
+
+    /**
+     * Every way out of a session funnels through here (sign in again, change
+     * server, sign out). Order: stop playback and disconnect the controller
+     * FIRST — the service owns ExoPlayer, so a live controller keeps the old
+     * server streaming under the login screen — then evict everything keyed by
+     * its library data, then drop the credentials.
+     *
+     * Mixing two servers' item ids in one cache renders the wrong artwork and
+     * the wrong tracklists, and PaletteCache is keyed by URL, so it survives
+     * a server swap with colliding item ids unless it is cleared here too.
+     */
+    fun endSession(action: String, forgetServer: Boolean) {
+        val oldUrl = app.jellyfin.auth.session?.serverUrl ?: app.jellyfin.auth.lastServerUrl
+        val oldHost = com.hans.aura.data.AuthStore.host(oldUrl)
+        val playerItems = player.teardown()
+        val library = LibraryCache.size
+        val paged = com.hans.aura.data.PagedLibrary.size
+        val atmos = com.hans.aura.data.AtmosCatalog.size
+        val palette = com.hans.aura.ui.theme.PaletteCache.size
+        LibraryCache.clear()
+        com.hans.aura.data.PagedLibrary.clear()
+        com.hans.aura.data.AtmosCatalog.clear()
+        com.hans.aura.ui.theme.PaletteCache.clear()
+        if (forgetServer) app.jellyfin.auth.clearServer() else app.jellyfin.auth.clearSession()
+        val evicted = "evicted library=$library paged=$paged atmos=$atmos " +
+            "palette=$palette playerItems=$playerItems"
+        android.util.Log.i(
+            "AURA_AUTH",
+            when (action) {
+                "change server" ->
+                    "change server: old=$oldHost -> cleared (prefill=none); $evicted"
+                "sign in again" ->
+                    "sign in again: kept server=$oldHost token=cleared " +
+                        "(prefill=$oldHost); $evicted"
+                else -> "$action: server=$oldHost token=cleared; $evicted"
+            }
+        )
+        signedIn = false
+    }
 
     // Mirror link also carries playback state and commands (Connect-style):
     // the remote never sees a keystroke, it sees the queue and controls it.
@@ -405,6 +460,18 @@ fun AppRoot() {
         DebugNav.request.collect { link ->
             if (link == null) return@collect
             DebugNav.request.value = null
+            // Debug hook: exercise the session-exit paths (sign in again /
+            // change server / sign out) without driving the Settings DPAD.
+            // Same code path as the buttons, minus the confirm dialog.
+            link.auth?.let { auth ->
+                when (auth) {
+                    "signinagain" -> endSession("sign in again", forgetServer = false)
+                    "changeserver" -> endSession("change server", forgetServer = true)
+                    "signout" -> endSession("sign out", forgetServer = true)
+                    else -> android.util.Log.w("AURA_AUTH", "unknown aura_debug_auth=$auth")
+                }
+                return@collect
+            }
             if (link.autoplay) {
                 runCatching {
                     val session = app.jellyfin.auth.session ?: return@collect
@@ -611,8 +678,8 @@ fun AppRoot() {
                         app = app,
                         player = player,
                         onSignOut = {
-                            app.jellyfin.auth.clear()
-                            signedIn = false
+                            // Home's sign-out is the same exit path as Settings.
+                            endSession("sign out", forgetServer = true)
                         },
                         onOpenSearch = { push(Screen.Search) },
                         onOpenCollection = { push(Screen.Collection(it)) },
@@ -663,10 +730,9 @@ fun AppRoot() {
                             LibraryCache.markManualRefresh()
                             refreshKey++
                         },
-                        onSignOut = {
-                            app.jellyfin.auth.clear()
-                            signedIn = false
-                        },
+                        onSignInAgain = { endSession("sign in again", forgetServer = false) },
+                        onChangeServer = { endSession("change server", forgetServer = true) },
+                        onSignOut = { endSession("sign out", forgetServer = true) },
                         onLibrariesChanged = { refreshKey++ }
                     )
 

@@ -14,6 +14,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -32,13 +34,31 @@ import com.hans.aura.AuraApp
 import kotlinx.coroutines.launch
 
 @Composable
-fun LoginScreen(app: AuraApp, onSignedIn: () -> Unit) {
-    var serverUrl by remember { mutableStateOf("") }
+fun LoginScreen(
+    app: AuraApp,
+    onSignedIn: () -> Unit,
+    initialServerUrl: String? = null
+) {
+    // Prefilled after "Sign in again" (the server address survives the
+    // sign-out); empty after "Change server" / a fresh install.
+    var serverUrl by remember { mutableStateOf(initialServerUrl.orEmpty()) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // With the URL already provided, send the cursor straight to the username
+    // field — otherwise the user has to tab past a field they don't need.
+    val usernameFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) {
+        if (initialServerUrl.isNullOrBlank()) return@LaunchedEffect
+        kotlinx.coroutines.delay(300)
+        repeat(8) {
+            if (runCatching { usernameFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+            kotlinx.coroutines.delay(100)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -77,7 +97,7 @@ fun LoginScreen(app: AuraApp, onSignedIn: () -> Unit) {
             placeholder = { Text("Username") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            modifier = Modifier.width(480.dp)
+            modifier = Modifier.width(480.dp).focusRequester(usernameFocus)
         )
         Spacer(Modifier.height(16.dp))
         TextField(

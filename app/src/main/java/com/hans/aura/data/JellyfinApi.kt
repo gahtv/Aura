@@ -36,6 +36,11 @@ interface JellyfinApi {
         @Query("IncludeItemTypes") includeItemTypes: String? = null,
         @Query("ExcludeItemTypes") excludeItemTypes: String? = null,
         @Query("Genres") genres: String? = null,
+        // ItemFilter enum (spec: IsFavorite, IsNotFavorite, IsPlayed, ...).
+        // Used by the Liked browse tab.
+        @Query("Filters") filters: String? = null,
+        // Explicit: favourites arrive through UserData, not through Fields.
+        @Query("EnableUserData") enableUserData: Boolean = true,
         @Query("Recursive") recursive: Boolean = true,
         @Query("ParentId") parentId: String? = null,
         @Query("ArtistIds") artistIds: String? = null,
@@ -122,6 +127,24 @@ interface JellyfinApi {
     suspend fun deletePlaylist(
         @retrofit2.http.Path("itemId") itemId: String
     ): retrofit2.Response<Unit>
+
+    // ---- Favorites (verified against the bundled OpenAPI spec: operationId
+    // MarkFavoriteItem / UnmarkFavoriteItem, POST/DELETE with itemId in the
+    // path and userId as a query param; 200 returns the updated UserItemDataDto,
+    // which is exactly our UserData). Retrofit returns 4xx/5xx as a Response,
+    // never as a throw — callers must check isSuccessful.
+
+    @POST("UserFavoriteItems/{itemId}")
+    suspend fun markFavorite(
+        @retrofit2.http.Path("itemId") itemId: String,
+        @Query("userId") userId: String
+    ): retrofit2.Response<UserData>
+
+    @DELETE("UserFavoriteItems/{itemId}")
+    suspend fun unmarkFavorite(
+        @retrofit2.http.Path("itemId") itemId: String,
+        @Query("userId") userId: String
+    ): retrofit2.Response<UserData>
 
     // ---- Lyrics (Jellyfin >= 10.9) ----
 

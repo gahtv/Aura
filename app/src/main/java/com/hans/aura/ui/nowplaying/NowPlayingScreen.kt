@@ -91,6 +91,8 @@ fun NowPlayingScreen(
     val position by player.positionMs.collectAsState()
     val duration by player.durationMs.collectAsState()
     var showLyrics by remember { mutableStateOf(false) }
+    // Own scope for the heart toggle (a favourite write is fire-and-forget).
+    val npScope = rememberCoroutineScope()
 
     // Tell the mirror link which face of this screen is up, so a remote shows
     // its own lyrics view exactly when the TV does.
@@ -243,7 +245,20 @@ fun NowPlayingScreen(
                         }
                     }
                     Spacer(Modifier.height(32.dp))
-                    TransportBar(player, position, duration, isPlaying, playPauseFocus, accent = dynAccent)
+                    TransportBar(
+                        player, position, duration, isPlaying, playPauseFocus,
+                        accent = dynAccent,
+                        favorite = item?.let { com.hans.aura.data.Favorites.isFavorite(it) } == true,
+                        onToggleFavorite = item?.let { cur ->
+                            {
+                                npScope.launch {
+                                    com.hans.aura.data.Favorites.toggle(
+                                        app.jellyfin.api, session.userId, cur
+                                    )
+                                }
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -330,7 +345,9 @@ private fun TransportBar(
     duration: Long,
     isPlaying: Boolean,
     playPauseFocus: androidx.compose.ui.focus.FocusRequester,
-    accent: Color
+    accent: Color,
+    favorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null
 ) {
     val shuffleEnabled by player.shuffleEnabled.collectAsState()
     val repeatMode by player.repeatMode.collectAsState()
@@ -427,6 +444,15 @@ private fun TransportBar(
                     }
                 )
             }
+            if (onToggleFavorite != null) {
+                Spacer(Modifier.width(24.dp))
+                // Heart for the CURRENT track: filled accent when liked.
+                TransportHeartButton(
+                    favorite = favorite,
+                    accent = accent,
+                    onClick = onToggleFavorite
+                )
+            }
         }
     }
 }
@@ -486,6 +512,52 @@ private fun TransportIconButton(
             contentDescription = label,
             tint = tint,
             modifier = Modifier.size(iconSize)
+        )
+    }
+}
+
+/**
+ * Heart variant of the transport button. Same plate/ring/scale language as
+ * TransportIconButton, but the glyph is a text heart because there is no heart
+ * vector drawable in res/. `active` (liked) keeps the accent tint at rest.
+ */
+@Composable
+private fun TransportHeartButton(favorite: Boolean, accent: Color, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val plate = when {
+        focused -> accent.copy(alpha = 0.34f)
+        favorite -> accent.copy(alpha = 0.18f)
+        else -> Color.Transparent
+    }
+    val tint by animateColorAsState(
+        if (favorite || focused) accent else TextPrimary,
+        label = "heartTint"
+    )
+    val grow by animateFloatAsState(if (focused) 1.15f else 1f, label = "heartGrow")
+    val label = if (favorite) "Remove from favorites" else "Add to favorites"
+    Box(
+        Modifier
+            .size(64.dp)
+            .graphicsLayer {
+                scaleX = grow
+                scaleY = grow
+            }
+            .clip(CircleShape)
+            .background(plate)
+            .border(
+                width = if (focused) 3.dp else 0.dp,
+                color = if (focused) Color(0xFFD6CCBE) else Color.Transparent,
+                shape = CircleShape
+            )
+            // Before the focus target, as everywhere else in the app.
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClickLabel = label) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.tv.material3.Text(
+            if (favorite) "\u2665" else "\u2661",
+            color = tint,
+            fontSize = 26.sp
         )
     }
 }

@@ -289,6 +289,12 @@ fun CollectionScreen(
         }
 
         // Tracklist
+        // "Only Atmos" (Settings): an album's tracklist drops non-Atmos files.
+        // Playlists are never filtered — that would hide tracks the user put there.
+        val atmosFiltered = collection.type == "MusicAlbum" && com.hans.aura.data.AtmosFilter.on
+        val shownTracks = if (atmosFiltered) {
+            tracks?.let { com.hans.aura.data.AtmosFilter.tracks(it) }
+        } else tracks
         when {
             error != null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text("Could not load: $error", color = TextPrimary)
@@ -296,8 +302,11 @@ fun CollectionScreen(
             tracks == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text("Loading\u2026", color = TextSecondary)
             }
-            tracks!!.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text("Empty", color = TextSecondary)
+            shownTracks!!.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                androidx.tv.material3.Text(
+                    if (atmosFiltered) "No Atmos tracks in this album" else "Empty",
+                    color = TextSecondary
+                )
             }
             else -> LazyColumn(
                 Modifier
@@ -305,7 +314,7 @@ fun CollectionScreen(
                     .focusRequester(contentFocus)
                     .focusRestorer()
             ) {
-                itemsIndexed(tracks!!) { i, track ->
+                itemsIndexed(shownTracks!!) { i, track ->
                     val removeFromPlaylist: (() -> Unit)? = if (collection.type == "Playlist") {
                         {
                             scope.launch {
@@ -324,7 +333,7 @@ fun CollectionScreen(
                         isCurrent = track.id == currentId?.id,
                         atmos = track.albumId != null && track.albumId in atmosAlbumIds,
                         accent = accent,
-                        onClick = { player.playQueue(tracks!!, i, resume = true) },
+                        onClick = { player.playQueue(shownTracks!!, i, resume = true) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedTrackId = it },
                         onRemove = removeFromPlaylist,

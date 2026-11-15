@@ -18,7 +18,9 @@ data/               Jellyfin I/O, caching, preferences, lyrics, device identity
   LibraryFilter.kt    the only path for browse queries (library selection lives here)
   LibraryCache.kt     24h-TTL browse cache + persisted refresh stamps
   PagedLibrary.kt     in-process page store for the library tabs
-  AtmosCatalog.kt     one whole-library scan -> set of Atmos album ids
+  AtmosCatalog.kt     one whole-library scan -> Atmos album ids AND track ids
+  AtmosBrowse.kt      the "Atmos only" browse path: hydrate by id, sort, page
+  AtmosFilter.kt      the "only show Atmos content" preference as a browse filter
   Favorites.kt        server-backed favourites + optimistic overlay
   Mixes.kt            Instant Mix ("radio") entry points
   LyricsStore.kt      /Audio/{id}/lyrics -> normalized LyricLine list
@@ -152,7 +154,9 @@ mirror — the queue screen renders the player's real order, never a separate li
   most matching nothing, and `Genres=` compares the full string). Scanned pages are cached;
   every entry is guaranteed non-empty.
 - **A–Z** — `nameStartsWithOrGreater` restarts the paged query at a letter; the cache key
-  carries the letter so BACK restores that list.
+  carries the letter so BACK restores that list. The jump is SortName+Ascending only, so
+  picking any other sort or filter CLEARS the letter first — otherwise the pill looked
+  selected while the list stayed alphabetical.
 - **Home** — shelves reuse `ItemShelf` and the 24h cache; "Your Atmos" reads the existing
   `AtmosCatalog` rather than triggering its own scan.
 
@@ -242,9 +246,18 @@ Large lists (Artists/Albums/Tracks/Playlists) load 60-item pages: page 1 from ca
 append on scroll-end detected via `derivedStateOf` over `visibleItemsInfo`, reading
 `TotalRecordCount` as the total. `PagedLibrary` holds those pages in-process.
 
-`AtmosCatalog` pages the whole audio library once per process and caches the set of album
-ids containing an E-AC-3 JOC track; the album detail header derives its badge from the
-tracklist it already fetched instead.
+`AtmosCatalog` pages the whole audio library once per process and caches the ids of albums
+and tracks containing an E-AC-3 JOC stream; the album detail header derives its badge from
+the tracklist it already fetched instead. That one scan feeds three consumers: the ATMOS
+badges, the per-view `AtmosFilterPill` (Albums, Tracks, artist page → `AtmosBrowse`),
+and the `Prefs.atmosOnly` switch (`AtmosFilter.keep`) applied to browse lists — Home
+shelves inside `ItemShelf`, the library tabs, artist albums/top tracks, an album's own
+tracklist, search and genre results. Queues, Now Playing and playlist contents are never
+filtered.
+
+Album dedupe is NOT a thing: the same release exists in the FLAC library and the Atmos
+library, and both tiles are shown (the Atmos copy carries the badge). "Only Atmos" is a
+filter, never a dedupe rule.
 
 Sort state is per-tab in a session map (not persisted); each tab maps its `SortMode` to a
 Jellyfin `SortBy` and the cache key includes sort field + direction, so BACK restores the

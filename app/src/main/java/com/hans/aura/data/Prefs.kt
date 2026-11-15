@@ -98,6 +98,19 @@ object Prefs {
             p()?.edit()?.putBoolean(KEY_AUTOPLAY, value)?.apply()
         }
 
+    // ---- Atmos filter ------------------------------------------------------
+    // Global "only show Atmos content": hides anything that is not E-AC-3 JOC
+    // from every browse list. Intended for the case where one library holds both
+    // the standard and the Atmos copy of the same release. Per-view filtering
+    // uses the icon pill instead (session-scoped, does not touch this).
+    private const val KEY_ATMOS_ONLY = "atmos_only"
+
+    var atmosOnly: Boolean
+        get() = p()?.getBoolean(KEY_ATMOS_ONLY, false) ?: false
+        set(value) {
+            p()?.edit()?.putBoolean(KEY_ATMOS_ONLY, value)?.apply()
+        }
+
     // ---- Lyrics (B10) ------------------------------------------------------
     // Appended at the END of the object on purpose: another branch adds its own
     // keys here in parallel, and both sides are purely additive.

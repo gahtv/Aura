@@ -130,9 +130,11 @@ fun ArtworkCard(
                             )
                         }
                     }
-                    // Liked albums: heart badge on the cover (ATMOS badge owns
-                    // the bottom corner, so this sits top-end).
-                    if (favorite != null) {
+                    // Liked albums: heart badge on the cover, ONLY when liked.
+                    // Drawing the hollow heart on every unfavourited cover put a
+                    // grey glyph over the artwork of the whole grid (user-reported);
+                    // favouriting lives in the long-press menu.
+                    if (favorite == true) {
                         HeartToggle(
                             favorite = favorite,
                             accent = accent,
@@ -361,6 +363,56 @@ fun HeartToggle(
     }
 }
 
+/**
+ * "Only Atmos" view filter, icon-only on purpose (user decision 2026-11-15): the
+ * library pill row already carries 8-9 pills and the artist header is tight, so a
+ * text label does not fit. spatial_audio = filter on, spatial_audio_off = off.
+ * The wording lives in Settings, which explains the feature in words.
+ *
+ * House rule: `.onFocusChanged` BEFORE `.clickable`, or the focus ring never
+ * renders and the control reads as dead on a TV.
+ */
+@Composable
+fun AtmosFilterPill(
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Color = com.hans.aura.ui.theme.Accent
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClickLabel = "Only Atmos") { onClick() }
+            .clip(shape)
+            .background(
+                when {
+                    selected -> accent
+                    focused -> Color(0xFF3A322A)
+                    else -> Color.Transparent
+                }
+            )
+            .border(
+                width = if (focused) 3.dp else 0.dp,
+                color = if (focused) Color(0xFFF2EDE6) else Color.Transparent,
+                shape = shape
+            )
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.material3.Icon(
+            painter = androidx.compose.ui.res.painterResource(
+                if (selected) com.hans.aura.R.drawable.ic_spatial_audio
+                else com.hans.aura.R.drawable.ic_spatial_audio_off
+            ),
+            contentDescription = "Only Atmos",
+            tint = if (selected) Color(0xFF191410) else TextPrimary,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
 /** Set while a full-screen overlay (bio popup, playlist picker) is open —
  *  the now-playing bar hides so overlays sit on top and keep focus. */
 object OverlayVisibility {
@@ -471,6 +523,9 @@ fun ItemShelf(
     badgeFor: ((JellyfinItem) -> String?)? = null,
     onLongPress: ((JellyfinItem) -> Unit)? = null
 ) {
+    // "Only Atmos" (Settings) filters shelves without a second request: artists
+    // pass through, albums/tracks must be in the Atmos catalog.
+    val shown = items?.let { list -> list.filter { com.hans.aura.data.AtmosFilter.keep(it) } }
     when {
         items == null -> {
             if (showLoading) {
@@ -481,7 +536,7 @@ fun ItemShelf(
                 Spacer(Modifier.height(16.dp))
             }
         }
-        items.isEmpty() -> {}
+        shown.isNullOrEmpty() -> {}
         else -> {
             androidx.tv.material3.Text(
                 title, fontSize = 20.sp, color = TextPrimary,
@@ -496,7 +551,7 @@ fun ItemShelf(
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
             ) {
                 Spacer(Modifier.width(40.dp))
-                items.forEachIndexed { idx, item ->
+                shown.forEachIndexed { idx, item ->
                     ArtworkCard(
                         item = item,
                         serverUrl = serverUrl,

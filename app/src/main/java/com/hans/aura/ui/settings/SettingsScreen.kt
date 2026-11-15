@@ -243,6 +243,19 @@ fun SettingsScreen(
             item {
                 androidx.tv.material3.Text("Playback", fontSize = 18.sp, color = TextPrimary)
                 androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
+                var atmosOnly by remember { mutableStateOf(Prefs.atmosOnly) }
+                SettingsToggleRow(
+                    title = "Only show Atmos content",
+                    subtitle = "Hides anything that is not Dolby Atmos from the music views, " +
+                        "including the standard copy of an album you also have in Atmos. Use it " +
+                        "when one library holds both versions.",
+                    checked = atmosOnly,
+                    onToggle = {
+                        atmosOnly = !atmosOnly
+                        com.hans.aura.data.AtmosFilter.setEnabled(atmosOnly)
+                    }
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
                 var autoplay by remember { mutableStateOf(Prefs.autoplayMusic) }
                 SettingsToggleRow(
                     title = "Keep the music going",

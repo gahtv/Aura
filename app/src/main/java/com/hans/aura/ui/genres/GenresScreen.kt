@@ -249,7 +249,8 @@ fun GenreScreen(
             }
         }
 
-        val albumList = albums ?: emptyList()
+        val albumList = (albums ?: emptyList()).let { com.hans.aura.data.AtmosFilter.albums(it) }
+        val trackList = (tracks ?: emptyList()).let { com.hans.aura.data.AtmosFilter.tracks(it) }
         when {
             error != null && albums == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text("Library error: $error", color = TextPrimary)
@@ -288,13 +289,13 @@ fun GenreScreen(
                     .focusRequester(contentFocus)
                     .focusRestorer()
             ) {
-                itemsIndexed(tracks ?: emptyList()) { i, track ->
+                itemsIndexed(trackList) { i, track ->
                     TrackRow(
                         index = i + 1,
                         track = track,
                         isCurrent = track.id == current?.id,
                         atmos = track.albumId?.let { it in atmosAlbumIds } == true,
-                        onClick = { player.playQueue(tracks ?: listOf(track), i, resume = true) },
+                        onClick = { player.playQueue(trackList, i, resume = true) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedId = it }
                     )

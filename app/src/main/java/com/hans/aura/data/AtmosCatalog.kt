@@ -3,22 +3,34 @@ package com.hans.aura.data
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Knows which albums contain at least one E-AC-3 JOC (Dolby Atmos) track.
- * Computed by paging through the whole audio library once per session;
- * result cached in-process (and re-derived by the 24h library refresh).
+ * Knows which albums and tracks contain an E-AC-3 JOC (Dolby Atmos) stream.
+ *
+ * One whole-library scan per session (paged audio query with MediaSources),
+ * cached in-process. The same scan feeds BOTH the ATMOS badges and the
+ * "only Atmos" filter / Atmos browse path, so turning the filter on must never
+ * trigger a second walk.
  *
  * With libraries hidden the scan runs per VISIBLE library (ParentId), so a
- * hidden library's tracks never contribute an Atmos badge — and never get
- * fetched at all.
+ * hidden library's tracks never contribute — and never get fetched at all.
  */
 object AtmosCatalog {
 
-    private val cache = ConcurrentHashMap<String, Set<String>>()
+    /** Album ids AND track ids that carry at least one Atmos audio stream. */
+    data class Catalog(
+        val albumIds: Set<String> = emptySet(),
+        val trackIds: Set<String> = emptySet()
+    )
 
-    suspend fun albumIds(api: JellyfinApi, userId: String): Set<String> {
+    private val cache = ConcurrentHashMap<String, Catalog>()
+
+    suspend fun catalog(api: JellyfinApi, userId: String): Catalog {
         val key = userId + LibraryFilter.cacheSuffix()
-        cache[key]?.let { return it }
+        cache[key]?.let {
+            AtmosFilter.adopt(it)
+            return it
+        }
         val atmosAlbums = HashSet<String>()
+        val atmosTracks = HashSet<String>()
         val pageSize = 1000
 
         suspend fun scan(parentId: String?) {
@@ -45,6 +57,7 @@ object AtmosCatalog {
                             } == true
                         } == true
                         if (isAtmos) {
+                            atmosTracks.add(track.id)
                             track.albumId?.let { atmosAlbums.add(it) }
                         }
                     }
@@ -61,11 +74,19 @@ object AtmosCatalog {
         } else {
             scan(null)
         }
-        val result = atmosAlbums.toSet()
+        val result = Catalog(atmosAlbums.toSet(), atmosTracks.toSet())
         cache[key] = result
+        AtmosFilter.adopt(result)
         return result
     }
 
+    /** Badge-only callers keep this shorthand (Home shelf, artist covers, search). */
+    suspend fun albumIds(api: JellyfinApi, userId: String): Set<String> =
+        catalog(api, userId).albumIds
+
     val size: Int get() = cache.size
-    fun clear() = cache.clear()
+    fun clear() {
+        cache.clear()
+        AtmosFilter.adopt(Catalog())
+    }
 }

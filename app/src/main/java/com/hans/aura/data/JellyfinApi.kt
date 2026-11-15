@@ -46,6 +46,9 @@ interface JellyfinApi {
         @Query("ArtistIds") artistIds: String? = null,
         @Query("AlbumArtistIds") albumArtistIds: String? = null,
         @Query("SearchTerm") searchTerm: String? = null,
+        // Hydrates a known set of ids (the Atmos browse path: ids come from the
+        // whole-library Atmos scan, metadata is fetched in chunks of 100).
+        @Query("Ids") ids: String? = null,
         @Query("SortBy") sortBy: String = "SortName",
         @Query("SortOrder") sortOrder: String = "Ascending",
         @Query("Limit") limit: Int = 100,

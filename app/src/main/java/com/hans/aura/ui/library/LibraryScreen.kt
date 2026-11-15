@@ -73,7 +73,6 @@ enum class SortMode(val label: String, val sortBy: String, val defaultDesc: Bool
 
 /** A-Z rail: "#" catches numerics/symbols, then A-Z. */
 private val AZ_LETTERS: List<String> = listOf("#") + ('A'..'Z').map { it.toString() }
-private const val AZ_FIRST = "#"
 
 private fun sortModesFor(kind: String): List<SortMode> = when (kind) {
     "Artists" -> listOf(SortMode.TITLE, SortMode.DATE_ADDED, SortMode.PLAY_COUNT, SortMode.RANDOM)
@@ -94,6 +93,17 @@ private object LibrarySortPrefs {
  *  the 960dp top bar has no room for another tab). */
 private object LibraryLikedPrefs {
     var on: Boolean = false
+}
+
+/**
+ * "Only Atmos" per-view filter (the icon pill). Session-scoped and separate from
+ * the Settings preference: the pill is for "just show me the Atmos ones here",
+ * the preference is for "never show me anything else anywhere".
+ */
+private object LibraryAtmosPrefs {
+    private val byKind = mutableMapOf<String, Boolean>()
+    fun get(kind: String): Boolean = byKind[kind] ?: false
+    fun set(kind: String, on: Boolean) { byKind[kind] = on }
 }
 
 @Composable
@@ -117,6 +127,12 @@ fun LibraryScreen(
     var likedOnly by remember {
         mutableStateOf(kind == "Tracks" && LibraryLikedPrefs.on)
     }
+    // "Only Atmos" icon pill: only meaningful on the two music item tabs, and
+    // hidden when the Settings preference is on (that already filters everything,
+    // so a second control would just contradict itself).
+    val atmosCapable = kind == "Albums" || kind == "Tracks"
+    var atmosView by remember { mutableStateOf(atmosCapable && LibraryAtmosPrefs.get(kind)) }
+    val atmosEffective = atmosCapable && (atmosView || com.hans.aura.data.AtmosFilter.on)
     // A-Z jump: null = no letter filter. When set, the paged query starts at
     // that letter (nameStartsWithOrGreater) instead of index 0 of the alphabet.
     var letter by androidx.compose.runtime.saveable.rememberSaveable(kind) {
@@ -130,6 +146,7 @@ fun LibraryScreen(
     // exact list + scroll of the sort that was active. Liked and A-Z each get
     // their own key so neither can be served the other's page.
     val cacheKey = when {
+        atmosEffective -> "lib_atmos_${kind.lowercase()}:${session.userId}:${sort.sortBy}:$desc:${if (likedOnly) "fav" else "all"}"
         likedOnly -> "lib_liked:${session.userId}:${sort.sortBy}:$desc"
         letter != null ->
             "lib_${kind.lowercase()}:${session.userId}:${sort.sortBy}:$desc:az_$letter"
@@ -152,6 +169,19 @@ fun LibraryScreen(
             )
         )
 
+    /**
+     * A-Z jump is SortName+Ascending ONLY (pageFromLetter hard-codes it), so any
+     * other sort or filter click must drop the letter first. Without this the
+     * pill looked selected while the list kept coming back alphabetical
+     * (user-reported: "all the other options visually can be selected but can't
+     * actually be selected").
+     */
+    fun clearLetter(reason: String) {
+        val current = letter ?: return
+        android.util.Log.d("AURA_AZ", "cleared reason=$reason kind=$kind was=$current")
+        letter = null
+    }
+
     fun albumMenu(item: JellyfinItem) =
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forAlbum(
@@ -171,7 +201,31 @@ fun LibraryScreen(
         loading = true
         runCatching {
             val order = if (desc) "Descending" else "Ascending"
-            val result = if (likedOnly) {
+            val result = if (atmosEffective) {
+                // Atmos only: ids come from the session's Atmos scan, hydrated by
+                // id and sorted client-side (Jellyfin cannot filter by codec).
+                if (kind == "Tracks") {
+                    com.hans.aura.data.AtmosBrowse.tracks(
+                        api = app.jellyfin.api,
+                        userId = session.userId,
+                        sortBy = sort.sortBy,
+                        desc = desc,
+                        favoritesOnly = likedOnly,
+                        startIndex = items.size,
+                        limit = PAGE_SIZE
+                    )
+                } else {
+                    com.hans.aura.data.AtmosBrowse.albums(
+                        api = app.jellyfin.api,
+                        userId = session.userId,
+                        sortBy = sort.sortBy,
+                        desc = desc,
+                        favoritesOnly = likedOnly,
+                        startIndex = items.size,
+                        limit = PAGE_SIZE
+                    )
+                }
+            } else if (likedOnly) {
                 // Favourites go through the same paged/LibraryFilter path as
                 // every other tab, so the library-selection filter still applies.
                 com.hans.aura.data.Favorites.browseLiked(
@@ -315,6 +369,23 @@ fun LibraryScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // "Only Atmos" icon pill: Albums + Tracks. Hidden while the Settings
+            // preference is on, because that already filters everything.
+            if (atmosCapable && !com.hans.aura.data.AtmosFilter.on) {
+                com.hans.aura.ui.common.AtmosFilterPill(
+                    selected = atmosView,
+                    onClick = {
+                        clearLetter("atmos")
+                        atmosView = !atmosView
+                        LibraryAtmosPrefs.set(kind, atmosView)
+                        android.util.Log.d(
+                            "AURA_ATMOS",
+                            "view=${if (atmosView) "on" else "off"} kind=$kind"
+                        )
+                    }
+                )
+                Spacer(Modifier.width(12.dp))
+            }
             // Liked pill lives INSIDE the Tracks sort row: the 960dp top bar
             // cannot fit a sixth tab, and this reads as a filter, not a place.
             if (kind == "Tracks") {
@@ -324,6 +395,7 @@ fun LibraryScreen(
                     else com.hans.aura.R.drawable.ic_favorite,
                     selected = likedOnly,
                     onClick = {
+                        clearLetter("liked")
                         likedOnly = !likedOnly
                         LibraryLikedPrefs.on = likedOnly
                     }
@@ -350,6 +422,7 @@ fun LibraryScreen(
                     } else null,
                     selected = active,
                     onClick = {
+                        clearLetter(mode.label)
                         if (active && mode != SortMode.RANDOM) desc = !desc
                         else if (!active) {
                             sort = mode
@@ -385,11 +458,28 @@ fun LibraryScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // "All" clears the letter without leaving the tab, so backing out
+                // of a jump is one press instead of leaving the rail open.
+                LetterChip(
+                    label = "All",
+                    selected = letter == null,
+                    modifier = Modifier.focusRequester(railFocus),
+                    onClick = {
+                        android.util.Log.d("AURA_AZ", "cleared reason=all kind=$kind was=$letter")
+                        letter = null
+                        azOpen = false
+                        justJumped = true
+                        scope.launch {
+                            kotlinx.coroutines.delay(150)
+                            runCatching { contentFocus.requestFocus() }
+                        }
+                    }
+                )
                 AZ_LETTERS.forEach { candidate ->
                     LetterChip(
                         label = candidate,
                         selected = candidate == letter,
-                        modifier = if (candidate == AZ_FIRST) Modifier.focusRequester(railFocus) else Modifier,
+                        modifier = Modifier,
                         onClick = {
                             // A-Z only means anything on SortName, so the jump
                             // pins the sort; the key changes and page 1 reloads.
@@ -427,7 +517,13 @@ fun LibraryScreen(
             }
             items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text(
-                    if (likedOnly) "No liked songs yet" else "Nothing here",
+                    when {
+                        atmosEffective && likedOnly -> "No liked Atmos content here"
+                        atmosEffective && kind == "Tracks" -> "No Atmos tracks here"
+                        atmosEffective -> "No Atmos albums here"
+                        likedOnly -> "No liked songs yet"
+                        else -> "Nothing here"
+                    },
                     color = TextSecondary, fontSize = 16.sp
                 )
             }

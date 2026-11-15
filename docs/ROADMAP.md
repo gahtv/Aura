@@ -16,7 +16,11 @@ lyrics, mirroring and pairing.
 **Library**
 - Home shelves, Artists / Albums / Tracks / Playlists with paged loading, and search across all three types.
 - Artist pages with albums and top tracks, album pages with full tracklists, artist/album bios.
-- ATMOS badges on albums and tracks that carry an E-AC-3 JOC stream.
+- ATMOS badges on albums and tracks that carry an E-AC-3 JOC stream, and an Atmos filter: an icon on the
+  Albums, Tracks and artist pages shows only Atmos items, and Settings > Only show Atmos content does it
+  everywhere (handy when one library holds both the standard and the Atmos release).
+- Both copies of an album are listed when your library has a standard and an Atmos version — the Atmos one
+  is marked with the badge.
 - Colour theming derived from the artwork on artist, album and Now Playing screens.
 
 **Now Playing**
@@ -40,11 +44,12 @@ lyrics, mirroring and pairing.
   reaches Home, search or the caches.
 
 **Library and discovery**
-- Liked songs: a heart on every track and album, "Add to favorites" at the top of the long-press menu, a heart
-  in Now Playing, and a Liked view on the Tracks tab.
+- Liked songs: a heart on liked album covers and on tracks, "Add to favorites" at the top of the long-press
+  menu, a heart in Now Playing, and a Liked view on the Tracks tab.
 - Genres: browse by genre from the Albums tab, with a "Play genre radio" button on each genre page.
 - Start radio from a track, an album or an artist — the queue is seeded from Jellyfin's own instant mix.
-- Artist pages list similar artists; Home gains "Recently played artists" and "Your Atmos".
+- Artist pages list similar artists and top tracks, scroll all the way down with the D-pad; Home gains
+  "Recently played artists" and "Your Atmos".
 - Jump to a letter on the Albums and Artists grids instead of scrolling from A.
 - Reorder the queue and playlists with Move up / down / top, and clear the rest of the queue from its header.
 

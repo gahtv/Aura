@@ -16,8 +16,8 @@ Where the project is going: **[Roadmap](docs/ROADMAP.md)**.
   Dolby Atmos-capable AVR
 - Spotify-like browse UI: Home shelves, library tabs (Artists / Albums / Tracks /
   Playlists) with 60-item paging, search across tracks/albums/artists
-- **Liked songs** — a heart on every track and album, a Liked view, and favourites kept
-  in sync with the server
+- **Liked songs** — a heart on liked album covers and on tracks, a Liked view, and
+  favourites kept in sync with the server
 - **Genres, radio and similar artists** — browse by genre from the Albums tab, start a
   mix from any track/album/artist/genre, and jump to a letter on big grids
 - **Synced LRC lyrics** with a D-pad timing nudge remembered per track, a real "no lyrics"
@@ -37,7 +37,9 @@ Where the project is going: **[Roadmap](docs/ROADMAP.md)**.
   [roadmap](docs/ROADMAP.md)
 - Artist/album bios from Jellyfin item overviews, full-screen reader for long text
 - Dynamic album-art theming on detail screens (96px palette decode, process-cached)
-- ATMOS badges on album covers, artist albums, genre pages and track rows
+- ATMOS badges on album covers, artist albums, genre pages and track rows, and an
+  **Atmos filter**: an icon on the Albums, Tracks and artist pages, plus
+  Settings > Only show Atmos content for when one library holds both versions
 - Focus restoration: BACK returns to the exact focused item at the same scroll
   position on every browse screen
 - 24h TTL library cache with manual refresh; debug-signed release build optimized

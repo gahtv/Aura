@@ -47,13 +47,33 @@ class JellyfinClient(context: Context) {
     @Volatile
     private var currentBaseUrl: String? = null
 
-    val api: JellyfinApi by lazy { buildApi() }
+    // The Retrofit instance is bound to a baseUrl, so it has to be rebuilt
+    // when the session's server changes (change server / sign in elsewhere).
+    // Headers alone are not enough: the old host would keep receiving calls.
+    @Volatile
+    private var apiCache: JellyfinApi? = null
+    @Volatile
+    private var apiBaseUrl: String? = null
+
+    val api: JellyfinApi
+        get() = apiFor(resolveBaseUrl() ?: "http://localhost/")
+
+    private fun apiFor(base: String): JellyfinApi {
+        apiCache?.let { if (apiBaseUrl == base) return it }
+        synchronized(this) {
+            apiCache?.let { if (apiBaseUrl == base) return it }
+            val built = buildApi(base)
+            apiCache = built
+            apiBaseUrl = base
+            return built
+        }
+    }
 
     val imageCacheBust: Long get() = 0
 
-    private fun buildApi(): JellyfinApi {
+    private fun buildApi(baseUrl: String): JellyfinApi {
         val retrofit = Retrofit.Builder()
-            .baseUrl(resolveBaseUrl() ?: "http://localhost/")
+            .baseUrl(baseUrl)
             .client(http)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()

@@ -8,6 +8,13 @@ lyrics, mirroring and pairing.
 
 ## Shipped
 
+**Under the hood** (0.5.0)
+- The app was restructured so screens, navigation and playback each have one owner: one
+  destination table instead of three copies of the same mapping, screen state that survives
+  navigation instead of dying with the view, and a single place where the player is wired up.
+  Behaviour is unchanged — the visible differences are the fixes listed in the release notes
+  (no phantom Now Playing screen at launch, and the correct app version reported to the server).
+
 **Playback**
 - Direct play of E-AC-3 JOC (Dolby Atmos) M4A from Jellyfin, bitstream untouched to an Atmos-capable
   receiver. No transcoding, no downmix, no in-app attenuation.

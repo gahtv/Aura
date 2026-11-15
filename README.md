@@ -84,15 +84,37 @@ empty and the feature is skipped). Never commit `.env` or hardcode keys in sourc
 
 ```
 app/src/main/java/com/hans/aura/
+  di/          AppContainer — builds the stores in a fixed order (Prefs, LibraryCache,
+               AtmosFilter, MirrorServer, JellyfinClient, MediaRepository)
   data/        JellyfinClient (Retrofit + kotlinx.serialization), models, AuthStore,
                Prefs (settings + resume points), LibraryFilter (library selection),
-               LibraryCache (24h TTL), Favorites, Mixes, LyricsStore, Lrclib, AtmosCatalog
+               LibraryCache (24h TTL), Favorites, Mixes, LyricsStore, Lrclib, AtmosCatalog,
+               MediaRepository (browse facade the ViewModels are moving onto)
   playback/    PlaybackService (Media3 session, Atmos routing, playback reports),
                PlaybackRemote (cast + remote-control websocket)
-  ui/          Compose TV screens: home, library, genres, search, artist/album,
-               now playing (+ lyrics pane), queue, playlists, settings, login
-scripts/       adb install/deploy helpers
+  player/      controller/ — PlaybackController, QueueRegistry, ResumePolicy,
+               AutoplayPolicy, SleepTimer; ui/player/PlayerConnection is the facade
+  remote/      MirrorServer (LAN mirror link on :8099) and the pairing prompt
+  ui/          nav/ (destinations + back stack), shell/ (top bar, mirror/debug wiring),
+               screens (home, library, genres, search, artist/album, now playing + lyrics,
+               queue, playlists, settings, login), common/, theme/ (palette + design tokens)
+  util/        AuraLog (log-tag contract)
+scripts/       adb install/deploy helpers, check.sh
 ```
+
+Each screen that fetches has a paired `*ViewModel` with a `StateFlow`; failures surface as a
+retry affordance (`ErrorPane`) instead of an empty grid.
+
+## Checks
+
+```bash
+scripts/check.sh    # compile (forced) + lint (baseline) + JVM unit tests — no device
+```
+
+The version catalog (`gradle/libs.versions.toml`), the lint baseline and the 90-test JVM
+suite are the guardrails: a new lint error fails the build, and the tests cover library
+filtering, cache keys, the Atmos filter, preferences, LRC parsing, sort mapping and auth
+persistence.
 
 ## Notes
 

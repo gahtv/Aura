@@ -102,7 +102,7 @@ Aura reports the resulting state back, so a UI can mirror it by reading
 
 ## 2b. Mirror link (shared screen state)
 
-Aura runs a tiny HTTP server on port 8099 while it is in the foreground (`ui/MirrorLink.kt`). It exists so a
+Aura runs a tiny HTTP server on port 8099 while it is in the foreground (`remote/MirrorServer.kt`). It exists so a
 remote can draw its own native version of the screen Aura is on, and so the remote can move the TV.
 
 ```
@@ -140,7 +140,7 @@ POST http://<tv>:8099/pair/request?name=<device name>
 
 Aura shows a full-screen prompt naming the requesting device, with Allow
 focused and BACK = deny. Only Allow mints a token, which is stored in Aura's
-prefs and survives restarts; `MirrorLink.unpair()` clears it. The prompt is
+prefs and survives restarts; `MirrorServer.unpair()` clears it. The prompt is
 composed on every branch of the UI, including the signed-out login screen, so a
 remote can pair before anyone has signed in on the TV.
 

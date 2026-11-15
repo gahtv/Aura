@@ -1,7 +1,5 @@
 package com.hans.aura.data
 
-import kotlinx.serialization.json.Json
-
 data class LyricLine(
     val startMs: Long,
     val text: String,
@@ -15,8 +13,6 @@ data class LyricLine(
  *  - a plain LyricText blob (optionally LRC-formatted with [mm:ss.xx] stamps)
  */
 object LyricsStore {
-
-    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
     suspend fun fetch(api: JellyfinApi, itemId: String): List<LyricLine> {
         val resp = runCatching { api.getLyrics(itemId) }.getOrNull()

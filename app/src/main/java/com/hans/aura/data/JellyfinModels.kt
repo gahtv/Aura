@@ -42,7 +42,7 @@ data class QuickConnectAuthRequest(
 
 @Serializable
 data class JellyfinUser(
-    @SerialName("Id") val id: String,
+    @SerialName("Id") val id: String = "",
     @SerialName("Name") val name: String? = null,
     @SerialName("PrimaryImageTag") val primaryImageTag: String? = null
 )
@@ -56,7 +56,10 @@ data class ItemsResponse(
 
 @Serializable
 data class JellyfinItem(
-    @SerialName("Id") val id: String,
+    // Defaulted so a stripped payload (Ids= hydration, partial responses)
+    // degrades to an id-less item instead of throwing at the DTO boundary —
+    // coerceInputValues handles nulls, not MISSING required fields.
+    @SerialName("Id") val id: String = "",
     @SerialName("Name") val name: String = "",
     @SerialName("Type") val type: String = "",
     @SerialName("Album") val album: String? = null,
@@ -95,7 +98,7 @@ data class JellyfinItem(
 
 @Serializable
 data class NameId(
-    @SerialName("Id") val id: String,
+    @SerialName("Id") val id: String = "",
     @SerialName("Name") val name: String = ""
 )
 

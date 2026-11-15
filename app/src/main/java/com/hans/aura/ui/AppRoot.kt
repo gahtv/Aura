@@ -42,6 +42,7 @@ import com.hans.aura.ui.shell.MirrorWiring
 import com.hans.aura.ui.shell.TopBar
 import com.hans.aura.ui.shell.endSession
 import com.hans.aura.ui.theme.Canvas
+import kotlinx.coroutines.flow.drop
 
 /**
  * App shell: auth gate, then the top bar + a single destination host over the
@@ -102,8 +103,10 @@ fun AppRoot() {
 
     // Explicit "show me what's playing" requests (e.g. tapping the track that is
     // already playing): push Now Playing instead of restarting the song.
+    // drop(1) skips the replayed initial value (0) — a StateFlow collector fires
+    // immediately, which pushed Now Playing on every cold start with nothing playing.
     LaunchedEffect(Unit) {
-        NavRequests.openNowPlaying.collect { nav.openNowPlaying() }
+        NavRequests.openNowPlaying.drop(1).collect { nav.openNowPlaying() }
     }
 
     // Bumped by Settings > Refresh library; keys into data LaunchedEffects.

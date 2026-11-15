@@ -199,6 +199,8 @@ private class AuthDataSourceFactory(
     private val deviceIdProvider: () -> String
 ) : DataSource.Factory {
 
+    // media3 marks the header-setter as unstable; the surface is unchanged in 1.6.
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun createDataSource(): DataSource =
         DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)

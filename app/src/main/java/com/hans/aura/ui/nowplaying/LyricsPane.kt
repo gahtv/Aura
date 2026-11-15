@@ -44,8 +44,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
@@ -57,6 +57,11 @@ import com.hans.aura.data.Prefs
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSizes
+import com.hans.aura.ui.theme.AuraSpacing
+import com.hans.aura.ui.theme.AuraTypography
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
@@ -138,9 +143,9 @@ fun LyricsPane(
 
     // Anchor offset: the current line lands ~3 line-heights below the top, so
     // exactly the previous three lines stay visible above it.
-    // Line box (26/22sp text + 20dp vertical padding) measures ~68dp pitch on
+    // Line box (26/22sp text + 20dp vertical padding) measures ~69dp pitch on
     // TV; 3*70 leaves a small margin so the third previous line never clips.
-    val anchorOffsetPx = with(LocalDensity.current) { (3 * 70).dp.roundToPx() }
+    val anchorOffsetPx = with(LocalDensity.current) { (3 * AuraSizes.lyricLinePitch.value).dp.roundToPx() }
 
     fun pauseFollow() {
         followPaused = true
@@ -220,13 +225,14 @@ fun LyricsPane(
                 } else false
             }
     ) {
+        val loadedLines = lines
         when {
-            lines == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+            loadedLines == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text(
-                    "Loading lyrics\u2026", color = TextSecondary, fontSize = 16.sp
+                    "Loading lyrics\u2026", color = TextSecondary, fontSize = AuraTypography.body
                 )
             }
-            lines!!.isEmpty() -> NoLyricsState(
+            loadedLines.isEmpty() -> NoLyricsState(
                 app = app,
                 item = item,
                 accent = highlightColor,
@@ -243,9 +249,9 @@ fun LyricsPane(
             ) {
                 // Small head spacer so the first line never glues to the top
                 // edge; the anchor then shows the previous lines above current.
-                item { Spacer(Modifier.height(56.dp)) }
-                items(lines!!.size) { i ->
-                    val line = lines!![i]
+                item { Spacer(Modifier.height(AuraSpacing.screenHorizontal)) }
+                items(loadedLines.size) { i ->
+                    val line = loadedLines[i]
                     val isCurrent = i == currentLineIndex
                     val color by animateColorAsState(
                         when {
@@ -267,12 +273,12 @@ fun LyricsPane(
                                 followPaused = false
                                 onUserInteraction()
                             }
-                            .padding(vertical = 10.dp)
+                            .padding(vertical = AuraSpacing.lyricLineVertical)
                     ) {
                         androidx.tv.material3.Text(
                             line.text.ifBlank { "\u00A0" },
                             color = color,
-                            fontSize = if (isCurrent) 26.sp else 22.sp,
+                            fontSize = if (isCurrent) AuraTypography.headline else AuraTypography.title,
                             fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
@@ -281,7 +287,7 @@ fun LyricsPane(
                 }
                 // Enough trailing scroll range that the FINAL line can reach the
                 // top anchor (the bottom-left chip may overlap it — accepted).
-                item { Spacer(Modifier.height(600.dp)) }
+                item { Spacer(Modifier.height(AuraSizes.lyricsTailSpace)) }
             }
         }
 
@@ -291,20 +297,20 @@ fun LyricsPane(
             visible = chipVisible,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 64.dp, bottom = 48.dp),
+                .padding(end = AuraSpacing.npHorizontal, bottom = AuraSpacing.xxl),
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            val shape = RoundedCornerShape(8.dp)
+            val shape = RoundedCornerShape(AuraShapes.sm)
             androidx.tv.material3.Text(
                 text = offsetChip.orEmpty(),
-                color = Color(0xFF191410),
-                fontSize = 15.sp,
+                color = AuraColors.OnAccentText,
+                fontSize = AuraTypography.bodySmall,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .clip(shape)
                     .background(highlightColor)
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(horizontal = AuraSpacing.md, vertical = AuraSpacing.xs)
             )
         }
     }
@@ -327,20 +333,20 @@ private fun NoLyricsState(
     Column(
         Modifier
             .fillMaxSize()
-            .padding(horizontal = 64.dp),
+            .padding(horizontal = AuraSpacing.npHorizontal),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
     ) {
         if (item != null) {
             LyricsTrackCard(app = app, item = item, accent = accent)
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(AuraSpacing.lg))
         }
         androidx.tv.material3.Text(
             "No synced lyrics for this track",
             color = TextPrimary,
-            fontSize = 22.sp
+            fontSize = AuraTypography.title
         )
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(AuraSpacing.xs))
         androidx.tv.material3.Text(
             when {
                 !webEnabled ->
@@ -350,7 +356,7 @@ private fun NoLyricsState(
                 else -> "Looking online\u2026"
             },
             color = TextSecondary,
-            fontSize = 15.sp,
+            fontSize = AuraTypography.bodySmall,
             textAlign = TextAlign.Center
         )
     }
@@ -360,13 +366,13 @@ private fun NoLyricsState(
 @Composable
 private fun LyricsTrackCard(app: AuraApp, item: JellyfinItem, accent: Color) {
     val session = app.jellyfin.auth.session
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(AuraShapes.lg)
     Row(
         Modifier
-            .widthIn(max = 520.dp)
+            .widthIn(max = AuraSizes.lyricCardWidth)
             .clip(shape)
-            .background(Color(0xCC0E0C0A), shape)
-            .padding(16.dp),
+            .background(AuraColors.CardScrim, shape)
+            .padding(AuraSpacing.md),
         verticalAlignment = Alignment.CenterVertically
     ) {
         session?.let { s ->
@@ -376,36 +382,36 @@ private fun LyricsTrackCard(app: AuraApp, item: JellyfinItem, accent: Color) {
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(96.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .size(AuraSizes.artworkChipLarge)
+                        .clip(RoundedCornerShape(AuraShapes.sm))
                         .background(SurfaceHigh)
                 )
-                Spacer(Modifier.width(16.dp))
+                Spacer(Modifier.width(AuraSpacing.md))
             }
         }
         Column {
             AutoFitMarqueeText(
                 text = item.name,
                 widthCap = 340.dp,
-                sizes = listOf(22.sp, 20.sp, 18.sp),
+                sizes = AuraTypography.lyricCardFit,
                 color = TextPrimary
             )
             if (item.artistNames.isNotBlank()) {
                 androidx.tv.material3.Text(
                     item.artistNames,
                     color = accent,
-                    fontSize = 15.sp,
+                    fontSize = AuraTypography.bodySmall,
                     maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             item.album?.takeIf { it.isNotBlank() }?.let { album ->
                 androidx.tv.material3.Text(
                     album,
                     color = TextSecondary,
-                    fontSize = 13.sp,
+                    fontSize = AuraTypography.label,
                     maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

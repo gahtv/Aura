@@ -16,6 +16,30 @@ data class AuthResponse(
     @SerialName("ServerId") val serverId: String? = null
 )
 
+/**
+ * A pending Quick Connect request (POST /QuickConnect/Initiate and
+ * GET /QuickConnect/Connect?secret=). [code] is what the user reads off the TV
+ * and types into another Jellyfin client to authorise this one.
+ */
+@Serializable
+data class QuickConnectResult(
+    @SerialName("Authenticated") val authenticated: Boolean = false,
+    @SerialName("Secret") val secret: String = "",
+    @SerialName("Code") val code: String? = null,
+    @SerialName("DeviceId") val deviceId: String? = null,
+    @SerialName("DeviceName") val deviceName: String? = null,
+    @SerialName("AppName") val appName: String? = null,
+    @SerialName("AppVersion") val appVersion: String? = null,
+    @SerialName("DateAdded") val dateAdded: String? = null
+)
+
+/** Body of POST /Users/AuthenticateWithQuickConnect. */
+@Serializable
+data class QuickConnectAuthRequest(
+    @SerialName("Secret") val secret: String
+)
+
+
 @Serializable
 data class JellyfinUser(
     @SerialName("Id") val id: String,

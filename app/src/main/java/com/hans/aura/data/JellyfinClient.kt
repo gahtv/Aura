@@ -88,6 +88,37 @@ class JellyfinClient(context: Context) {
         currentBaseUrl = serverUrl.trimEnd('/')
     }
 
+    /**
+     * An api bound to an explicit server, for calls made BEFORE there is a
+     * session (the login screen: Quick Connect check/initiate/poll). The auth
+     * interceptor tolerates a null session, so no token is sent.
+     */
+    fun apiForServer(serverUrlRaw: String): JellyfinApi {
+        val base = serverUrlRaw.trim().trimEnd('/') + "/"
+        return apiFor(base)
+    }
+
+    /**
+     * Quick Connect: authorise this device from another Jellyfin client.
+     * The secret was authorised by the user in Jellyfin Web/another app, so the
+     * server hands back an access token without a password ever being typed
+     * here — the reason this exists on a TV.
+     */
+    suspend fun signInWithQuickConnect(serverUrlRaw: String, secret: String): Session {
+        val serverUrl = serverUrlRaw.trim().trimEnd('/')
+        val resp = apiForServer(serverUrl).authenticateWithQuickConnect(QuickConnectAuthRequest(secret))
+        val session = Session(
+            serverUrl = serverUrl,
+            userId = resp.user?.id ?: error("Quick Connect response missing user id"),
+            userName = resp.user?.name ?: "unknown",
+            accessToken = resp.accessToken ?: error("Quick Connect response missing token"),
+            deviceId = deviceId
+        )
+        auth.save(session)
+        initWithServer(serverUrl)
+        return session
+    }
+
     suspend fun signIn(serverUrlRaw: String, username: String, password: String): Session {
         val serverUrl = serverUrlRaw.trimEnd('/')
         val retrofit = Retrofit.Builder()

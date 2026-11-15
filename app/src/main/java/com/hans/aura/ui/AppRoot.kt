@@ -285,6 +285,10 @@ fun AppRoot() {
     var signedIn by remember { mutableStateOf(app.jellyfin.auth.isSignedIn) }
 
     if (!signedIn) {
+        // Debug deep link: --es aura_debug_screen quickconnect renders the
+        // Quick Connect panel with a fake code (no network) so the layout can
+        // be checked without a second Jellyfin client.
+        val debugLink by com.hans.aura.ui.DebugNav.request.collectAsState()
         Box(Modifier.fillMaxSize()) {
             // "Sign in again" leaves the server address behind, so the login
             // screen comes back with the URL already filled in; "change server"
@@ -292,6 +296,8 @@ fun AppRoot() {
             LoginScreen(
                 app = app,
                 initialServerUrl = app.jellyfin.auth.lastServerUrl,
+                debugDemoCode = if (debugLink?.screen == "quickconnect" && debugLink?.auth != "qcstart") "123456" else null,
+                debugStartQuickConnect = debugLink?.screen == "quickconnect" && debugLink?.auth == "qcstart",
                 onSignedIn = {
                     signedIn = true
                     val s = app.jellyfin.auth.session
@@ -468,6 +474,10 @@ fun AppRoot() {
                     "signinagain" -> endSession("sign in again", forgetServer = false)
                     "changeserver" -> endSession("change server", forgetServer = true)
                     "signout" -> endSession("sign out", forgetServer = true)
+                    // "qcstart" belongs to the login screen's Quick Connect
+                    // hook (LoginScreen reads it while signed out); reaching
+                    // here means the app is signed in, so there is nothing to do.
+                    "qcstart" -> Unit
                     else -> android.util.Log.w("AURA_AUTH", "unknown aura_debug_auth=$auth")
                 }
                 return@collect

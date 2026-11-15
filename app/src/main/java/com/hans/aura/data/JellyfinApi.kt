@@ -11,6 +11,23 @@ interface JellyfinApi {
     @POST("Users/AuthenticateByName")
     suspend fun authenticateByName(@Body body: AuthRequest): AuthResponse
 
+    // ---- Quick Connect (sign-in without typing a password on a TV) ----
+    // All of these are called BEFORE there is a session, so the caller must
+    // build the api for an explicit server URL (JellyfinClient.apiForServer).
+
+    @GET("QuickConnect/Enabled")
+    suspend fun quickConnectEnabled(): Boolean
+
+    @POST("QuickConnect/Initiate")
+    suspend fun quickConnectInitiate(): QuickConnectResult
+
+    @GET("QuickConnect/Connect")
+    suspend fun quickConnectConnect(@Query("secret") secret: String): QuickConnectResult
+
+    @POST("Users/AuthenticateWithQuickConnect")
+    suspend fun authenticateWithQuickConnect(@Body body: QuickConnectAuthRequest): AuthResponse
+
+
     // ---- Browse ----
 
     @GET("Users/{userId}/Items")

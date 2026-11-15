@@ -229,7 +229,8 @@ private fun DestinationHost(
 
         // Library tabs differ only by kind; Genres hang off the Albums tab.
         Screen.Artists, Screen.Albums, Screen.Tracks, Screen.Playlists -> LibraryScreen(
-            app = app, kind = NavSpec.libraryKind(top)!!, player = player,
+            // Every arm above declares a libraryKind; tabLabel is the safe fallback.
+            app = app, kind = NavSpec.libraryKind(top) ?: NavSpec.tabLabel(top), player = player,
             refreshKey = refreshKey,
             focusTick = focusTick,
             onOpenCollection = actions::onOpenCollection,

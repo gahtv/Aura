@@ -45,8 +45,29 @@ interface JellyfinApi {
         @Query("SortOrder") sortOrder: String = "Ascending",
         @Query("Limit") limit: Int = 100,
         @Query("StartIndex") startIndex: Int = 0,
-        @Query("Fields") fields: String = "PrimaryImageAspectRatio,MediaSources,ChildCount,Path",
+        // UserData is requested because resume-where-you-left-off reads
+        // UserData.PlaybackPositionTicks off the tapped item and smart shuffle
+        // reads PlayCount/LastPlayedDate; Jellyfin only returns UserData when
+        // it is asked for.
+        @Query("Fields") fields: String =
+            "PrimaryImageAspectRatio,MediaSources,ChildCount,Path,UserData",
         @Query("ImageTypeLimit") imageTypeLimit: Int = 1
+    ): ItemsResponse
+
+    /**
+     * Instant Mix seeded from an item (GetInstantMixFromItem, verified against
+     * the bundled OpenAPI spec): GET /Items/{itemId}/InstantMix with the seed
+     * in the PATH and limit/userId as query params. Autoplay uses this when the
+     * queue runs out.
+     */
+    @GET("Items/{itemId}/InstantMix")
+    suspend fun getInstantMix(
+        @retrofit2.http.Path("itemId") itemId: String,
+        @Query("userId") userId: String,
+        @Query("limit") limit: Int = 20,
+        @Query("fields") fields: String = "PrimaryImageAspectRatio,MediaSources,UserData",
+        @Query("enableUserData") enableUserData: Boolean = true,
+        @Query("imageTypeLimit") imageTypeLimit: Int = 1
     ): ItemsResponse
 
     @GET("Users/{userId}/Items/{itemId}")

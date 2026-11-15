@@ -59,6 +59,7 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
     val queueIndex by player.queueIndex.collectAsState()
     val shuffle by player.shuffleEnabled.collectAsState()
     val repeatMode by player.repeatMode.collectAsState()
+    val smart by player.smartShuffle.collectAsState()
 
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     InitialFocusOnPush(initialFocus, contentFocus)
@@ -81,6 +82,15 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
                 label = if (shuffle) "Shuffle on" else "Shuffle off",
                 active = shuffle,
                 onClick = { player.setShuffle(!shuffle) }
+            )
+            // Smart shuffle: least-played / longest-unplayed first, reversible.
+            Spacer(Modifier.width(12.dp))
+            HeaderActionButton(
+                label = if (smart) "Normal order" else "Smart shuffle",
+                active = smart,
+                onClick = {
+                    if (smart) player.restoreNormalOrder() else player.applySmartOrder()
+                }
             )
             Spacer(Modifier.width(12.dp))
             HeaderActionButton(

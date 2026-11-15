@@ -31,6 +31,7 @@ object Prefs {
     private const val KEY_HIDDEN = "hidden_library_ids"
     private const val KEY_LIBRARIES = "known_libraries"
     private const val KEY_LIBRARIES_AT = "known_libraries_at_ms"
+    private const val KEY_AUTOPLAY = "autoplay_music"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -80,4 +81,16 @@ object Prefs {
         }
 
     val knownLibrariesAtMs: Long get() = p()?.getLong(KEY_LIBRARIES_AT, 0L) ?: 0L
+
+    /**
+     * "Keep the music going": when the queue reaches its last track with repeat
+     * off, PlayerConnection appends an Instant Mix seeded from that track
+     * instead of ending. On by default — this is the behaviour an endless queue
+     * is expected to have; the Settings toggle exists to turn it off.
+     */
+    var autoplayMusic: Boolean
+        get() = p()?.getBoolean(KEY_AUTOPLAY, true) ?: true
+        set(value) {
+            p()?.edit()?.putBoolean(KEY_AUTOPLAY, value)?.apply()
+        }
 }

@@ -48,7 +48,7 @@ object LibraryFilter {
         val imageTypeLimit: Int = 1
     ) {
         companion object {
-            const val DEFAULT_FIELDS = "PrimaryImageAspectRatio,MediaSources,ChildCount,Path"
+            const val DEFAULT_FIELDS = "PrimaryImageAspectRatio,MediaSources,ChildCount,Path,UserData"
         }
     }
 

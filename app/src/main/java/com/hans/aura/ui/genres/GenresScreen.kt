@@ -156,6 +156,9 @@ fun GenreScreen(
     var radioBusy by remember { mutableStateOf(false) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val current by player.current.collectAsState()
+    // Atmos badges on the genre page cost no extra scan: the catalog is a
+    // session-wide result already warmed by Home's "Your Atmos" shelf.
+    val atmosAlbumIds = com.hans.aura.ui.common.rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val contentFocus = remember { FocusRequester() }
@@ -270,6 +273,7 @@ fun GenreScreen(
                         item = album,
                         serverUrl = session.serverUrl,
                         size = 210.dp,
+                        badge = if (album.id in atmosAlbumIds) "ATMOS" else null,
                         focusKeeper = focusKeeper,
                         onFocused = { focusedId = it },
                         onClick = { onOpenCollection(album) }
@@ -289,6 +293,7 @@ fun GenreScreen(
                         index = i + 1,
                         track = track,
                         isCurrent = track.id == current?.id,
+                        atmos = track.albumId?.let { it in atmosAlbumIds } == true,
                         onClick = { player.playQueue(tracks ?: listOf(track), i) },
                         focusKeeper = focusKeeper,
                         onFocused = { focusedId = it }
@@ -394,22 +399,45 @@ private suspend fun loadGenres(
     api: com.hans.aura.data.JellyfinApi,
     userId: String
 ): List<JellyfinItem> {
-    suspend fun page(parentId: String?): List<JellyfinItem> =
-        api.getItems(
-            userId = userId,
-            includeItemTypes = "MusicGenre",
-            recursive = true,
-            sortBy = "SortName",
-            sortOrder = "Ascending",
-            limit = 200,
-            parentId = parentId
-        ).items
-
-    val libs = com.hans.aura.data.LibraryFilter.visibleLibraries().filter {
-        it.collectionType == null || it.collectionType.equals("music", ignoreCase = true)
+    // Built from the genre strings the tracks actually carry, NOT from the
+    // server's MusicGenre table: that table keeps every genre the library has
+    // ever seen (264 entries here, most of them matching nothing), and the
+    // `Genres=` filter compares the FULL string, so half its entries open an
+    // empty screen. Scanning Audio costs a few pages once per cache TTL and
+    // every entry it produces is guaranteed to have music behind it.
+    val names = LinkedHashSet<String>()
+    var start = 0
+    var total = Int.MAX_VALUE
+    var pages = 0
+    while (start < total && pages < 12) {
+        val result = runCatching {
+            com.hans.aura.data.LibraryFilter.queryItems(
+                api, userId,
+                com.hans.aura.data.LibraryFilter.ItemsQuery(
+                    includeItemTypes = "Audio",
+                    recursive = true,
+                    sortBy = "SortName",
+                    sortOrder = "Ascending",
+                    limit = 500,
+                    startIndex = start,
+                    fields = "Genres"
+                )
+            )
+        }.getOrNull() ?: break
+        result.items.forEach { item ->
+            item.genres.orEmpty().forEach { g ->
+                g.trim().takeIf { it.isNotBlank() }?.let(names::add)
+            }
+        }
+        if (result.items.isEmpty()) break
+        total = result.totalRecordCount
+        start += result.items.size
+        pages++
     }
-    if (libs.isEmpty()) return page(null)
-    return libs.flatMap { lib -> runCatching { page(lib.id) }.getOrNull().orEmpty() }
-        .distinctBy { it.id }
-        .sortedBy { (it.sortName ?: it.name).lowercase() }
+    android.util.Log.i("AURA_GENRES", "scanned=$start distinct=${names.size} pages=$pages")
+    return names.sortedBy { it.lowercase() }.map { name ->
+        // A synthetic item: the grid only needs a stable id and a label, and
+        // the real id would collide with a library item's.
+        JellyfinItem(id = "genre:$name", name = name, type = "MusicGenre")
+    }
 }

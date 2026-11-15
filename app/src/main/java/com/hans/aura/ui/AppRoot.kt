@@ -580,6 +580,14 @@ fun AppRoot() {
                         if (from != null && to != null) player.moveInQueue(from, to)
                         else android.util.Log.d("AURA_QUEUE", "debug move: bad args \"$op\"")
                     }
+                    // Headless hooks for the playback batch: sleep timer (in
+                    // seconds, so a 5s test is possible) and smart shuffle.
+                    op.startsWith("sleep:") -> {
+                        val secs = op.removePrefix("sleep:").trim().toIntOrNull() ?: 0
+                        if (secs == 0) player.cancelSleepTimer() else player.startSleepTimer(secs)
+                    }
+                    op == "smart" -> player.applySmartOrder()
+                    op == "normalorder" -> player.restoreNormalOrder()
                     else -> android.util.Log.d("AURA_QUEUE", "debug op unknown: $op")
                 }
                 kotlinx.coroutines.delay(1500)
@@ -743,6 +751,7 @@ fun AppRoot() {
 
                     Screen.Settings -> SettingsScreen(
                         app = app,
+                        player = player,
                         onRefreshLibrary = {
                             LibraryCache.clear()
                             com.hans.aura.data.PagedLibrary.clear()

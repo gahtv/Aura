@@ -74,8 +74,8 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             androidx.tv.material3.Text(
-                "Queue \u00B7 ${queue.size} tracks",
-                fontSize = 28.sp, color = TextPrimary
+                "Queue \u00B7 ${queue.size}",
+                fontSize = 22.sp, color = TextPrimary
             )
             Spacer(Modifier.weight(1f))
             HeaderActionButton(
@@ -84,15 +84,15 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
                 onClick = { player.setShuffle(!shuffle) }
             )
             // Smart shuffle: least-played / longest-unplayed first, reversible.
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
             HeaderActionButton(
-                label = if (smart) "Normal order" else "Smart shuffle",
+                label = if (smart) "Normal order" else "Smart",
                 active = smart,
                 onClick = {
                     if (smart) player.restoreNormalOrder() else player.applySmartOrder()
                 }
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
             HeaderActionButton(
                 label = when (repeatMode) {
                     Player.REPEAT_MODE_ALL -> "Repeat all"
@@ -110,12 +110,17 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
             // Only meaningful while something is actually queued behind the
             // current track; the current track keeps playing either way.
             if (upcoming > 0) {
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(8.dp))
                 HeaderActionButton(
-                    label = "Clear upcoming ($upcoming)",
+                    label = "Clear ($upcoming)",
                     onClick = { player.clearUpcoming() }
                 )
             }
+            Spacer(Modifier.width(8.dp))
+            // Sleep timer lives on the QUEUE screen: that is the screen you are
+            // on when you decide how much longer the music should run, and Now
+            // Playing stays transport-only.
+            SleepChip(player)
             Spacer(Modifier.width(12.dp))
             HeaderActionButton(label = "Back", onClick = onBack)
         }
@@ -181,18 +186,21 @@ private fun HeaderActionButton(
     val shape = RoundedCornerShape(6.dp)
     Box(
         Modifier
-            .height(44.dp)
+            // 38dp tall and 12dp of side padding: seven actions plus the title
+            // have to fit 960dp of TV width, and the sleep chip was the one that
+            // overflowed the row.
+            .height(38.dp)
             .clip(shape)
             .background(if (focused) SurfaceHigh else Color.Transparent)
             .then(if (focused) Modifier.border(2.dp, FocusOutline, shape) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = 11.dp),
         contentAlignment = Alignment.Center
     ) {
         androidx.tv.material3.Text(
             label,
-            fontSize = 15.sp,
+            fontSize = 13.sp,
             color = when {
                 active -> Accent
                 focused -> TextPrimary
@@ -200,4 +208,41 @@ private fun HeaderActionButton(
             }
         )
     }
+}
+
+/**
+ * Sleep timer: Off -> 15 -> 30 -> 45 -> 60 minutes, showing the time left while
+ * it runs. Expiry PAUSES playback and leaves the queue alone (a sleep timer is
+ * not a stop button), which is why it lives here rather than on Now Playing.
+ */
+@Composable
+private fun SleepChip(player: PlayerConnection) {
+    val remaining by player.sleepRemaining.collectAsState()
+    // 0 = off, 1..4 = the preset index currently armed.
+    var step by remember { mutableStateOf(0) }
+    val presets = listOf(15, 30, 45, 60)
+    // A fired/cancelled timer (remaining -> null) puts the chip back to Off,
+    // including when the Settings row armed it.
+    androidx.compose.runtime.LaunchedEffect(remaining != null) {
+        if (remaining == null) step = 0
+    }
+    val label = when {
+        remaining != null -> "Sleep " + sleepClock(remaining!!)
+        step in 1..4 -> "Sleep ${presets[step - 1]} min"
+        else -> "Sleep off"
+    }
+    HeaderActionButton(label = label, active = remaining != null) {
+        step = (step + 1) % (presets.size + 1)
+        if (step == 0) {
+            player.cancelSleepTimer()
+        } else {
+            player.startSleepTimer(presets[step - 1] * 60)
+        }
+    }
+}
+
+/** mm:ss left on the sleep timer. */
+private fun sleepClock(ms: Long): String {
+    val seconds = (ms / 1000).coerceAtLeast(0)
+    return "%d:%02d".format(seconds / 60, seconds % 60)
 }

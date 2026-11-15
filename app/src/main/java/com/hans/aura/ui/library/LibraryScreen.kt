@@ -222,7 +222,7 @@ fun LibraryScreen(
             }
             // A-Z jump skips the count: pagination ends on a short page instead
             // of trusting a total that belongs to the whole (unfiltered) list.
-            total = if (fromLetter != null) {
+            total = if (letter != null) {
                 if (result.items.size < PAGE_SIZE) items.size + result.items.size else Int.MAX_VALUE
             } else result.totalRecordCount
             items = items + result.items

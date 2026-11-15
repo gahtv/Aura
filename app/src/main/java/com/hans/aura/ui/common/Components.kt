@@ -135,7 +135,7 @@ fun ArtworkCard(
                         HeartToggle(
                             favorite = favorite,
                             accent = accent,
-                            onClick = onToggleFavorite,
+                            interactive = false,
                             modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
                         )
                     }
@@ -278,7 +278,7 @@ fun TrackRow(
             HeartToggle(
                 favorite = favorite,
                 accent = accent,
-                onClick = onToggleFavorite
+                interactive = false
             )
         }
         if (onRemove != null) {
@@ -295,23 +295,33 @@ fun TrackRow(
 }
 
 /**
- * Small heart toggle (filled accent = liked, hollow grey = not).
+ * Small heart (filled accent = liked, hollow grey = not).
  *
- * It is its own focus target inside a row/card, so it carries the app cursor
- * language: `.onFocusChanged {}` BEFORE `.clickable {}` (after it, the flag
- * never flips and the ring silently never renders).
+ * Two modes on purpose:
+ *  - `interactive = false` on cards and rows: a pure INDICATOR. A focusable
+ *    child inside a focusable card is unreachable with a D-pad (focus search
+ *    does not descend into a clickable parent), so a heart you could only hit
+ *    with a finger is a trap on a TV. Favouriting is done from the context
+ *    menu (hold OK) or from the Now Playing transport row.
+ *  - `interactive = true` where it sits in a normal button row (Now Playing):
+ *    then it carries the app cursor language, and `.onFocusChanged {}` must
+ *    come BEFORE `.clickable {}` (after it the flag never flips and the ring
+ *    silently never renders).
  */
 @Composable
 fun HeartToggle(
     favorite: Boolean,
     accent: Color,
-    onClick: (() -> Unit)?,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
-    fontSize: androidx.compose.ui.unit.TextUnit = 18.sp
+    fontSize: androidx.compose.ui.unit.TextUnit = 18.sp,
+    interactive: Boolean = true
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(50)
-    Box(
+    val focusableModifier = if (!interactive) {
+        modifier
+    } else {
         modifier
             .clip(shape)
             .background(
@@ -330,7 +340,9 @@ fun HeartToggle(
                 enabled = onClick != null,
                 onClickLabel = if (favorite) "Remove from favorites" else "Add to favorites"
             ) { onClick?.invoke() }
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+    }
+    Box(
+        focusableModifier.padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         androidx.tv.material3.Text(

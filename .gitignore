@@ -16,3 +16,6 @@ app/build
 docs/PLAN-*.md
 docs/PLAN*.md
 docs/ROADMAP-internal.md
+
+# Release artifacts copied out of app/build for uploading.
+/aura-*.apk

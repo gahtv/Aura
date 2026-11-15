@@ -27,6 +27,12 @@ object PaletteCache {
 
     fun get(url: String): Long? = colors[url]
     fun put(url: String, packed: Long) { colors[url] = packed }
+
+    val size: Int get() = colors.size
+
+    /** Evicted when the session ends: a URL from another server can collide
+     *  (same item ids, different host) and paint the wrong album's accent. */
+    fun clear() = colors.clear()
 }
 
 @Composable

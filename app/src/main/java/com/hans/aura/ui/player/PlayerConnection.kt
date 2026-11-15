@@ -15,6 +15,7 @@ import com.hans.aura.playback.PlaybackService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,11 +37,16 @@ class PlayerConnection(
     sessionProvider: () -> com.hans.aura.data.Session?
 ) {
 
+    private val appContext = context.applicationContext
     private val sessionProvider: () -> com.hans.aura.data.Session? = sessionProvider
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     /** mediaId -> full item (for UI metadata, Atmos badge, lyrics, reporting). */
     private val registry = HashMap<String, JellyfinItem>()
+
+    /** Set by [teardown]: the session is being replaced, never re-attach. */
+    @Volatile
+    private var tornDown = false
 
     private val _controller = MutableStateFlow<MediaController?>(null)
     private val _currentItem = MutableStateFlow<JellyfinItem?>(null)
@@ -66,6 +72,12 @@ class PlayerConnection(
         val future = MediaController.Builder(context, token).buildAsync()
         future.addListener({
             val c = future.get()
+            // A teardown may land while the controller is still connecting;
+            // never re-attach a controller after the session was dropped.
+            if (tornDown) {
+                runCatching { c.release() }
+                return@addListener
+            }
             _controller.value = c
             attach(c)
         }, ContextCompat.getMainExecutor(context))
@@ -252,6 +264,52 @@ class PlayerConnection(
     fun removeFromQueue(index: Int) { _controller.value?.removeMediaItem(index) }
     fun setShuffle(enabled: Boolean) { _controller.value?.shuffleModeEnabled = enabled }
     fun setRepeat(mode: Int) { _controller.value?.repeatMode = mode }
+
+    /**
+     * Drop everything this connection holds for the CURRENT server, on the way
+     * to a login screen. Main thread only (MediaController/ExoPlayer rule).
+     *
+     * Without this the old server keeps streaming while the UI shows the new
+     * one (the service owns the player, the controller is only a view) and a
+     * stale mediaId registry would resolve new-server item ids to OLD-server
+     * metadata — wrong artwork and wrong tracklists.
+     *
+     * Order matters: stop + clear items, release the controller (that is the
+     * disconnect), THEN stop the service so its ExoPlayer and HTTP data source
+     * — which carry the old token/host — go away too.
+     *
+     * @return number of registry entries dropped (for the AURA_AUTH breadcrumb).
+     */
+    fun teardown(): Int {
+        tornDown = true
+        val items = synchronized(registry) {
+            val size = registry.size
+            registry.clear()
+            size
+        }
+        _controller.value?.let { c ->
+            runCatching { c.stop() }
+            runCatching { c.clearMediaItems() }
+            runCatching { c.release() }
+        }
+        _controller.value = null
+        _currentItem.value = null
+        _isPlaying.value = false
+        _positionMs.value = 0L
+        _durationMs.value = 0L
+        _queue.value = emptyList()
+        _queueIndex.value = 0
+        _shuffleEnabled.value = false
+        _repeatMode.value = Player.REPEAT_MODE_OFF
+        // The ticker and any in-flight metadata fetch belong to the dead session.
+        scope.cancel()
+        runCatching {
+            appContext.stopService(
+                android.content.Intent(appContext, PlaybackService::class.java)
+            )
+        }
+        return items
+    }
 
     companion object {
         private val itemJson = Json { ignoreUnknownKeys = true; coerceInputValues = true }

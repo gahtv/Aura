@@ -47,5 +47,6 @@ object AtmosCatalog {
         return result
     }
 
+    val size: Int get() = cache.size
     fun clear() = cache.clear()
 }

@@ -16,5 +16,6 @@ object PagedLibrary {
     fun put(key: String, items: List<JellyfinItem>, total: Int) {
         store[key] = Page(items, total)
     }
+    val size: Int get() = store.size
     fun clear() = store.clear()
 }

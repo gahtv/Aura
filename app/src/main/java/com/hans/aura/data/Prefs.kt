@@ -96,6 +96,45 @@ object Prefs {
         set(value) {
             p()?.edit()?.putBoolean(KEY_AUTOPLAY, value)?.apply()
         }
+
+    // ---- Lyrics (B10) ------------------------------------------------------
+    // Appended at the END of the object on purpose: another branch adds its own
+    // keys here in parallel, and both sides are purely additive.
+
+    private const val KEY_LYRICS_WEB = "lyrics_web_fallback"
+    private const val KEY_LYRICS_OFFSET = "lyrics_offset_"
+
+    /** Largest nudge a track may carry in either direction. */
+    const val LYRICS_OFFSET_MAX_MS: Long = 10_000L
+
+    /**
+     * Settings > "Look up lyrics online": when Jellyfin has no lyrics for a
+     * track, ask LRCLIB. OFF by default — it is a request to a third party.
+     */
+    var lyricsWebFallback: Boolean
+        get() = p()?.getBoolean(KEY_LYRICS_WEB, false) ?: false
+        set(value) {
+            p()?.edit()?.putBoolean(KEY_LYRICS_WEB, value)?.apply()
+        }
+
+    /**
+     * Per-track lyric timing nudge in milliseconds, key `lyrics_offset_<trackId>`.
+     * Positive = the lyric line is shown EARLIER than the audio timestamp.
+     * A zero offset removes the key instead of storing 0.
+     */
+    fun lyricsOffsetMs(trackId: String): Long {
+        if (trackId.isBlank()) return 0L
+        return (p()?.getLong(KEY_LYRICS_OFFSET + trackId, 0L) ?: 0L)
+            .coerceIn(-LYRICS_OFFSET_MAX_MS, LYRICS_OFFSET_MAX_MS)
+    }
+
+    fun setLyricsOffsetMs(trackId: String, offsetMs: Long) {
+        if (trackId.isBlank()) return
+        val clamped = offsetMs.coerceIn(-LYRICS_OFFSET_MAX_MS, LYRICS_OFFSET_MAX_MS)
+        val edit = p()?.edit() ?: return
+        if (clamped == 0L) edit.remove(KEY_LYRICS_OFFSET + trackId).apply()
+        else edit.putLong(KEY_LYRICS_OFFSET + trackId, clamped).apply()
+    }
 }
 
 /**

@@ -261,6 +261,24 @@ fun SettingsScreen(
             }
 
             item {
+                androidx.tv.material3.Text("Lyrics", fontSize = 18.sp, color = TextPrimary)
+                androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
+                var webLyrics by remember { mutableStateOf(Prefs.lyricsWebFallback) }
+                SettingsToggleRow(
+                    title = "Look up lyrics online",
+                    subtitle = "When the server has no lyrics for a track, search LRCLIB. " +
+                        "Aura sends the track, artist, album and length \u2014 nothing else.",
+                    checked = webLyrics,
+                    onToggle = {
+                        webLyrics = !webLyrics
+                        Prefs.lyricsWebFallback = webLyrics
+                        android.util.Log.i("AURA_LYRICS", "web fallback=$webLyrics")
+                    }
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
+            }
+
+            item {
                 androidx.tv.material3.Text("Session", fontSize = 18.sp, color = TextPrimary)
                 androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
                 // AppRoot owns the teardown + auth clearing for every exit path.

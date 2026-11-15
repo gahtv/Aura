@@ -52,6 +52,11 @@ android {
         for ((key, value) in envProps) {
             buildConfigField("String", key.toString(), "\"$value\"")
         }
+        // A checkout without a .env must still compile: the LRCLIB client id is
+        // optional (Lrclib simply omits the header when it is blank).
+        if (!envProps.containsKey("LRCLIB_APP_ID")) {
+            buildConfigField("String", "LRCLIB_APP_ID", "\"\"")
+        }
     }
 }
 

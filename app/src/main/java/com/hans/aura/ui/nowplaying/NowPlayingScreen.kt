@@ -5,8 +5,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -20,8 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -41,16 +37,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -58,8 +47,6 @@ import com.hans.aura.AuraApp
 import com.hans.aura.R
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LyricLine
-import com.hans.aura.data.LyricsStore
 import com.hans.aura.ui.common.ContextMenuHost
 import com.hans.aura.ui.common.formatDuration
 import com.hans.aura.ui.player.PlayerConnection
@@ -561,169 +548,6 @@ private fun TransportHeartButton(favorite: Boolean, accent: Color, onClick: () -
             fontSize = 26.sp
         )
     }
-}
-
-/**
- * Line-synced lyrics, top-anchored: the current line sits near the top with
- * the three previous lines above it, and auto-follows playback. The album
- * art/title chip is drawn by the parent OVER this pane. Manual D-pad scrolling
- * pauses the auto-follow; it resumes after 4s of inactivity, on a seek, or on
- * a track change. Any key press is surfaced to the parent so it can re-show
- * the hidden transport controls.
- */
-@Composable
-fun LyricsPane(
-    app: AuraApp,
-    player: PlayerConnection,
-    highlightColor: Color = Accent,
-    onUserInteraction: () -> Unit = {}
-) {
-    val item by player.current.collectAsState()
-    val position by player.positionMs.collectAsState()
-    var lines by remember(item?.id) { mutableStateOf<List<LyricLine>?>(null) }
-    // Fresh scroll state per track: without keying on the item id, a track
-    // change keeps the previous song's scroll offset until the new song's
-    // first line fires a scroll, so the pane lingers at the old end position.
-    val listState = remember(item?.id) { LazyListState() }
-    val scope = rememberCoroutineScope()
-    var followPaused by remember(item?.id) { mutableStateOf(false) }
-
-    LaunchedEffect(item?.id) {
-        val id = item?.id ?: return@LaunchedEffect
-        lines = LyricsStore.fetch(app.jellyfin.api, id)
-    }
-
-    val currentLineIndex = remember(lines, position) {
-        computeCurrentLine(lines, position)
-    }
-
-    // Anchor offset: the current line lands ~3 line-heights below the top, so
-    // exactly the previous three lines stay visible above it.
-    // Line box (26/22sp text + 20dp vertical padding) measures ~68dp pitch on
-    // TV; 3*70 leaves a small margin so the third previous line never clips.
-    val anchorOffsetPx = with(LocalDensity.current) { (3 * 70).dp.roundToPx() }
-
-    fun pauseFollow() {
-        followPaused = true
-        scope.launch {
-            delay(4000)
-            followPaused = false
-        }
-    }
-
-    LaunchedEffect(lines, currentLineIndex, followPaused) {
-        if (lines.isNullOrEmpty() || followPaused) return@LaunchedEffect
-        // Before the first synced line's timestamp (currentLineIndex == -1)
-        // anchor the FIRST line instead.
-        val target = if (currentLineIndex >= 0) currentLineIndex else 0
-        listState.animateScrollToItem(
-            index = target + 1, // +1: head spacer item
-            scrollOffset = -anchorOffsetPx
-        )
-        // Second snap: the first pass positions with ESTIMATED offsets for
-        // unmeasured items, so the current line can land a line or two low.
-        // A second call re-anchors with the now-measured sizes.
-        listState.scrollToItem(index = target + 1, scrollOffset = -anchorOffsetPx)
-    }
-
-    Box(
-        Modifier
-            .fillMaxSize()
-            .onPreviewKeyEvent { event ->
-                onUserInteraction()
-                // DOWN/UP always scroll the lyrics (and pause auto-follow),
-                // no matter which child inside the pane holds focus. KeyDown
-                // only — the matching KeyUp must not scroll a second step.
-                if (event.type == KeyEventType.KeyDown) {
-                    when (event.key) {
-                        Key.DirectionDown -> {
-                            pauseFollow()
-                            scope.launch { listState.scrollBy(160f) }
-                            true
-                        }
-                        Key.DirectionUp -> {
-                            pauseFollow()
-                            scope.launch { listState.scrollBy(-160f) }
-                            true
-                        }
-                        else -> false
-                    }
-                } else false
-            }
-    ) {
-        when {
-            lines == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text(
-                    "Loading lyrics\u2026", color = TextSecondary, fontSize = 16.sp
-                )
-            }
-            lines!!.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text(
-                    "No lyrics available for this track",
-                    color = TextSecondary, fontSize = 16.sp
-                )
-            }
-            else -> LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .focusable(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Small head spacer so the first line never glues to the top
-                // edge; the anchor then shows the previous lines above current.
-                item { Spacer(Modifier.height(56.dp)) }
-                items(lines!!.size) { i ->
-                    val line = lines!![i]
-                    val isCurrent = i == currentLineIndex
-                    val color by animateColorAsState(
-                        when {
-                            isCurrent -> highlightColor
-                            currentLineIndex in 0 until i -> TextSecondary
-                            else -> TextPrimary
-                        },
-                        label = "lyricLine"
-                    )
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(
-                                if (isCurrent) highlightColor.copy(alpha = 0.13f)
-                                else Color.Transparent
-                            )
-                            .clickable(enabled = line.isSynced) {
-                                player.seekTo(line.startMs)
-                                followPaused = false
-                                onUserInteraction()
-                            }
-                            .padding(vertical = 10.dp)
-                    ) {
-                        androidx.tv.material3.Text(
-                            line.text.ifBlank { "\u00A0" },
-                            color = color,
-                            fontSize = if (isCurrent) 26.sp else 22.sp,
-                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-                // Enough trailing scroll range that the FINAL line can reach the
-                // top anchor (the bottom-left chip may overlap it — accepted).
-                item { Spacer(Modifier.height(600.dp)) }
-            }
-        }
-    }
-}
-
-fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
-    if (lines.isNullOrEmpty()) return -1
-    if (!lines[0].isSynced) return 0
-    var idx = -1
-    for (i in lines.indices) {
-        if (positionMs >= lines[i].startMs) idx = i else break
-    }
-    return idx
 }
 
 @Composable

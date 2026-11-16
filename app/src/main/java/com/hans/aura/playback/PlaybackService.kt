@@ -109,10 +109,17 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun buildMediaItem(item: JellyfinItem): MediaItem {
-        val container = item.mediaSources?.firstOrNull()?.container
+        val app = application as AuraApp
+        // The URI is the source's business, not the service's: a build can point
+        // at a different backend without this file changing.
+        val uri = app.container.source.streamUri(
+            itemId = item.id,
+            container = item.mediaSources?.firstOrNull()?.container,
+            serverUrl = app.jellyfin.auth.session?.serverUrl
+        )
         return MediaItem.Builder()
             .setMediaId(item.id)
-            .setUri(AuthStore.audioStreamUrl((application as AuraApp).jellyfin.auth.session?.serverUrl ?: "", item.id, container))
+            .setUri(uri)
             .setMediaMetadata(
                 androidx.media3.common.MediaMetadata.Builder()
                     .setTitle(item.name)

@@ -4,6 +4,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.MusicSource
+import com.hans.aura.data.MusicSources
 import kotlin.math.roundToInt
 
 /**
@@ -168,15 +170,26 @@ class QueueRegistry {
 }
 
 /**
- * media3 MediaItem for a Jellyfin item. The stream URI never embeds the token —
- * the playback service's DataSource factory adds the Authorization header to
- * every request, so a server switch or re-sign-in is picked up automatically.
+ * media3 MediaItem for a library item. The stream URI comes from the active
+ * [MusicSource] — never assembled here — and never embeds the token: the
+ * playback service's DataSource factory adds the Authorization header to every
+ * request, so a server switch or re-sign-in is picked up automatically.
+ *
+ * [source] is defaulted because media items are also built from the top-level
+ * queue helpers, which have no container scope; the fallback covers the window
+ * before [MusicSources] is installed (JVM tests).
  */
-fun toMediaItem(item: JellyfinItem, serverUrl: String): MediaItem {
+fun toMediaItem(
+    item: JellyfinItem,
+    serverUrl: String,
+    source: MusicSource? = MusicSources.current
+): MediaItem {
     val container = item.mediaSources?.firstOrNull()?.container
+    val uri = source?.streamUri(item.id, container, serverUrl)
+        ?: AuthStore.audioStreamUrl(serverUrl, item.id, container)
     return MediaItem.Builder()
         .setMediaId(item.id)
-        .setUri(AuthStore.audioStreamUrl(serverUrl, item.id, container))
+        .setUri(uri)
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(item.name)

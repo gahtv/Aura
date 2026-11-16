@@ -1,10 +1,14 @@
 package com.hans.aura.di
 
 import android.content.Context
+import com.hans.aura.BuildConfig
 import com.hans.aura.data.AtmosFilter
 import com.hans.aura.data.JellyfinClient
+import com.hans.aura.data.JellyfinSource
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.MediaRepository
+import com.hans.aura.data.MusicSource
+import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
 import com.hans.aura.remote.MirrorServer
 
@@ -23,6 +27,7 @@ import com.hans.aura.remote.MirrorServer
  *  4. [MirrorServer] — device name + stored pairing token (needs the app ctx).
  *  5. [JellyfinClient] — session store + Retrofit; needs prefs to be readable.
  *  6. [MediaRepository] — main-safe facade over the browse layer, over (5).
+ *  7. [JellyfinSource] — the [MusicSource] this build targets, over (5) and (6).
  */
 class AppContainer(context: Context) {
 
@@ -34,6 +39,16 @@ class AppContainer(context: Context) {
     /** Browse/query facade ViewModels and screens should prefer. */
     val media: MediaRepository
 
+    /**
+     * The library backend this build browses and streams from.
+     *
+     * Selected once at build time (`BuildConfig.MUSIC_SOURCE`, fed from .env, so
+     * a plain checkout gets the default) and exposed here so a different backend
+     * can be swapped in without touching a single caller: screens keep reading
+     * [media], and the player asks this for stream URLs.
+     */
+    val source: MusicSource
+
     init {
         Prefs.init(appContext)
         LibraryCache.init(appContext)
@@ -42,5 +57,15 @@ class AppContainer(context: Context) {
 
         jellyfin = JellyfinClient(appContext)
         media = MediaRepository(jellyfin, { jellyfin.auth.session })
+        source = buildSource()
+        // Hand the same instance to the call sites that live outside this graph
+        // (the queue builder and the playback service).
+        MusicSources.install(source)
+    }
+
+    private fun buildSource(): MusicSource = when (BuildConfig.MUSIC_SOURCE.lowercase()) {
+        // Another backend plugs in here as its own branch; everything else about
+        // the graph — caches, filters, the player — stays untouched.
+        else -> JellyfinSource(jellyfin, media)
     }
 }

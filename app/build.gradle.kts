@@ -57,6 +57,11 @@ android {
         if (!envProps.containsKey("LRCLIB_APP_ID")) {
             buildConfigField("String", "LRCLIB_APP_ID", "\"\"")
         }
+        // Which library backend this build targets. Overridable per build via
+        // .env (or, later, a flavor); defaulted so nothing has to be set.
+        if (!envProps.containsKey("MUSIC_SOURCE")) {
+            buildConfigField("String", "MUSIC_SOURCE", "\"jellyfin\"")
+        }
     }
 
     // JVM unit tests: Robolectric needs the merged resources, and the Android

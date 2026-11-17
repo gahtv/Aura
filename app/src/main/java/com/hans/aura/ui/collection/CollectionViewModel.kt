@@ -4,9 +4,9 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
-import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
+import com.hans.aura.data.SourceQueries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,7 +80,7 @@ class CollectionViewModel(
         val uid = userId
         loadJob = viewModelScope.launch {
             // Stub hydration: the palette and the bio need the real ImageTags.
-            DetailPresenter.hydrateItem(app.jellyfin.api, uid, itemId)?.let { full ->
+            DetailPresenter.hydrateItem(itemId)?.let { full ->
                 _state.update {
                     it.copy(fullItem = full, overview = DetailPresenter.overview(full.overview))
                 }
@@ -104,7 +104,7 @@ class CollectionViewModel(
     private fun scanAtmos() {
         viewModelScope.launch {
             runCatching {
-                withContext(Dispatchers.IO) { AtmosCatalog.albumIds(app.jellyfin.api, userId) }
+                withContext(Dispatchers.IO) { SourceQueries.atmosAlbumIds() }
             }.onSuccess { ids -> _state.update { it.copy(atmosAlbumIds = ids) } }
                 .onFailure { Log.w(TAG, "atmos scan failed: ${it.message}") }
         }

@@ -4,10 +4,10 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
-import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.LibraryFilter
+import com.hans.aura.data.SourceQueries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -94,37 +94,28 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
 
     private suspend fun fetchMissing(uid: String) {
         val api = app.jellyfin.api
-        // Browse queries go through LibraryFilter: hidden libraries are
+        // Browse queries go through the library source: hidden libraries are
         // never fetched, so their items cannot land in LibraryCache.
         if (_state.value.recentlyPlayed == null) {
-            val items = LibraryFilter.queryItems(
-                api, uid,
-                LibraryFilter.ItemsQuery(
-                    includeItemTypes = "Audio", recursive = true,
-                    sortBy = "DatePlayed", sortOrder = "Descending", limit = 20
-                )
+            val items = SourceQueries.items(
+                includeItemTypes = "Audio", recursive = true,
+                sortBy = "DatePlayed", sortOrder = "Descending", limit = 20
             ).items
             LibraryCache.put("home_recent:$uid", items)
             _state.update { it.copy(recentlyPlayed = items) }
         }
         if (_state.value.recentAlbums == null) {
-            val items = LibraryFilter.queryItems(
-                api, uid,
-                LibraryFilter.ItemsQuery(
-                    includeItemTypes = "MusicAlbum", recursive = true,
-                    sortBy = "DateCreated", sortOrder = "Descending", limit = 20
-                )
+            val items = SourceQueries.items(
+                includeItemTypes = "MusicAlbum", recursive = true,
+                sortBy = "DateCreated", sortOrder = "Descending", limit = 20
             ).items
             LibraryCache.put("home_new:$uid", items)
             _state.update { it.copy(recentAlbums = items) }
         }
         if (_state.value.recentArtists == null) {
-            val items = LibraryFilter.queryItems(
-                api, uid,
-                LibraryFilter.ItemsQuery(
-                    includeItemTypes = "MusicArtist", recursive = true,
-                    sortBy = "DatePlayed", sortOrder = "Descending", limit = 20
-                )
+            val items = SourceQueries.items(
+                includeItemTypes = "MusicArtist", recursive = true,
+                sortBy = "DatePlayed", sortOrder = "Descending", limit = 20
             ).items
             LibraryCache.put("home_recent_artists:$uid", items)
             _state.update { it.copy(recentArtists = items) }
@@ -134,28 +125,27 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
             // whole-library scan. Its ids are matched against the already
             // fetched "Recently added" page first (zero extra queries); only
             // when that page holds no Atmos album do we page the album list.
-            val atmosIds = runCatching { AtmosCatalog.albumIds(api, uid) }.getOrDefault(emptySet())
+            val atmosIds = SourceQueries.atmosAlbumIds()
             var picks = _state.value.recentAlbums.orEmpty().filter { it.id in atmosIds }.take(20)
             if (picks.isEmpty() && atmosIds.isNotEmpty()) {
-                picks = LibraryFilter.queryItems(
-                    api, uid,
-                    LibraryFilter.ItemsQuery(
-                        includeItemTypes = "MusicAlbum", recursive = true,
-                        sortBy = "DateCreated", sortOrder = "Descending", limit = 120
-                    )
+                picks = SourceQueries.items(
+                    includeItemTypes = "MusicAlbum", recursive = true,
+                    sortBy = "DateCreated", sortOrder = "Descending", limit = 120
                 ).items.filter { it.id in atmosIds }.take(20)
             }
             LibraryCache.put("home_atmos:$uid", picks)
             _state.update { it.copy(atmosAlbums = picks) }
         }
         if (_state.value.artists == null) {
+            // The album-artist endpoint has no counterpart on the source seam
+            // yet (see data/SourceQueries.kt), so it stays on the filter.
             val items = LibraryFilter.queryAlbumArtists(api, uid, limit = 100).items
             LibraryCache.put("home_artists:$uid", items)
             _state.update { it.copy(artists = items) }
         }
         if (_state.value.playlists == null) {
-            val items = api.getItems(
-                userId = uid, includeItemTypes = "Playlist", recursive = true,
+            val items = SourceQueries.items(
+                includeItemTypes = "Playlist", recursive = true,
                 sortBy = "SortName", limit = 50
             ).items
             LibraryCache.put("home_playlists:$uid", items)

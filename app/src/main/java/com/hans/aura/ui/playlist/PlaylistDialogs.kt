@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
+import com.hans.aura.data.SourceQueries
 import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.TextPrimary
@@ -142,8 +143,7 @@ fun PlaylistPickerDialog(
 
     LaunchedEffect(Unit) {
         runCatching {
-            app.jellyfin.api.getItems(
-                userId = userId,
+            SourceQueries.items(
                 includeItemTypes = "Playlist", recursive = true,
                 sortBy = "SortName", limit = 100
             ).items

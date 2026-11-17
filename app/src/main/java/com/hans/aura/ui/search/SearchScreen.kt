@@ -82,7 +82,7 @@ fun SearchScreen(
     onOpenArtist: (JellyfinItem) -> Unit,
     viewModel: SearchViewModel = viewModel(
         key = "search:${app.jellyfin.auth.session?.userId ?: "anon"}",
-        factory = viewModelFactory { initializer { SearchViewModel(app) } }
+        factory = viewModelFactory { initializer { SearchViewModel() } }
     )
 ) {
     val session = app.jellyfin.auth.session ?: return

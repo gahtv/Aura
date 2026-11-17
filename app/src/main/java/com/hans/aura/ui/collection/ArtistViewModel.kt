@@ -4,9 +4,9 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
-import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
+import com.hans.aura.data.SourceQueries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -105,7 +105,7 @@ class ArtistViewModel(
         loadJob?.cancel()
         val uid = userId
         loadJob = viewModelScope.launch {
-            DetailPresenter.hydrateItem(app.jellyfin.api, uid, artistId)?.let { full ->
+            DetailPresenter.hydrateItem(artistId)?.let { full ->
                 _state.update {
                     it.copy(fetchedArtist = full, overview = DetailPresenter.overview(full.overview))
                 }
@@ -118,13 +118,13 @@ class ArtistViewModel(
                     }
                 }
                 if (force || _state.value.albums == null) {
-                    DetailPresenter.loadArtistAlbums(app.jellyfin.api, uid, artistId).also {
+                    DetailPresenter.loadArtistAlbums(artistId).also {
                         LibraryCache.put(DetailPresenter.artistAlbumsKey(artistId), it)
                         _state.update { s -> s.copy(albums = it) }
                     }
                 }
                 if (force || _state.value.topTracks == null) {
-                    DetailPresenter.loadArtistTopTracks(app.jellyfin.api, uid, artistId).also {
+                    DetailPresenter.loadArtistTopTracks(artistId).also {
                         LibraryCache.put(DetailPresenter.artistTopTracksKey(artistId), it)
                         _state.update { s -> s.copy(topTracks = it) }
                     }
@@ -141,7 +141,7 @@ class ArtistViewModel(
     private fun scanAtmos() {
         viewModelScope.launch {
             runCatching {
-                withContext(Dispatchers.IO) { AtmosCatalog.albumIds(app.jellyfin.api, userId) }
+                withContext(Dispatchers.IO) { SourceQueries.atmosAlbumIds() }
             }.onSuccess { ids ->
                 _state.update { it.copy(atmosAlbumIds = ids) }
                 Log.d(

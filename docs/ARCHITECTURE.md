@@ -14,7 +14,7 @@ AuraApp              Application: builds the container, owns the Coil image load
 MainActivity         the only Activity: starts/binds the mirror link, intercepts BACK,
                      defers debug deep links
 di/                  AppContainer — the composition root
-data/                Jellyfin I/O, caching, preferences, the browse facade
+data/                Jellyfin I/O, caching, preferences, the library source seam
 playback/            MediaSessionService (ExoPlayer) + the Jellyfin websocket
 player/controller/   the pieces PlayerConnection coordinates
 remote/              the LAN mirror link server and its pairing prompt
@@ -37,10 +37,12 @@ di/AppContainer.kt  Prefs -> LibraryCache -> AtmosFilter -> MirrorServer -> Jell
 
 data/               JellyfinApi, JellyfinClient (OkHttp + shared Json, one Retrofit per
                     server URL), JellyfinModels (@Serializable DTOs), AuthStore (session +
-                    last server, separate keys), Prefs (aura_prefs), LibraryFilter (the only
-                    browse path), LibraryCache (24h TTL + refresh stamps), PagedLibrary,
-                    AtmosCatalog, AtmosBrowse, AtmosFilter, Favorites, Mixes, LyricsStore,
-                    Lrclib, DeviceNames, MediaRepository (main-safe browse facade)
+                    last server, separate keys), Prefs (aura_prefs), LibraryFilter (query
+                    construction + hidden-library rules), LibraryCache (24h TTL + refresh
+                    stamps), PagedLibrary, AtmosCatalog, AtmosBrowse, AtmosFilter, Favorites,
+                    Mixes, LyricsStore, Lrclib, DeviceNames, MediaRepository (main-safe
+                    browse facade), MusicSource + JellyfinSource (the backend seam),
+                    SourceQueries (the browse path screens use)
 
 playback/           PlaybackService (ExoPlayer, AuthDataSourceFactory, PlaybackReporter),
                     PlaybackRemote (capabilities + websocket commands)
@@ -78,11 +80,44 @@ long-lived stores in a fixed order because each depends on the previous one:
 4. `MirrorServer` — device name + stored pairing token (needs the application context).
 5. `JellyfinClient` — session store + Retrofit; needs readable prefs.
 6. `MediaRepository` — main-safe facade over the browse layer, over the client.
+7. `JellyfinSource` — the `MusicSource` this build targets, over the client and the
+   repository; installed into `MusicSources` right after construction.
 
 `AuraApp.jellyfin` remains as a property that forwards to the container, so screens that
-still take `app: AuraApp` compile unchanged. **`MediaRepository` is wired but not yet
-consumed**: the screen ViewModels still read `LibraryFilter`/`LibraryCache`/`PagedLibrary`
-through the singletons. Moving them onto the repository is the remaining structural work.
+still take `app: AuraApp` compile unchanged. Screens and state holders reach browse data
+through `SourceQueries`, not through the repository or `LibraryFilter` directly, so which
+backend they are reading stays the container's single decision.
+
+## The library-source seam
+
+Screens and their state holders do not talk to a server. They talk to a `MusicSource`
+(`data/MusicSource.kt`), and `SourceQueries` (`data/SourceQueries.kt`) is the only browse
+path into it.
+
+The interface is the browse/query surface `MediaRepository` already exposes, plus the one
+streaming concern the player has: `streamUri` for the direct-play URL, and `streamTarget`
+for that URL together with the headers the request must carry. It is deliberately not a
+mirror of the server API — an implementation is a thin adapter over whatever it wraps, and
+does not re-derive the caching, filtering or paging rules `MediaRepository` owns.
+
+`JellyfinSource` is today's only implementation and has no logic of its own: every browse
+call forwards to `MediaRepository`, and streaming keeps the two rules the player already
+relied on (direct-play URL, `Authorization` header resolved per request from the current
+session). `AppContainer.buildSource` picks one implementation from
+`BuildConfig.MUSIC_SOURCE` — fed from root `.env`, so a plain checkout gets the default —
+and `MusicSources.install` publishes that same instance for the call sites built outside
+the graph (the queue builder and the playback service). Adding a backend is a branch there
+and nothing else: no screen, ViewModel or queue builder learns what it is.
+
+Invariant: **a source that cannot answer a query returns an empty result, never an
+exception.** `SourceQueries` already answers an empty `ItemsResponse` when no source is
+installed, and `atmosAlbumIds` answers an empty set; any method added to the seam keeps the
+same shape, because a throw from here surfaces on a screen that has no way to tell one
+backend from another.
+
+Two queries sit outside the seam for now — the album-artist listing (no counterpart on
+`MusicSource` yet) and the A–Z jump (`ItemsQuery` carries no `nameStartsWithOrGreater`) —
+and still go through `LibraryFilter`; they move here when the interface grows.
 
 ## Navigation contract
 
@@ -244,13 +279,15 @@ never a `CompositionLocal` that would leak the tint into other screens.
 
 ## Data and caching
 
-`LibraryFilter.queryItems`/`queryAlbumArtists` are the only browse entry points; with
-nothing hidden they pass straight through to a single query, and with a hidden set they issue
-one recursive `ParentId` query per visible library and merge pages client-side. Music item
-types only fan out into libraries whose `CollectionType` is `music` or unknown (a
-movies/playlists root *does* return music items, which is how albums survived with every
-music library switched off). Direct lookups (`getItem`, `/Items?Ids=`, playlist items, the
-"Play On" path) are exempt. Every cache key carries `LibraryFilter.cacheSuffix()`.
+`SourceQueries` is the only browse entry point screens use. It asks the configured
+`MusicSource`, which in this build is `JellyfinSource` -> `MediaRepository` ->
+`LibraryFilter.queryItems`: with nothing hidden that passes straight through to a single
+query, and with a hidden set it issues one recursive `ParentId` query per visible library
+and merges pages client-side. Music item types only fan out into libraries whose
+`CollectionType` is `music` or unknown (a movies/playlists root *does* return music items,
+which is how albums survived with every music library switched off). Direct lookups
+(`getItem`, `/Items?Ids=`, playlist items, the "Play On" path) are exempt. Every cache key
+carries `LibraryFilter.cacheSuffix()`.
 
 `LibraryCache` keys browse queries with a 24h TTL, refetching lazily, and persists
 last-refresh timestamps because `/ScheduledTasks` and `/ActivityLog/Entries` are admin-only.

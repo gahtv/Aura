@@ -3,10 +3,9 @@ package com.hans.aura.ui.search
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.Prefs
+import com.hans.aura.data.SourceQueries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -42,14 +41,12 @@ data class SearchUiState(
  * by type — the three shelves are rendered stacked on one page, never as tabs.
  * Typing debounces; ENTER/resubmit runs immediately.
  */
-class SearchViewModel(private val app: AuraApp) : ViewModel() {
+class SearchViewModel : ViewModel() {
 
     private val _state = MutableStateFlow(SearchUiState(recentSearches = Prefs.recentSearches()))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
     private var searchJob: Job? = null
-
-    private val userId: String get() = app.jellyfin.auth.session?.userId ?: ""
 
     fun onQueryChange(value: String) {
         if (value == _state.value.query) return
@@ -95,13 +92,10 @@ class SearchViewModel(private val app: AuraApp) : ViewModel() {
         runCatching {
             withContext(Dispatchers.IO) {
                 // Search is a browse query: hidden libraries are not queried.
-                LibraryFilter.queryItems(
-                    app.jellyfin.api, userId,
-                    LibraryFilter.ItemsQuery(
-                        searchTerm = term, recursive = true,
-                        includeItemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
-                        limit = 50
-                    )
+                SourceQueries.items(
+                    searchTerm = term, recursive = true,
+                    includeItemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
+                    limit = 50
                 )
             }
         }.onSuccess { result ->

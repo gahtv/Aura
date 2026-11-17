@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
-import com.hans.aura.data.LibraryFilter
+import com.hans.aura.data.SourceQueries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,7 +54,7 @@ class GenresViewModel(private val app: AuraApp) : ViewModel() {
         val uid = userId
         loadJob = viewModelScope.launch {
             runCatching {
-                withContext(Dispatchers.IO) { scanGenres(app.jellyfin.api, uid) }
+                withContext(Dispatchers.IO) { scanGenres() }
             }.onSuccess { genres ->
                 LibraryCache.put("genres:$uid", genres)
                 _state.value = GenresUiState(genres = genres)
@@ -83,7 +83,6 @@ data class GenreAlbumsUiState(
 
 /** One genre page: its albums grid, with the full track list as the fallback. */
 class GenreAlbumsViewModel(
-    private val app: AuraApp,
     private val genreName: String
 ) : ViewModel() {
 
@@ -91,8 +90,6 @@ class GenreAlbumsViewModel(
     val state: StateFlow<GenreAlbumsUiState> = _state.asStateFlow()
 
     private var loadJob: Job? = null
-
-    private val userId: String get() = app.jellyfin.auth.session?.userId ?: ""
 
     init {
         _state.update {
@@ -108,38 +105,30 @@ class GenreAlbumsViewModel(
 
     private fun load() {
         loadJob?.cancel()
-        val uid = userId
         loadJob = viewModelScope.launch {
             runCatching {
                 val needAlbums = _state.value.albums == null
                 val needTracks = _state.value.tracks == null
                 // Network on IO; the StateFlow is only touched back on Main.
                 val fetched = withContext(Dispatchers.IO) {
-                    val api = app.jellyfin.api
                     val albums = if (needAlbums) {
-                        LibraryFilter.queryItems(
-                            api, uid,
-                            LibraryFilter.ItemsQuery(
-                                includeItemTypes = "MusicAlbum",
-                                genres = genreName,
-                                recursive = true,
-                                sortBy = "SortName",
-                                sortOrder = "Ascending",
-                                limit = 200
-                            )
+                        SourceQueries.items(
+                            includeItemTypes = "MusicAlbum",
+                            genres = genreName,
+                            recursive = true,
+                            sortBy = "SortName",
+                            sortOrder = "Ascending",
+                            limit = 200
                         ).items
                     } else null
                     val tracks = if (needTracks) {
-                        LibraryFilter.queryItems(
-                            api, uid,
-                            LibraryFilter.ItemsQuery(
-                                includeItemTypes = "Audio",
-                                genres = genreName,
-                                recursive = true,
-                                sortBy = "SortName",
-                                sortOrder = "Ascending",
-                                limit = 100
-                            )
+                        SourceQueries.items(
+                            includeItemTypes = "Audio",
+                            genres = genreName,
+                            recursive = true,
+                            sortBy = "SortName",
+                            sortOrder = "Ascending",
+                            limit = 100
                         ).items
                     } else null
                     albums to tracks
@@ -169,24 +158,21 @@ class GenreAlbumsViewModel(
  * Scanning Audio costs a few pages once per cache TTL and every entry it
  * produces is guaranteed to have music behind it.
  */
-private suspend fun scanGenres(api: com.hans.aura.data.JellyfinApi, userId: String): List<JellyfinItem> {
+private suspend fun scanGenres(): List<JellyfinItem> {
     val names = LinkedHashSet<String>()
     var start = 0
     var total = Int.MAX_VALUE
     var pages = 0
     while (start < total && pages < 12) {
         val result = runCatching {
-            LibraryFilter.queryItems(
-                api, userId,
-                LibraryFilter.ItemsQuery(
-                    includeItemTypes = "Audio",
-                    recursive = true,
-                    sortBy = "SortName",
-                    sortOrder = "Ascending",
-                    limit = 500,
-                    startIndex = start,
-                    fields = "Genres"
-                )
+            SourceQueries.items(
+                includeItemTypes = "Audio",
+                recursive = true,
+                sortBy = "SortName",
+                sortOrder = "Ascending",
+                limit = 500,
+                startIndex = start,
+                fields = "Genres"
             )
         }.getOrNull() ?: break
         result.items.forEach { item ->

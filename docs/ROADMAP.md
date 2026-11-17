@@ -15,6 +15,11 @@ lyrics, mirroring and pairing.
   Behaviour is unchanged — the visible differences are the fixes listed in the release notes
   (no phantom Now Playing screen at launch, and the correct app version reported to the server).
 
+**Under the hood**
+- Browse queries now ask the app's library source rather than one server's API, so the backend a
+  build talks to is a wiring decision instead of something every screen repeats. Behaviour is
+  unchanged.
+
 **Playback**
 - Direct play of E-AC-3 JOC (Dolby Atmos) M4A from Jellyfin, bitstream untouched to an Atmos-capable
   receiver. No transcoding, no downmix, no in-app attenuation.

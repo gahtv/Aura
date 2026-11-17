@@ -98,10 +98,9 @@ object Favorites {
      * Nothing hidden: a single server-side query with Filters=IsFavorite (the
      * exact pass-through shape LibraryFilter itself issues in that state).
      *
-     * Libraries hidden: /Items cannot exclude a library subtree and LibraryFilter
-     * only fans out through LibraryFilter.ItemsQuery, which has no Filters field
-     * (that file is off-limits for this branch) — so the same per-library
-     * fan-out runs unfiltered and the favourite test happens here. Slower, but
+     * Libraries hidden: /Items cannot exclude a library subtree, so the same
+     * per-library fan-out runs and the favourite test happens here, on what
+     * the fan-out returned. Slower than a server-side `Filters` query, but
      * hidden libraries can never leak into the list.
      */
     suspend fun browseLiked(

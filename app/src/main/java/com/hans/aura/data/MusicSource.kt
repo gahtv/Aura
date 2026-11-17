@@ -14,6 +14,9 @@ package com.hans.aura.data
  * player needs. It is not a mirror of the server API — an implementation is
  * expected to be a thin adapter over whatever it wraps, not to re-derive the
  * caching, filtering or paging rules that [MediaRepository] owns.
+ *
+ * Screens and their state holders reach it through [SourceQueries], never
+ * through one concrete implementation.
  */
 interface MusicSource {
 

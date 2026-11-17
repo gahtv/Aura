@@ -35,11 +35,23 @@ object LibraryFilter {
         val includeItemTypes: String? = null,
         val excludeItemTypes: String? = null,
         val genres: String? = null,
+        /**
+         * Server-side item filter (`IsFavorite`, `IsPlayed`, …). Passed through
+         * to every query of a per-library fan-out, so a filtered browse still
+         * never reads a hidden library.
+         */
+        val filters: String? = null,
         val recursive: Boolean = true,
         val parentId: String? = null,
         val artistIds: String? = null,
         val albumArtistIds: String? = null,
         val searchTerm: String? = null,
+        /**
+         * Hydrates a known id set (the Atmos browse path: ids come from the
+         * whole-library scan, metadata is fetched in chunks). A direct lookup:
+         * never fanned out per library, like [parentId].
+         */
+        val ids: String? = null,
         val sortBy: String = "SortName",
         val sortOrder: String = "Ascending",
         val limit: Int = 100,
@@ -119,23 +131,26 @@ object LibraryFilter {
 
     /**
      * Browse query (shelves, library tabs, search): honours the hidden set.
-     * A query already scoped to a parent (album tracklist, playlist tracks) is
-     * passed through untouched — that is a direct item lookup, not a browse.
+     * A query already scoped to a parent (album tracklist, playlist tracks) or
+     * to a known id set (Atmos hydration) is passed through untouched — that is
+     * a direct item lookup, not a browse.
      */
     suspend fun queryItems(api: JellyfinApi, userId: String, q: ItemsQuery): ItemsResponse {
         // Playlists are user-owned virtual content, not library content: hiding
         // a music library must not hide the playlists tab.
-        if (!isActive() || q.parentId != null || q.includeItemTypes == "Playlist") {
+        if (!isActive() || q.parentId != null || q.ids != null || q.includeItemTypes == "Playlist") {
             return api.getItems(
                 userId = userId,
                 includeItemTypes = q.includeItemTypes,
                 excludeItemTypes = q.excludeItemTypes,
                 genres = q.genres,
+                filters = q.filters,
                 recursive = q.recursive,
                 parentId = q.parentId,
                 artistIds = q.artistIds,
                 albumArtistIds = q.albumArtistIds,
                 searchTerm = q.searchTerm,
+                ids = q.ids,
                 sortBy = q.sortBy,
                 sortOrder = q.sortOrder,
                 limit = q.limit,
@@ -159,11 +174,13 @@ object LibraryFilter {
                     includeItemTypes = q.includeItemTypes,
                     excludeItemTypes = q.excludeItemTypes,
                     genres = q.genres,
+                    filters = q.filters,
                     recursive = q.recursive,
                     parentId = lib.id,
                     artistIds = q.artistIds,
                     albumArtistIds = q.albumArtistIds,
                     searchTerm = q.searchTerm,
+                    ids = q.ids,
                     sortBy = q.sortBy,
                     sortOrder = q.sortOrder,
                     limit = perLibraryLimit,
@@ -185,6 +202,7 @@ object LibraryFilter {
                     api.getItems(
                         userId = userId,
                         includeItemTypes = "Playlist",
+                        filters = q.filters,
                         recursive = true,
                         searchTerm = q.searchTerm,
                         sortBy = q.sortBy,

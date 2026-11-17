@@ -141,6 +141,53 @@ class LibraryFilterTest {
         assertEquals(listOf<String?>(null), api.queriedParents)
     }
 
+    // ---- filters / id hydration -------------------------------------------
+
+    @Test
+    fun `item filter is forwarded on the single-query path`() = runTest {
+        val api = FakeJellyfinApi()
+
+        LibraryFilter.queryItems(
+            api, "u",
+            LibraryFilter.ItemsQuery(includeItemTypes = "Audio", filters = "IsFavorite")
+        )
+
+        assertEquals(listOf<String?>(null), api.queriedParents)
+        assertEquals(listOf<String?>("IsFavorite"), api.itemFilters)
+    }
+
+    @Test
+    fun `item filter reaches every library of a fan-out`() = runTest {
+        hide("lib-music")
+        val api = FakeJellyfinApi()
+
+        LibraryFilter.queryItems(
+            api, "u",
+            LibraryFilter.ItemsQuery(includeItemTypes = "Audio", filters = "IsFavorite")
+        )
+
+        assertEquals(setOf("lib-atmos", "lib-mixed"), api.queriedParents.toSet())
+        assertEquals(
+            "a filtered browse must still not read a hidden library",
+            listOf<String?>("IsFavorite", "IsFavorite"),
+            api.itemFilters
+        )
+    }
+
+    @Test
+    fun `id hydration bypasses the per-library fan-out`() = runTest {
+        hide("lib-music")
+        val api = FakeJellyfinApi()
+
+        LibraryFilter.queryItems(
+            api, "u",
+            LibraryFilter.ItemsQuery(includeItemTypes = "MusicAlbum", ids = "a,b,c")
+        )
+
+        assertEquals(listOf<String?>(null), api.queriedParents)
+        assertEquals(listOf<String?>("a,b,c"), api.itemIds)
+    }
+
     // ---- merging -----------------------------------------------------------
 
     @Test

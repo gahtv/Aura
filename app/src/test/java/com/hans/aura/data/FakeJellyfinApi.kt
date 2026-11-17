@@ -22,6 +22,10 @@ class FakeJellyfinApi(
     val itemQueries = mutableListOf<Pair<String?, String?>>()
     val artistQueries = mutableListOf<String?>()
 
+    /** Server-side item filter / id hydration seen on each getItems call. */
+    val itemFilters = mutableListOf<String?>()
+    val itemIds = mutableListOf<String?>()
+
     val queriedParents: List<String?> get() = itemQueries.map { it.second }
 
     override suspend fun getItems(
@@ -46,6 +50,8 @@ class FakeJellyfinApi(
         nameStartsWithOrGreater: String?
     ): ItemsResponse {
         itemQueries += includeItemTypes to parentId
+        itemFilters += filters
+        itemIds += ids
         if (parentId in failingParents) throw IllegalStateException("library $parentId is unreadable")
         val all = itemsByParent[parentId] ?: emptyList()
         return ItemsResponse(

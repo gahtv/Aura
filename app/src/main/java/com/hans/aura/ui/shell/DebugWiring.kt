@@ -45,13 +45,10 @@ internal fun DebugWiring(
             }
             if (link.autoplay) {
                 runCatching {
-                    val session = app.jellyfin.auth.session ?: return@collect
-                    val result = com.hans.aura.data.LibraryFilter.queryItems(
-                        app.jellyfin.api, session.userId,
-                        com.hans.aura.data.LibraryFilter.ItemsQuery(
-                            includeItemTypes = "Audio",
-                            recursive = true, sortBy = "Random", limit = 1, startIndex = 0
-                        )
+                    app.jellyfin.auth.session ?: return@collect
+                    val result = com.hans.aura.data.SourceQueries.items(
+                        includeItemTypes = "Audio",
+                        recursive = true, sortBy = "Random", limit = 1, startIndex = 0
                     )
                     if (result.items.isNotEmpty()) player.playQueue(result.items, 0, resume = false)
                     android.util.Log.d(

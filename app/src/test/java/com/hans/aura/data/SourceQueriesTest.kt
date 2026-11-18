@@ -9,6 +9,7 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -28,6 +29,7 @@ class SourceQueriesTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         Prefs.init(context)
+        Prefs.lyricsWebFallback = false
         Prefs.knownLibraries = Fixtures.allLibraries
         Prefs.hiddenLibraries = emptySet()
         server = ServerSocket(0)
@@ -121,6 +123,77 @@ class SourceQueriesTest {
         assertEquals(setOf("lib-atmos", "lib-mixed"), seen.map { it.queryParameter("ParentId") }.toSet())
         assertTrue(seen.all { it.encodedPath == "/Artists/AlbumArtists" })
         assertTrue(seen.all { it.queryParameter("Limit") == "2" && it.queryParameter("StartIndex") == "0" })
+    }
+
+    @Test
+    fun `jellyfin bios share hydrated items and strip html`() = runTest {
+        body = """{"Id":"bio","Name":"Artist","Overview":"<p> First &amp; second<br>Third</p><p>Last</p>"}"""
+        val source = MusicSources.current!!
+        source.item("bio")
+        assertEquals("First & second\nThird\nLast", source.artistBio("bio"))
+        assertEquals(source.artistBio("bio"), source.albumBio("bio"))
+        assertEquals(1, requests.size)
+        body = """{"Id":"blank","Name":"Blank","Overview":"<p> </p>"}"""
+        assertNull(source.artistBio("blank"))
+        assertNull(source.albumBio("blank"))
+    }
+
+    @Test
+    fun `jellyfin timed lyrics use ticks and line karaoke`() = runTest {
+        body = """{"Lyrics":[{"Text":"First","Start":123400000},{"Text":"Second","Start":150000000}]}"""
+        val lines = MusicSources.current!!.lyricsTimed("song")!!
+        assertEquals(listOf(12340L, 15000L), lines.map { it.startMs })
+        assertTrue(lines.all { it.words.isEmpty() })
+        assertEquals(listOf(KaraokeSpan("First", false)), karaokeSpans(lines[0], 12339))
+        assertEquals(listOf(KaraokeSpan("First", true)), karaokeSpans(lines[0], 12340))
+        LyricsStore.fetchPreferred(client.api, "song")
+        assertEquals(1, requests.size)
+        assertEquals("/Audio/song/lyrics", requests.single().encodedPath)
+    }
+
+    @Test
+    fun `unsynced lyrics stay plain and do not query web`() = runTest {
+        Prefs.lyricsWebFallback = true
+        body = """{"LyricText":"First line\nSecond line"}"""
+        val source = JellyfinSource(client, MediaRepository(client), lookupLyrics = { error("unexpected web") })
+        MusicSources.install(source)
+        assertNull(source.lyricsTimed("plain"))
+        val plain = LyricsStore.fetchPreferred(client.api, "plain")
+        assertEquals(2, plain.size)
+        assertTrue(plain.none { it.isSynced })
+        assertEquals(1, requests.size)
+    }
+
+    @Test
+    fun `empty jellyfin lyrics only use web when enabled and expose origin`() = runTest {
+        body = """{"Id":"song","Name":"Track"}"""
+        var lookups = 0
+        val source = JellyfinSource(client, MediaRepository(client), fetchLyrics = { emptyList() }, lookupLyrics = {
+            assertEquals("song", it.id)
+            lookups++
+            LyricsStore.parseLrcText("[00:12.34]Web line")
+        })
+        assertNull(source.lyricsTimed("song"))
+        assertEquals(0, lookups)
+        assertTrue(requests.isEmpty())
+        Prefs.lyricsWebFallback = true
+        assertEquals(listOf(TimedLyricLine(12340, "Web line")), source.lyricsTimed("song"))
+        assertEquals(1, source.cachedWebLyrics("song")!!.size)
+        source.lyricsTimed("song")
+        assertEquals(1, lookups)
+        assertTrue(source.hasPlayHistory)
+        assertEquals("Audio", source.playHistoryItemType)
+        source.recordPlay("song")
+        assertEquals(1, requests.size)
+    }
+
+    @Test
+    fun `missing lyrics and server errors return null`() = runTest {
+        body = "{}"
+        assertNull(MusicSources.current!!.lyricsTimed("empty"))
+        status = 500
+        assertNull(MusicSources.current!!.lyricsTimed("failed"))
+        assertNull(MusicSources.current!!.albumBio("failed"))
     }
 
     @Test

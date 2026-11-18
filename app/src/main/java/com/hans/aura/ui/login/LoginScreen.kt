@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -310,12 +309,12 @@ fun LoginScreen(
                 Column(
                     Modifier
                         .width(AuraSizes.loginPanelWidth)
-                        .clip(RoundedCornerShape(AuraShapes.lg))
+                        .clip(AuraShapes.dialog)
                         .background(MaterialTheme.colorScheme.surface)
                         .border(
                             AuraSizes.hairline,
                             com.hans.aura.ui.theme.Border,
-                            RoundedCornerShape(AuraShapes.lg)
+                            AuraShapes.dialog
                         )
                         // Trap the cursor inside the panel; DOWN must not fall
                         // back into the login form behind the scrim.

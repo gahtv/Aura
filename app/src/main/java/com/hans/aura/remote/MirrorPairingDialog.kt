@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -29,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import com.hans.aura.ui.theme.AuraShapes
 import kotlinx.coroutines.delay
 
 /**
@@ -79,9 +79,9 @@ fun MirrorPairingOverlay(
         Column(
             Modifier
                 .width(620.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(AuraShapes.dialog)
                 .background(Color(0xFF171512))
-                .border(1.dp, Color(0xFF2E2921), RoundedCornerShape(16.dp))
+                .border(1.dp, Color(0xFF2E2921), AuraShapes.dialog)
                 .padding(32.dp)
         ) {
             Text(
@@ -120,7 +120,7 @@ private fun PairingButton(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
+    val shape = AuraShapes.control
 
     Box(
         Modifier

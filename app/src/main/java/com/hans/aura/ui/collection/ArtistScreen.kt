@@ -41,6 +41,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.hans.aura.data.AuthStore
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.darken
 import com.hans.aura.ui.theme.rememberDynamicColors
 import androidx.compose.ui.unit.sp
@@ -156,7 +157,7 @@ fun ArtistScreen(
                 .padding(horizontal = 48.dp, vertical = 28.dp)
                 .background(
                     Color(0x990E0C0A),
-                    androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                    AuraShapes.card
                 )
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -351,7 +352,7 @@ private fun SectionHeader(title: String, accent: Color) {
             Modifier
                 .width(56.dp)
                 .height(3.dp)
-                .background(accent, androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+                .background(accent, AuraShapes.pill)
         )
     }
 }
@@ -364,7 +365,7 @@ private fun SectionHeader(title: String, accent: Color) {
 @Composable
 private fun ArtistRadioButton(onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+    val shape = AuraShapes.control
     Box(
         Modifier
             // onFocusChanged BEFORE clickable, or the ring never renders.

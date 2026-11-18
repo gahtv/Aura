@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -116,7 +115,7 @@ fun AtmosFilterPill(
     accent: Color = com.hans.aura.ui.theme.Accent
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(AuraShapes.sm)
+    val shape = AuraShapes.control
     Box(
         modifier
             .onFocusChanged { focused = it.isFocused }
@@ -158,7 +157,7 @@ fun AtmosChip(color: Color = com.hans.aura.ui.theme.Accent) {
         fontSize = AuraTypography.caption,
         fontWeight = FontWeight.Bold,
         modifier = Modifier
-            .background(AuraColors.BadgeScrim, RoundedCornerShape(AuraShapes.xs))
+            .background(AuraColors.BadgeScrim, AuraShapes.badge)
             .padding(horizontal = AuraSpacing.xs, vertical = 2.dp)
     )
 }

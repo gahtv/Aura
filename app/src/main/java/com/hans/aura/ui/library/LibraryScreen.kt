@@ -52,6 +52,7 @@ import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 
@@ -413,7 +414,7 @@ private fun SortPill(
     trailingIcon: Int? = null
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+    val shape = AuraShapes.control
     val bg = when {
         selected && focused -> androidx.compose.ui.graphics.Color(0x66E8A44C)
         selected -> androidx.compose.ui.graphics.Color(0xFFE8A44C)
@@ -474,7 +475,7 @@ private fun LetterChip(
     modifier: Modifier = Modifier
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+    val shape = AuraShapes.control
     Box(
         modifier
             .onFocusChanged { focused = it.isFocused }

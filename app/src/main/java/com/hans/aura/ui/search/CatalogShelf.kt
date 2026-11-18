@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +33,7 @@ import com.hans.aura.data.AuthStore
 import com.hans.aura.data.CatalogHit
 import com.hans.aura.ui.common.AtmosChip
 import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
@@ -89,7 +89,7 @@ private fun CatalogHitRow(
     onImport: (CatalogHit) -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
+    val shape = AuraShapes.card
     val busy = job?.running == true
     // Imported (or mid-import) rows keep their state visible but stop reacting to
     // OK; a failed one is retryable. Whether an Atmos version exists is the index's call —
@@ -110,7 +110,7 @@ private fun CatalogHitRow(
         Box(
             Modifier
                 .size(56.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(AuraShapes.card)
                 .background(Border)
         ) {
             val art = hit.artworkUrl ?: AuthStore.imageUrl(serverUrl, hit.id, null, maxWidth = 240)

@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -95,7 +94,7 @@ fun BioDialog(title: String, subtitle: String?, text: String, onDismiss: () -> U
                 .align(Alignment.Center)
                 .widthIn(max = AuraSizes.bioWidth)
                 .fillMaxHeight(0.85f)
-                .clip(RoundedCornerShape(AuraShapes.md))
+                .clip(AuraShapes.dialog)
                 .background(com.hans.aura.ui.theme.Surface)
                 // Trap focus: the screen behind the dialog must never receive it.
                 .focusProperties { exit = { FocusRequester.Cancel } }

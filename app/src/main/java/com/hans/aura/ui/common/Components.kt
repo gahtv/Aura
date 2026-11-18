@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,7 +100,7 @@ fun ArtworkCard(
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(if (focused) AuraShapes.card else AuraShapes.xs))
+                .clip(AuraShapes.card)
                 .background(bg)
                 .padding(if (focused) AuraSizes.focusBorder else 0.dp)
                 .then(
@@ -109,7 +108,7 @@ fun ArtworkCard(
                     if (focused) Modifier.border(
                         width = AuraSizes.focusBorderLoud,
                         color = accent,
-                        shape = RoundedCornerShape(AuraShapes.card)
+                        shape = AuraShapes.card
                     ) else Modifier
                 )
         ) {
@@ -149,7 +148,7 @@ fun ArtworkCard(
                                 .padding(AuraSpacing.xxs)
                                 .background(
                                     AuraColors.BadgeScrim,
-                                    RoundedCornerShape(AuraShapes.xs)
+                                    AuraShapes.badge
                                 )
                                 .padding(horizontal = AuraSpacing.xxs, vertical = 2.dp)
                         ) {

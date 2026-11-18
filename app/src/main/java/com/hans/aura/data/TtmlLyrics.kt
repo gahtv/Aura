@@ -69,6 +69,10 @@ internal object TtmlLyrics {
                     if (parser.depth == lineDepth) {
                         val line = normalize(text.toString())
                         val start = lineStart ?: words.firstOrNull()?.startMs
+                        val paragraphStart = lineStart
+                        if (paragraphStart != null && words.isNotEmpty() && words.all { it.startMs < paragraphStart }) {
+                            words = words.map { it.copy(startMs = it.startMs + paragraphStart) }.toMutableList()
+                        }
                         if (line.isNotEmpty()) lines += LyricLine(start ?: 0L, line, start != null, words)
                         lineDepth = -1
                     }

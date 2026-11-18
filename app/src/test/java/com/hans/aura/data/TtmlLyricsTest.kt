@@ -39,6 +39,20 @@ class TtmlLyricsTest {
     }
 
     @Test
+    fun `span offsets below paragraph start become absolute word times`() {
+        val line = parse("""<p begin="12s"><span><span begin="0s">Hello</span> <span begin="500ms">world</span></span></p>""").single()
+        assertEquals(12000L, line.startMs)
+        assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
+    }
+
+    @Test
+    fun `span times stay absolute unless all are below paragraph start`() {
+        val line = parse("""<p begin="12s"><span><span begin="11s">Hello</span> <span begin="12.5s">world</span></span></p>""").single()
+        assertEquals(listOf(TimedWord(11000, "Hello"), TimedWord(12500, "world")), line.words)
+        assertTrue(parse("""<p begin="12s">No spans</p>""").single().words.isEmpty())
+    }
+
+    @Test
     fun `untimed ttml is plain and malformed ttml is empty`() {
         val line = parse("<p>Plain <span>words</span></p>").single()
         assertEquals("Plain words", line.text)

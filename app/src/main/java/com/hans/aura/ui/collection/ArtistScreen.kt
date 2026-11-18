@@ -6,8 +6,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import com.hans.aura.data.Mixes
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
@@ -45,7 +48,6 @@ import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.ErrorPane
-import com.hans.aura.ui.common.FilledActionButton
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Surface
@@ -186,10 +188,7 @@ fun ArtistScreen(
                 Spacer(Modifier.width(12.dp))
             }
             // Radio: GET /Artists/{id}/InstantMix, ~50 tracks, queue replaces.
-            FilledActionButton(
-                label = "Radio",
-                containerColor = Color(0xFFE8A44C),
-                focusedContainerColor = Color(0xFFF0B667),
+            ArtistRadioButton(
                 onClick = {
                     scope.launch {
                         Mixes.playMix(
@@ -353,6 +352,34 @@ private fun SectionHeader(title: String, accent: Color) {
                 .width(56.dp)
                 .height(3.dp)
                 .background(accent, androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+        )
+    }
+}
+
+/**
+ * "Radio" pill in the artist header. Starts GET /Artists/{id}/InstantMix and
+ * replaces the queue with ~50 tracks (Mixes.playMix logs AURA_MIX).
+ * Amber fill = action; grey ring = the D-pad cursor is here.
+ */
+@Composable
+private fun ArtistRadioButton(onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+    Box(
+        Modifier
+            // onFocusChanged BEFORE clickable, or the ring never renders.
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onClick() }
+            .clip(shape)
+            .background(if (focused) Color(0xFFF0B667) else Color(0xFFE8A44C))
+            .border(3.dp, if (focused) Color(0xFFF2EDE6) else Color.Transparent, shape)
+            .padding(horizontal = 18.dp, vertical = 10.dp)
+    ) {
+        androidx.tv.material3.Text(
+            "Radio",
+            color = Color(0xFF191410),
+            fontSize = 15.sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
         )
     }
 }

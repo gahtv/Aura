@@ -9,6 +9,7 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -28,6 +29,7 @@ class SourceQueriesTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         Prefs.init(context)
+        Prefs.lyricsWebFallback = false
         Prefs.knownLibraries = Fixtures.allLibraries
         Prefs.hiddenLibraries = emptySet()
         server = ServerSocket(0)
@@ -121,6 +123,146 @@ class SourceQueriesTest {
         assertEquals(setOf("lib-atmos", "lib-mixed"), seen.map { it.queryParameter("ParentId") }.toSet())
         assertTrue(seen.all { it.encodedPath == "/Artists/AlbumArtists" })
         assertTrue(seen.all { it.queryParameter("Limit") == "2" && it.queryParameter("StartIndex") == "0" })
+    }
+
+    @Test
+    fun `jellyfin caches only bios and strips html`() = runTest {
+        body = """{"Id":"bio","Name":"Artist","Overview":"<p> First &amp; second<br>Third</p><p>Last</p>"}"""
+        val source = MusicSources.current!!
+        source.item("bio")
+        assertEquals("First & second\nThird\nLast", source.artistBio("bio"))
+        assertEquals(source.artistBio("bio"), source.albumBio("bio"))
+        assertEquals(1, requests.size)
+        body = """{"Id":"blank","Name":"Blank","Overview":"<p> </p>"}"""
+        assertNull(source.artistBio("blank"))
+        assertNull(source.albumBio("blank"))
+        assertEquals(2, requests.size)
+        body = """{"Id":"bio","Name":"Artist","UserData":{"IsFavorite":true,"PlayCount":5,"LastPlayedDate":"2026-01-01","PlaybackPositionTicks":12345}}"""
+        val refreshed = source.item("bio")!!
+        assertEquals(true, refreshed.userData!!.isFavorite)
+        assertEquals(5, refreshed.userData!!.playCount)
+        assertEquals("2026-01-01", refreshed.userData!!.lastPlayedDate)
+        assertEquals(12345L, refreshed.userData!!.playbackPositionTicks)
+        assertEquals(3, requests.size)
+        source.item("bio")
+        assertEquals(4, requests.size)
+    }
+
+    @Test
+    fun `refreshAll invalidates cached bios lyrics and web hints`() = runTest {
+        val source = MusicSources.current!!
+        body = """{"Id":"bio","Name":"Artist","Overview":"Original bio"}"""
+        assertEquals("Original bio", source.artistBio("bio"))
+        body = """{"LyricText":"[00:01]Original lyrics"}"""
+        assertEquals(listOf(TimedLyricLine(1000, "Original lyrics")), source.lyricsTimed("song"))
+        assertEquals("Original bio", source.albumBio("bio"))
+        source.lyricsTimed("song")
+        assertEquals(2, requests.size)
+
+        source.refreshAll()
+
+        body = """{"Id":"bio","Name":"Artist","Overview":"Corrected bio"}"""
+        assertEquals("Corrected bio", source.artistBio("bio"))
+        body = """{"LyricText":"[00:02]Corrected lyrics"}"""
+        assertEquals(listOf(TimedLyricLine(2000, "Corrected lyrics")), source.lyricsTimed("song"))
+        assertEquals(4, requests.size)
+
+        Prefs.lyricsWebFallback = true
+        body = """{"Id":"web","Name":"Track"}"""
+        val webSource = JellyfinSource(client, MediaRepository(client), fetchLyrics = { emptyList() }, lookupLyrics = {
+            LyricsStore.parseLrcText("[00:03]Web lyrics")
+        })
+        webSource.lyricsTimed("web")
+        assertEquals(true, webSource.cachedWebLyricsFound("web"))
+        webSource.refreshAll()
+        assertNull(webSource.cachedWebLyricsFound("web"))
+    }
+
+    @Test
+    fun `jellyfin timed lyrics use ticks and line karaoke`() = runTest {
+        body = """{"Lyrics":[{"Text":"First","Start":123400000},{"Text":"Second","Start":150000000}]}"""
+        val lines = MusicSources.current!!.lyricsTimed("song")!!
+        assertEquals(listOf(12340L, 15000L), lines.map { it.startMs })
+        assertTrue(lines.all { it.words.isEmpty() })
+        assertEquals(listOf(KaraokeSpan("First", false)), karaokeSpans(lines[0], 12339))
+        assertEquals(listOf(KaraokeSpan("First", true)), karaokeSpans(lines[0], 12340))
+        LyricsStore.fetchPreferred(client.api, "song")
+        assertEquals(1, requests.size)
+        assertEquals("/Audio/song/lyrics", requests.single().encodedPath)
+    }
+
+    @Test
+    fun `unsynced lyrics stay plain and do not query web`() = runTest {
+        Prefs.lyricsWebFallback = true
+        body = """{"LyricText":"First line\nSecond line"}"""
+        val source = JellyfinSource(client, MediaRepository(client), lookupLyrics = { error("unexpected web") })
+        MusicSources.install(source)
+        assertNull(source.lyricsTimed("plain"))
+        val plain = LyricsStore.fetchPreferred(client.api, "plain")
+        assertEquals(2, plain.size)
+        assertTrue(plain.none { it.isSynced })
+        assertEquals(1, requests.size)
+    }
+
+    @Test
+    fun `empty jellyfin lyrics only use web when enabled and expose origin`() = runTest {
+        body = """{"Id":"song","Name":"Track"}"""
+        var lookups = 0
+        val source = JellyfinSource(client, MediaRepository(client), fetchLyrics = { emptyList() }, lookupLyrics = {
+            assertEquals("song", it.id)
+            lookups++
+            LyricsStore.parseLrcText("[00:12.34]Web line")
+        })
+        assertNull(source.lyricsTimed("song"))
+        assertEquals(0, lookups)
+        assertTrue(requests.isEmpty())
+        Prefs.lyricsWebFallback = true
+        assertEquals(listOf(TimedLyricLine(12340, "Web line")), source.lyricsTimed("song"))
+        assertEquals(true, source.cachedWebLyricsFound("song"))
+        source.lyricsTimed("song")
+        assertEquals(2, lookups)
+        assertTrue(source.hasPlayHistory)
+        assertEquals("Audio", source.playHistoryItemType)
+        source.recordPlay("song")
+        assertEquals(2, requests.size)
+        Prefs.lyricsWebFallback = false
+        assertNull(source.lyricsTimed("song"))
+        assertNull(source.cachedWebLyricsFound("song"))
+    }
+
+    @Test
+    fun `empty lyrics and web misses are retried`() = runTest {
+        body = "{}"
+        val source = MusicSources.current!!
+        assertNull(source.lyricsTimed("song"))
+        status = 500
+        assertNull(source.lyricsTimed("song"))
+        status = 200
+        body = """{"LyricText":"[00:01.00]Recovered"}"""
+        assertEquals(listOf(TimedLyricLine(1000, "Recovered")), source.lyricsTimed("song"))
+        assertEquals(3, requests.size)
+
+        body = """{"Id":"web","Name":"Track"}"""
+        Prefs.lyricsWebFallback = true
+        var lookups = 0
+        val webSource = JellyfinSource(client, MediaRepository(client), fetchLyrics = { emptyList() }, lookupLyrics = {
+            lookups++
+            if (lookups == 1) emptyList() else LyricsStore.parseLrcText("[00:02]Recovered web")
+        })
+        assertNull(webSource.lyricsTimed("web"))
+        assertEquals(false, webSource.cachedWebLyricsFound("web"))
+        assertEquals(listOf(TimedLyricLine(2000, "Recovered web")), webSource.lyricsTimed("web"))
+        assertEquals(true, webSource.cachedWebLyricsFound("web"))
+        assertEquals(2, lookups)
+    }
+
+    @Test
+    fun `missing lyrics and server errors return null`() = runTest {
+        body = "{}"
+        assertNull(MusicSources.current!!.lyricsTimed("empty"))
+        status = 500
+        assertNull(MusicSources.current!!.lyricsTimed("failed"))
+        assertNull(MusicSources.current!!.albumBio("failed"))
     }
 
     @Test

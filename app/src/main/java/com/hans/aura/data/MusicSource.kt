@@ -65,9 +65,6 @@ interface MusicSource {
     /** True when this source serves its own cover art (see [artworkUrl]). */
     val servesArtwork: Boolean get() = false
 
-    /** True when the backend records play history, so a "Recently played" shelf means something. */
-    val supportsPlayHistory: Boolean get() = false
-
     /**
      * True when this backend tracks the *device* as a server-side play session:
      * it accepts the `/Sessions/Playing*` reports and exposes the `/socket`

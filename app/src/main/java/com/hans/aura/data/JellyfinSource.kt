@@ -1,7 +1,9 @@
 package com.hans.aura.data
 
+import androidx.core.text.HtmlCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The server-backed [MusicSource]: a thin adapter over the existing
@@ -17,14 +19,48 @@ import kotlinx.coroutines.withContext
  */
 class JellyfinSource(
     private val client: JellyfinClient,
-    private val media: MediaRepository
+    private val media: MediaRepository,
+    private val fetchLyrics: suspend (String) -> List<LyricLine> = { LyricsStore.fetch(client.api, it) },
+    private val lookupLyrics: suspend (JellyfinItem) -> List<LyricLine> = { Lrclib.lookup(it) }
 ) : MusicSource {
 
     override val id: String = "jellyfin"
 
     override val displayName: String = "Jellyfin"
 
-    override val supportsPlayHistory: Boolean = true
+    override val hasPlayHistory: Boolean = true
+    override val playHistoryItemType: String = "Audio"
+
+    private val bios = ConcurrentHashMap<String, String>()
+    private val serverLyrics = ConcurrentHashMap<String, List<LyricLine>>()
+    private val webLyricsFound = ConcurrentHashMap<String, Boolean>()
+
+    override suspend fun artistBio(artistId: String): String? = bio(artistId)
+
+    override suspend fun albumBio(itemId: String): String? = bio(itemId)
+
+    private suspend fun bio(itemId: String): String? {
+        if (!bios.containsKey(itemId)) item(itemId)
+        return bios[itemId]?.takeIf { it.isNotBlank() }
+    }
+
+    internal suspend fun jellyfinLyrics(itemId: String): List<LyricLine> =
+        serverLyrics[itemId] ?: fetchLyrics(itemId).also {
+            if (it.isNotEmpty()) serverLyrics[itemId] = it
+        }
+
+    fun cachedWebLyricsFound(itemId: String): Boolean? = webLyricsFound[itemId]
+
+    override suspend fun lyricsTimed(itemId: String): List<TimedLyricLine>? {
+        webLyricsFound.remove(itemId)
+        val local = jellyfinLyrics(itemId)
+        val lines = if (local.isNotEmpty() || !Prefs.lyricsWebFallback) local else {
+            val track = item(itemId) ?: return null
+            lookupLyrics(track).also { webLyricsFound[itemId] = it.isNotEmpty() }
+        }
+        return lines.filter { it.isSynced }.map { TimedLyricLine(it.startMs, it.text) }
+            .takeIf { it.isNotEmpty() }
+    }
 
     // ---- Streaming ---------------------------------------------------------
 
@@ -75,7 +111,11 @@ class JellyfinSource(
     override fun storePage(key: String, items: List<JellyfinItem>, total: Int) =
         media.storePage(key, items, total)
 
-    override suspend fun item(itemId: String): JellyfinItem? = media.item(itemId)
+    override suspend fun item(itemId: String): JellyfinItem? = media.item(itemId)?.also { item ->
+        bios[itemId] = item.overview?.let {
+            HtmlCompat.fromHtml(it, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
+        }.orEmpty()
+    }
 
     override suspend fun artistAlbums(artistId: String, limit: Int): List<JellyfinItem> =
         media.artistAlbums(artistId, limit)
@@ -114,9 +154,17 @@ class JellyfinSource(
 
     override fun knownLibraries(): List<LibraryRef> = media.knownLibraries()
 
-    override suspend fun refreshAll() = media.refreshAll()
+    override suspend fun refreshAll() {
+        clearCaches()
+        media.refreshAll()
+    }
 
-    override fun clearCaches() = media.clearCaches()
+    override fun clearCaches() {
+        bios.clear()
+        serverLyrics.clear()
+        webLyricsFound.clear()
+        media.clearCaches()
+    }
 
     private companion object {
         /** Standard Authorization scheme the server expects (10.10+). */

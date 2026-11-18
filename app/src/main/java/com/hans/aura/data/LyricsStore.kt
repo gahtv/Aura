@@ -43,6 +43,7 @@ object LyricsStore {
      * has none. Parsing is the same LRC path either way.
      */
     suspend fun fetchPreferred(api: JellyfinApi, itemId: String): List<LyricLine> {
+        (MusicSources.current as? JellyfinSource)?.let { return it.jellyfinLyrics(itemId) }
         val fromSource = runCatching { MusicSources.current?.lyrics(itemId) }.getOrNull()
         if (!fromSource.isNullOrBlank()) {
             val parsed = parseLrcText(fromSource)

@@ -134,6 +134,10 @@ fun LyricsPane(
         // timestamps, so the pane can highlight as the line is sung. A source
         // that has none (or fails to) answers null and nothing changes.
         val timed = runCatching { MusicSources.current?.lyricsTimed(cur.id) }.getOrNull()
+        val sourceWeb = (MusicSources.current as? com.hans.aura.data.JellyfinSource)
+            ?.cachedWebLyricsFound(cur.id)
+        webChecked = sourceWeb != null
+        webFound = sourceWeb == true
         if (!timed.isNullOrEmpty()) {
             timedLines = timed
             lines = timed.map { LyricLine(startMs = it.startMs, text = it.text, isSynced = true) }

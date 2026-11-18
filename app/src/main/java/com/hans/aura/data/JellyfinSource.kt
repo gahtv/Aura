@@ -21,6 +21,8 @@ class JellyfinSource(
 
     override val displayName: String = "Jellyfin"
 
+    override val supportsPlayHistory: Boolean = true
+
     // ---- Streaming ---------------------------------------------------------
 
     override fun streamUri(itemId: String, container: String?, serverUrl: String?): String {

@@ -56,6 +56,16 @@ class AuthStore(context: Context) {
     val isSignedIn: Boolean get() = session != null
 
     /**
+     * Installs a session the app did not obtain by logging in.
+     *
+     * A build whose backend needs no interactive sign-in (a packaged library, a token supplied at
+     * build time) calls this once at startup so every screen sees a signed-in state.
+     */
+    fun installSession(session: Session) {
+        this.session = session
+    }
+
+    /**
      * The last server this device signed in to, kept even when signed out so
      * the login screen can prefill the URL. Null after [clearServer].
      */
@@ -128,8 +138,9 @@ class AuthStore(context: Context) {
             tag: String?,
             maxWidth: Int = 600
         ): String? =
-            "$serverUrl/Items/$itemId/Images/Primary?maxWidth=$maxWidth" +
-                (tag?.let { "&tag=$it" } ?: "")
+            MusicSources.current?.takeIf { it.servesArtwork }?.artworkUrl(itemId, tag, maxWidth)
+                ?: ("$serverUrl/Items/$itemId/Images/Primary?maxWidth=$maxWidth" +
+                    (tag?.let { "&tag=$it" } ?: ""))
 
         /** Short host form for logs: http://192.168.2.10:8096/ -> 192.168.2.10:8096 */
         fun host(url: String?): String = url

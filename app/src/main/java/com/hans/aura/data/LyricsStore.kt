@@ -37,6 +37,23 @@ object LyricsStore {
         return parseLrcText(text)
     }
 
+    /**
+     * Lyrics for [itemId], preferring the backend's own copy ([MusicSource.lyrics])
+     * and falling back to the server's /Audio/{id}/lyrics endpoint when the source
+     * has none. Parsing is the same LRC path either way.
+     */
+    suspend fun fetchPreferred(api: JellyfinApi, itemId: String): List<LyricLine> {
+        val fromSource = runCatching { MusicSources.current?.lyrics(itemId) }.getOrNull()
+        if (!fromSource.isNullOrBlank()) {
+            val parsed = parseLrcText(fromSource)
+            android.util.Log.i("AURA_LYRICS", "source item=$itemId chars=${fromSource.length} lines=${parsed.size}")
+            if (parsed.isNotEmpty()) return parsed
+        } else {
+            android.util.Log.i("AURA_LYRICS", "source item=$itemId empty")
+        }
+        return fetch(api, itemId)
+    }
+
     /** Parses "[mm:ss.xx] line" LRC; falls back to one unsynced entry per line. */
     fun parseLrcText(raw: String): List<LyricLine> {
         val stampRegex = Regex("""\[(\d+):(\d+(?:[.:]\d+)?)\]""")

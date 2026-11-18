@@ -48,12 +48,12 @@ import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
-import com.hans.aura.data.SourceQueries
 import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+import com.hans.aura.data.SourceQueries
 
 /**
  * Pick an existing playlist (or type a name for a new one) to add tracks to.
@@ -144,6 +144,7 @@ fun PlaylistPickerDialog(
     LaunchedEffect(Unit) {
         runCatching {
             SourceQueries.items(
+                userId = userId,
                 includeItemTypes = "Playlist", recursive = true,
                 sortBy = "SortName", limit = 100
             ).items

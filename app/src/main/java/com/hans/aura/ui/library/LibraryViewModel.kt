@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AtmosBrowse
+import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.data.AtmosFilter
 import com.hans.aura.data.Favorites
 import com.hans.aura.data.ItemsResponse
@@ -13,7 +14,6 @@ import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.PagedLibrary
-import com.hans.aura.data.SourceQueries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.hans.aura.data.SourceQueries
 
 private const val TAG = "AURA_LIB"
 
@@ -298,22 +299,23 @@ class LibraryViewModel(
                 api = api, userId = userId, kind = kind, letter = letter,
                 limit = PAGE_SIZE, startIndex = startIndex
             )
-            kind == "Artists" -> LibraryFilter.queryAlbumArtists(
-                api, userId = userId, sortBy = snapshot.sort.sortBy, sortOrder = order,
+            kind == "Artists" -> SourceQueries.artists(sortBy = snapshot.sort.sortBy, sortOrder = order,
                 limit = PAGE_SIZE, startIndex = startIndex
             )
-            kind == "Albums" -> SourceQueries.items(
-                includeItemTypes = "MusicAlbum", recursive = true,
-                sortBy = snapshot.sort.sortBy, sortOrder = order,
-                limit = PAGE_SIZE, startIndex = startIndex
+            kind == "Albums" -> SourceQueries.items(LibraryFilter.ItemsQuery(
+                    includeItemTypes = "MusicAlbum", recursive = true,
+                    sortBy = snapshot.sort.sortBy, sortOrder = order,
+                    limit = PAGE_SIZE, startIndex = startIndex
+                )
             )
-            kind == "Tracks" -> SourceQueries.items(
-                includeItemTypes = "Audio", recursive = true,
-                sortBy = snapshot.sort.sortBy, sortOrder = order,
-                limit = PAGE_SIZE, startIndex = startIndex
+            kind == "Tracks" -> SourceQueries.items(LibraryFilter.ItemsQuery(
+                    includeItemTypes = "Audio", recursive = true,
+                    sortBy = snapshot.sort.sortBy, sortOrder = order,
+                    limit = PAGE_SIZE, startIndex = startIndex
+                )
             )
             kind == "Playlists" -> SourceQueries.items(
-                includeItemTypes = "Playlist", recursive = true,
+                userId = userId, includeItemTypes = "Playlist", recursive = true,
                 sortBy = snapshot.sort.sortBy, sortOrder = order,
                 limit = PAGE_SIZE, startIndex = startIndex
             )
@@ -325,7 +327,9 @@ class LibraryViewModel(
     private fun scanAtmos() {
         if (!capable) return
         viewModelScope.launch {
-            runCatching { SourceQueries.atmosAlbumIds() }.onSuccess { ids ->
+            runCatching {
+                withContext(Dispatchers.IO) { SourceQueries.atmosAlbumIds() }
+            }.onSuccess { ids ->
                 _state.update { it.copy(atmosAlbumIds = ids) }
             }.onFailure { Log.w(TAG, "atmos scan failed: ${it.message}") }
         }
@@ -374,7 +378,7 @@ private suspend fun pageFromLetter(
                 nameStartsWithOrGreater = letter
             )
         } else {
-            api.getItems(
+            SourceQueries.items(
                 userId = userId,
                 includeItemTypes = "MusicAlbum",
                 recursive = true,

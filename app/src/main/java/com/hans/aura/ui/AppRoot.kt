@@ -259,7 +259,9 @@ private fun DestinationHost(
             player = player,
             onBack = actions::onBack,
             onOpenCollection = actions::onOpenCollection,
-            onOpenArtist = actions::onOpenArtist
+            onOpenArtist = actions::onOpenArtist,
+            // A catalog import just landed in the library: same key Settings uses.
+            onLibraryChanged = onRefreshKey
         )
 
         Screen.NowPlaying -> NowPlayingScreen(

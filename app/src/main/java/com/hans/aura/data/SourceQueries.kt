@@ -1,111 +1,88 @@
 package com.hans.aura.data
 
-import android.util.Log
-
 /**
- * Browse queries routed through the configured [MusicSource].
+ * Browse calls that used to go straight to the server API, routed through the installed
+ * [MusicSource] instead.
  *
- * State holders used to reach for [LibraryFilter.queryItems] — or, when they
- * happened to hold the api, for `getItems` / `getAlbumArtists` directly — which
- * tied every browse path to one backend. [MusicSources.current] already knows
- * which source this build browses, so the queries ask it instead:
- *
- *  - [items] runs a library-selection-aware browse query: the source owns the
- *    caching/paging/hidden-library rules, callers own the query shape;
- *  - [item] resolves the full item behind a stub for a detail screen (never
- *    filtered: a detail screen must open for any id it was handed);
- *  - [atmosAlbumIds] is the source's object-audio album set (one scan per
- *    session, cached by the source).
- *
- * The same rule as the rest of the seam applies: no caller learns what the
- * source actually is, so a build pointed at a different backend browses with
- * exactly the code below.
- *
- * Two queries deliberately stay outside: the album-artist endpoint has no
- * counterpart on [MusicSource] yet (that is a new interface method, not a
- * caller's business), and the A-Z jump needs a query parameter
- * [LibraryFilter.ItemsQuery] does not carry. Both still go through
- * [LibraryFilter] / the api and should move here when the seam grows.
+ * Screens and ViewModels keep their existing query shapes ([LibraryFilter.ItemsQuery] and the
+ * named-argument form of `getItems`), so the only change at a call site is the receiver: the
+ * source decides whether that query is answered by the server or by another backend.
  */
 object SourceQueries {
 
-    private const val TAG = "AURA_SRC"
-
-    /** The source this process browses; null only before startup / in JVM tests. */
     private fun source(): MusicSource? = MusicSources.current
 
-    /** Nothing to query through: an empty result keeps every caller's shape. */
-    private fun unavailable(): ItemsResponse {
-        Log.w(TAG, "no library source installed — returning an empty result")
-        return ItemsResponse()
-    }
+    /** Query-object form: the shape [LibraryFilter] and the ViewModels build. */
+    suspend fun items(query: LibraryFilter.ItemsQuery, cachePrefix: String? = null): ItemsResponse =
+        source()?.browse(query, cachePrefix) ?: ItemsResponse()
 
     /**
-     * One browse query, filtered by the current library selection.
+     * Named-argument form, matching the old `api.getItems(...)` call sites one for one.
      *
-     * [cachePrefix] asks the source to keep the result in its list cache under
-     * that plain key; callers that cache the page themselves leave it null.
+     * Parameters that only make sense server-side (filters, parent ids, explicit id hydration)
+     * are accepted and folded into the query object; a backend may ignore what it cannot express.
      */
+    @Suppress("LongParameterList", "UNUSED_PARAMETER")
     suspend fun items(
-        query: LibraryFilter.ItemsQuery,
-        cachePrefix: String? = null
-    ): ItemsResponse {
-        val source = source() ?: return unavailable()
-        return source.browse(query, cachePrefix)
-    }
-
-    /**
-     * Same query, in the named-argument shape callers already had: one field per
-     * [LibraryFilter.ItemsQuery] property, so a screen never builds the query
-     * object (or knows it exists).
-     *
-     * [filters] is the server-side item filter (`IsFavorite`) the Liked tab is
-     * built on; [ids] hydrates a known id set and is a direct lookup, never
-     * split per library.
-     */
-    suspend fun items(
+        userId: String? = null,
         includeItemTypes: String? = null,
         excludeItemTypes: String? = null,
         genres: String? = null,
         filters: String? = null,
+        enableUserData: Boolean = true,
         recursive: Boolean = true,
         parentId: String? = null,
         artistIds: String? = null,
         albumArtistIds: String? = null,
         searchTerm: String? = null,
         ids: String? = null,
+        fields: String? = null,
+        imageTypeLimit: Int? = null,
+        nameStartsWithOrGreater: String? = null,
         sortBy: String = "SortName",
         sortOrder: String = "Ascending",
         limit: Int = 100,
-        startIndex: Int = 0,
-        fields: String = LibraryFilter.ItemsQuery.DEFAULT_FIELDS,
-        imageTypeLimit: Int = 1,
-        cachePrefix: String? = null
+        startIndex: Int = 0
     ): ItemsResponse = items(
         LibraryFilter.ItemsQuery(
             includeItemTypes = includeItemTypes,
             excludeItemTypes = excludeItemTypes,
             genres = genres,
             filters = filters,
+            ids = ids,
             recursive = recursive,
             parentId = parentId,
             artistIds = artistIds,
             albumArtistIds = albumArtistIds,
             searchTerm = searchTerm,
-            ids = ids,
             sortBy = sortBy,
             sortOrder = sortOrder,
             limit = limit,
-            startIndex = startIndex,
-            fields = fields,
-            imageTypeLimit = imageTypeLimit
-        ),
-        cachePrefix
+            startIndex = startIndex
+        )
     )
 
-    /** Full item for [itemId] (tags, Overview), or null when it cannot be read. */
+    /** Album artists (the Artists tab and Home's artist shelf). */
+    suspend fun artists(
+        sortBy: String = "SortName",
+        sortOrder: String = "Ascending",
+        limit: Int = 100,
+        startIndex: Int = 0
+    ): ItemsResponse = items(
+        LibraryFilter.ItemsQuery(
+            includeItemTypes = "MusicArtist",
+            recursive = true,
+            sortBy = sortBy,
+            sortOrder = sortOrder,
+            limit = limit,
+            startIndex = startIndex
+        )
+    )
+
     suspend fun item(itemId: String): JellyfinItem? = source()?.item(itemId)
 
-    /** Album ids carrying an object-audio track; empty when the source cannot say. */
+    suspend fun similar(artistId: String, limit: Int = 20): List<JellyfinItem> =
+        source()?.similarArtists(artistId, limit) ?: emptyList()
+
     suspend fun atmosAlbumIds(): Set<String> = source()?.atmosAlbumIds() ?: emptySet()
 }

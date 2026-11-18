@@ -147,7 +147,7 @@ fun GenreScreen(
     initialFocus: Boolean = false,
     viewModel: GenreAlbumsViewModel = viewModel(
         key = "genre:$genreName:${app.jellyfin.auth.session?.userId ?: "anon"}",
-        factory = viewModelFactory { initializer { GenreAlbumsViewModel(genreName) } }
+        factory = viewModelFactory { initializer { GenreAlbumsViewModel(app, genreName) } }
     )
 ) {
     val session = app.jellyfin.auth.session ?: return
@@ -177,8 +177,8 @@ fun GenreScreen(
                 androidx.tv.material3.Text(genreName, fontSize = 34.sp, color = TextPrimary)
                 androidx.tv.material3.Text(
                     listOfNotNull(
-                        state.albums?.let { "${it.size} albums" },
-                        state.tracks?.let { "${it.size} tracks" }
+                        state.albums?.let { com.hans.aura.ui.common.countLabel(it.size, "album") },
+                        state.tracks?.let { com.hans.aura.ui.common.countLabel(it.size, "track") }
                     ).joinToString(" \u00B7 "),
                     fontSize = 13.sp, color = TextSecondary
                 )

@@ -20,7 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.border
@@ -110,6 +110,13 @@ fun LibraryScreen(
 
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
+    // Covers animate only inside the visible rows plus two below, and only once
+    // the grid has been still for a moment: a fling must not start (and then
+    // immediately drop) a decoder per row it flies past. The process-wide
+    // budget still caps the whole app at three.
+    val motionWindow = com.hans.aura.ui.common.rememberGridMotionWindow(
+        gridState, columns = 5
+    )
     val nearGridEnd by remember {
         derivedStateOf {
             val info = gridState.layoutInfo
@@ -324,7 +331,7 @@ fun LibraryScreen(
                     item {
                         Spacer(Modifier.height(60.dp))
                         androidx.tv.material3.Text(
-                            if (items.size < state.total) "Loading more\u2026" else "${items.size} tracks",
+                            if (items.size < state.total) "Loading more\u2026" else com.hans.aura.ui.common.countLabel(items.size, "track"),
                             color = TextSecondary, fontSize = 12.sp,
                             modifier = Modifier.padding(horizontal = 24.dp)
                         )
@@ -342,7 +349,7 @@ fun LibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    items(items, key = { "${kind}_${it.id}" }) { item ->
+                    itemsIndexed(items, key = { _, item -> "${kind}_${item.id}" }) { index, item ->
                         ArtworkCard(
                             item = item,
                             serverUrl = session.serverUrl,
@@ -350,6 +357,11 @@ fun LibraryScreen(
                             badge = if (kind == "Albums" && item.id in state.atmosAlbumIds) "ATMOS" else null,
                             focusKeeper = focusKeeper,
                             onFocused = { focusedId = it },
+                            // Only album covers have loops; and only the visible
+                            // window asks. Earlier cards outrank later ones, so
+                            // the budget keeps the top-left of the grid moving.
+                            animate = kind == "Albums" && index in motionWindow,
+                            motionPriority = -index,
                             onLongPress = if (kind != "Artists") {
                                 { albumMenu(item) }
                             } else null,

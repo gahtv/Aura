@@ -280,7 +280,7 @@ fun SettingsScreen(
                 SettingsToggleRow(
                     title = "Look up lyrics online",
                     subtitle = "When the server has no lyrics for a track, search LRCLIB. " +
-                        "Aura sends the track, artist, album and length \u2014 nothing else.",
+                        "${appName()} sends the track, artist, album and length \u2014 nothing else.",
                     checked = webLyrics,
                     onToggle = {
                         webLyrics = !webLyrics
@@ -459,3 +459,12 @@ private fun LibraryToggleRow(
         )
     }
 }
+
+/**
+ * The installed flavour's name — "Aura" for the Jellyfin build, or the
+ * secondary build's app name. Flavours share this screen, and a privacy note that names the
+ * wrong app is exactly the confusion the flavour banners exist to prevent.
+ */
+@Composable
+private fun appName(): String =
+    androidx.compose.ui.platform.LocalContext.current.getString(com.hans.aura.R.string.app_name)

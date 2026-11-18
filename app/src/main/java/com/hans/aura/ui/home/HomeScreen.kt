@@ -88,20 +88,32 @@ fun HomeScreen(
         }
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            com.hans.aura.ui.common.ItemShelf(
-                title = "Recently played",
-                items = state.recentlyPlayed,
-                serverUrl = serverUrl,
-                focusKeeper = focusKeeper,
-                onFocused = { focusedCardId = it },
-                onLongPress = { trackMenu(it) },
-                onOpen = { item, idx ->
-                    // A track is not a collection: play it directly, with the rest
-                    // of the recently-played list queued behind it.
-                    onPlayTrack(item, state.recentlyPlayed ?: listOf(item), idx)
-                }
-            )
-            com.hans.aura.ui.common.ItemShelf(
+            // History shelves only exist on a backend that records play history; on a
+            // backend without it they are absent rather than empty.
+            if (!state.recentlyPlayed.isNullOrEmpty()) {
+                MotionShelf(
+                    title = "Recently played",
+                    items = state.recentlyPlayed,
+                    serverUrl = serverUrl,
+                    focusKeeper = focusKeeper,
+                    onFocused = { focusedCardId = it },
+                    onLongPress = { trackMenu(it) },
+                    onOpen = { item, idx ->
+                        onPlayTrack(item, state.recentlyPlayed ?: listOf(item), idx)
+                    }
+                )
+            }
+            if (!state.recentArtists.isNullOrEmpty()) {
+                MotionShelf(
+                    title = "Recently played artists",
+                    items = state.recentArtists,
+                    serverUrl = serverUrl,
+                    focusKeeper = focusKeeper,
+                    onFocused = { focusedCardId = it },
+                    onOpen = { item, _ -> onOpenArtist(item) }
+                )
+            }
+            MotionShelf(
                 title = "Recently added",
                 items = state.recentAlbums,
                 serverUrl = serverUrl,
@@ -110,15 +122,7 @@ fun HomeScreen(
                 onLongPress = { albumMenu(it) },
                 onOpen = { item, _ -> onOpenCollection(item) }
             )
-            com.hans.aura.ui.common.ItemShelf(
-                title = "Recently played artists",
-                items = state.recentArtists,
-                serverUrl = serverUrl,
-                focusKeeper = focusKeeper,
-                onFocused = { focusedCardId = it },
-                onOpen = { item, _ -> onOpenArtist(item) }
-            )
-            com.hans.aura.ui.common.ItemShelf(
+            MotionShelf(
                 title = "Your Atmos",
                 items = state.atmosAlbums,
                 serverUrl = serverUrl,
@@ -128,7 +132,7 @@ fun HomeScreen(
                 onLongPress = { albumMenu(it) },
                 onOpen = { item, _ -> onOpenCollection(item) }
             )
-            com.hans.aura.ui.common.ItemShelf(
+            MotionShelf(
                 title = "Artists",
                 items = state.artists,
                 serverUrl = serverUrl,
@@ -136,16 +140,57 @@ fun HomeScreen(
                 onFocused = { focusedCardId = it },
                 onOpen = { item, _ -> onOpenArtist(item) }
             )
-            com.hans.aura.ui.common.ItemShelf(
-                title = "Playlists",
-                items = state.playlists,
-                serverUrl = serverUrl,
-                focusKeeper = focusKeeper,
-                onFocused = { focusedCardId = it },
-                onLongPress = { albumMenu(it) },
-                onOpen = { item, _ -> onOpenCollection(item) }
-            )
+            // Only when the source actually has playlists: a backend without
+            // them reports an empty shelf and no empty "Playlists" row is drawn.
+            if (!state.playlists.isNullOrEmpty()) {
+                MotionShelf(
+                    title = "Playlists",
+                    items = state.playlists,
+                    serverUrl = serverUrl,
+                    focusKeeper = focusKeeper,
+                    onFocused = { focusedCardId = it },
+                    onLongPress = { albumMenu(it) },
+                    onOpen = { item, _ -> onOpenCollection(item) }
+                )
+            }
             Spacer(Modifier.height(140.dp)) // clear of the now-playing bar
         }
     }
+}
+
+/**
+ * One home shelf whose covers only move while the row is on screen.
+ *
+ * Home is a plain scrolling `Column`, so there is no lazy layoutInfo to read
+ * the way the Albums grid does: the row measures itself against the window
+ * instead (`rememberOnScreen`) and hands that flag down. Two shelf rows of
+ * slack count as "close enough", which is the vertical half of the prefetch
+ * the grid gets from its lookahead. ItemShelf narrows it again horizontally,
+ * and the process-wide budget caps the total at three players, so a screen full
+ * of shelves still cannot start a decoder per cover.
+ */
+@Composable
+private fun MotionShelf(
+    title: String,
+    items: List<JellyfinItem>?,
+    serverUrl: String,
+    focusKeeper: com.hans.aura.ui.common.FocusKeeper,
+    onFocused: (String) -> Unit,
+    onOpen: (JellyfinItem, Int) -> Unit,
+    badgeFor: ((JellyfinItem) -> String?)? = null,
+    onLongPress: ((JellyfinItem) -> Unit)? = null
+) {
+    val onScreen = com.hans.aura.ui.common.rememberOnScreen()
+    com.hans.aura.ui.common.ItemShelf(
+        title = title,
+        items = items,
+        serverUrl = serverUrl,
+        focusKeeper = focusKeeper,
+        onFocused = onFocused,
+        onOpen = onOpen,
+        badgeFor = badgeFor,
+        onLongPress = onLongPress,
+        animate = onScreen.visible,
+        modifier = onScreen.modifier
+    )
 }

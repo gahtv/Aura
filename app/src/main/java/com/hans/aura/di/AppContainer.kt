@@ -4,7 +4,6 @@ import android.content.Context
 import com.hans.aura.BuildConfig
 import com.hans.aura.data.AtmosFilter
 import com.hans.aura.data.JellyfinClient
-import com.hans.aura.data.JellyfinSource
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.MediaRepository
 import com.hans.aura.data.MusicSource
@@ -27,7 +26,7 @@ import com.hans.aura.remote.MirrorServer
  *  4. [MirrorServer] — device name + stored pairing token (needs the app ctx).
  *  5. [JellyfinClient] — session store + Retrofit; needs prefs to be readable.
  *  6. [MediaRepository] — main-safe facade over the browse layer, over (5).
- *  7. [JellyfinSource] — the [MusicSource] this build targets, over (5) and (6).
+ *  7. [MusicSource]  — the library backend this build targets, created by [BackendFactory].
  */
 class AppContainer(context: Context) {
 
@@ -42,10 +41,10 @@ class AppContainer(context: Context) {
     /**
      * The library backend this build browses and streams from.
      *
-     * Selected once at build time (`BuildConfig.MUSIC_SOURCE`, fed from .env, so
-     * a plain checkout gets the default) and exposed here so a different backend
-     * can be swapped in without touching a single caller: screens keep reading
-     * [media], and the player asks this for stream URLs.
+     * Selected at build time by the active product flavor via [BackendFactory] and
+     * exposed here so a different backend can be swapped in without touching a
+     * single caller: screens keep reading [media], and the player asks this for
+     * stream URLs.
      */
     val source: MusicSource
 
@@ -57,15 +56,16 @@ class AppContainer(context: Context) {
 
         jellyfin = JellyfinClient(appContext)
         media = MediaRepository(jellyfin, { jellyfin.auth.session })
-        source = buildSource()
+        source = BackendFactory.create(jellyfin, media)
         // Hand the same instance to the call sites that live outside this graph
         // (the queue builder and the playback service).
         MusicSources.install(source)
-    }
-
-    private fun buildSource(): MusicSource = when (BuildConfig.MUSIC_SOURCE.lowercase()) {
-        // Another backend plugs in here as its own branch; everything else about
-        // the graph — caches, filters, the player — stays untouched.
-        else -> JellyfinSource(jellyfin, media)
+        android.util.Log.i("AURA_SRC", "source=${source.id} backend=${BuildConfig.MUSIC_SOURCE}")
+        // Proof for a device session that the gate is where it should be: the
+        // Jellyfin-only session reporting / remote-control side is on or off.
+        android.util.Log.i(
+            "AURA_REPORT",
+            "play-state reporting ${if (source.reportsPlayState) "on" else "off"} (source=${source.id})"
+        )
     }
 }

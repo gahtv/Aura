@@ -93,6 +93,17 @@ fun ArtistScreen(
     val accent = dyn?.secondary ?: com.hans.aura.ui.theme.Accent
     val atmosAlbumIds = state.atmosAlbumIds
     var showBioDialog by remember { mutableStateOf(false) }
+    // Editorial copy may live on the external source rather than the item:
+    // some backends' artist rows carry no Overview, so ask the source first and
+    // keep the item's field as the fallback. The fetch is one round-trip per
+    // artist and never fails loudly — a null simply leaves the existing text
+    // path untouched.
+    var sourceBio by remember(artist.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(artist.id) {
+        sourceBio = runCatching { com.hans.aura.data.MusicSources.current?.artistBio(artist.id) }
+            .getOrNull()
+    }
+    val bio = sourceBio?.takeIf { it.isNotBlank() } ?: state.overview
 
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
@@ -152,9 +163,9 @@ fun ArtistScreen(
         ) {
             Column(Modifier.weight(1f)) {
                 androidx.tv.material3.Text(shownArtist.name, fontSize = 36.sp, color = TextPrimary)
-                state.overview?.let { bio ->
+                bio?.let { text ->
                     androidx.tv.material3.Text(
-                        bio,
+                        text,
                         fontSize = 13.sp, color = TextPrimary,
                         maxLines = 2,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -315,12 +326,12 @@ fun ArtistScreen(
         }
         }
 
-        val overview = state.overview
-        if (showBioDialog && overview != null) {
+        val shownBio = bio
+        if (showBioDialog && shownBio != null) {
             com.hans.aura.ui.common.BioDialog(
                 title = shownArtist.name,
                 subtitle = "Artist",
-                text = overview,
+                text = shownBio,
                 onDismiss = { showBioDialog = false }
             )
         }

@@ -80,9 +80,11 @@ fun SearchScreen(
     onBack: () -> Unit,
     onOpenCollection: (JellyfinItem) -> Unit,
     onOpenArtist: (JellyfinItem) -> Unit,
+    /** A catalog import finished: re-read the libraries (AppRoot's refresh key). */
+    onLibraryChanged: () -> Unit = {},
     viewModel: SearchViewModel = viewModel(
         key = "search:${app.jellyfin.auth.session?.userId ?: "anon"}",
-        factory = viewModelFactory { initializer { SearchViewModel() } }
+        factory = viewModelFactory { initializer { SearchViewModel(app) } }
     )
 ) {
     val session = app.jellyfin.auth.session ?: return
@@ -97,6 +99,16 @@ fun SearchScreen(
     val focusKeeper = remember { FocusKeeper() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    // Only catalog-capable sources opt in; for the server-backed build this is false and
+    // every catalog branch below disappears.
+    val canImportCatalog = app.container.source.supportsCatalogImport
+
+    // An import reached "ready": the ViewModel has dropped the source caches, so
+    // the navigation host only has to re-read the library screens.
+    LaunchedEffect(state.catalog.libraryChangedTick) {
+        if (state.catalog.libraryChangedTick == 0) return@LaunchedEffect
+        onLibraryChanged()
+    }
 
     // Debug hook: the parent verifies chip state from logcat.
     LaunchedEffect(state.recentSearches) {
@@ -272,13 +284,13 @@ fun SearchScreen(
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             val q = query.trim()
             when {
-                q.length >= 2 && !state.searching && state.error != null && state.allEmpty ->
+                q.length >= 2 && !state.searching && state.error != null && state.nothingAnywhere ->
                     ErrorPane(
                         message = "Couldn't load from server",
                         detail = state.error,
                         onRetry = { viewModel.retry() }
                     )
-                q.length >= 2 && !state.searching && state.allEmpty -> Text(
+                q.length >= 2 && !state.searching && state.nothingAnywhere -> Text(
                     "No results for \u201C$q\u201D", color = TextSecondary, fontSize = 15.sp,
                     modifier = Modifier.padding(horizontal = 56.dp, vertical = 8.dp)
                 )
@@ -339,6 +351,17 @@ fun SearchScreen(
                     }
                 }
             )
+
+            // Catalog-capable sources only: albums the catalog can import. Entirely absent for the
+            // server-backed build (supportsCatalogImport defaults false).
+            if (canImportCatalog) {
+                CatalogShelf(
+                    hits = state.catalog.hits,
+                    serverUrl = session.serverUrl,
+                    imports = state.catalog.imports,
+                    onImport = { hit -> viewModel.importCatalogAlbum(hit) }
+                )
+            }
 
             Spacer(Modifier.height(120.dp)) // clear of the now-playing bar
         }

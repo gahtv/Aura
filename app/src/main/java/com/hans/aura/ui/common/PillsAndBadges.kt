@@ -34,6 +34,7 @@ import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
+import com.hans.aura.data.SourceQueries
 
 /**
  * Small heart (filled accent = liked, hollow grey = not).
@@ -171,7 +172,7 @@ fun rememberAtmosAlbumIds(
     var ids by remember { mutableStateOf<Set<String>>(emptySet()) }
     androidx.compose.runtime.LaunchedEffect(userId) {
         ids = runCatching {
-            com.hans.aura.data.AtmosCatalog.albumIds(api, userId)
+            SourceQueries.atmosAlbumIds()
         }.getOrDefault(emptySet())
     }
     return ids

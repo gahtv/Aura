@@ -7,16 +7,13 @@ package com.hans.aura.data
  * the seam a build uses to point at a different backend — a second server of the
  * same kind, or a purely local file index — without any screen, ViewModel or
  * queue builder learning about it. Which implementation a build gets is decided
- * once, in [com.hans.aura.di.AppContainer], from `BuildConfig.MUSIC_SOURCE`.
+ * once, in [com.hans.aura.di.BackendFactory], by the active product flavor.
  *
  * Scope is deliberately narrow: exactly the browse/query surface
  * [MediaRepository] already exposes, plus the single streaming concern the
  * player needs. It is not a mirror of the server API — an implementation is
  * expected to be a thin adapter over whatever it wraps, not to re-derive the
  * caching, filtering or paging rules that [MediaRepository] owns.
- *
- * Screens and their state holders reach it through [SourceQueries], never
- * through one concrete implementation.
  */
 interface MusicSource {
 
@@ -57,6 +54,94 @@ interface MusicSource {
         serverUrl: String? = null
     ): PlaybackTarget = PlaybackTarget(url = streamUri(itemId, container, serverUrl))
 
+    /**
+     * Artwork URL for [itemId], or null to let the caller fall back to its own convention.
+     *
+     * A backend that serves cover art itself (a packaged library, a different server) answers
+     * here; the default keeps the existing per-server path byte-identical.
+     */
+    fun artworkUrl(itemId: String, tag: String?, maxWidth: Int): String? = null
+
+    /** True when this source serves its own cover art (see [artworkUrl]). */
+    val servesArtwork: Boolean get() = false
+
+    /** True when the backend records play history, so a "Recently played" shelf means something. */
+    val supportsPlayHistory: Boolean get() = false
+
+    /**
+     * True when this backend tracks the *device* as a server-side play session:
+     * it accepts the `/Sessions/Playing*` reports and exposes the `/socket`
+     * remote-control channel.
+     *
+     * One flag covers both because they are one server concept — a Jellyfin
+     * device session. Defaults to true so the server-backed build keeps
+     * announcing itself exactly as before; a backend that has no such endpoints
+     * (a plain index that only serves bytes) turns it off and the player stops
+     * posting reports and stops opening the websocket.
+     */
+    val reportsPlayState: Boolean get() = true
+
+    /**
+     * True when this backend keeps its own play history and can answer a
+     * "Recently played" shelf. Jellyfin records plays through the device session
+     * ([reportsPlayState]); an index has to be told explicitly through
+     * [recordPlay], but it still keeps album-level history.
+     */
+    val hasPlayHistory: Boolean get() = reportsPlayState
+
+    /**
+     * Item type the history shelf is built from. Jellyfin records plays per
+     * track, so the shelf is tracks; a backend that only keeps album-level
+     * history asks for albums instead.
+     */
+    val playHistoryItemType: String get() = "Audio"
+
+    /**
+     * Record one play. Backends with their own history (the index) implement
+     * this; Jellyfin learns it from the session reports and leaves it alone.
+     * Must never throw: playback does not wait on it.
+     */
+    fun recordPlay(itemId: String) {}
+
+    /**
+     * Lyrics for [itemId] as LRC text, or null when this backend has none.
+     *
+     * Defaults to null so the server-backed source keeps answering through the
+     * existing /Audio/{id}/lyrics path; a backend that owns its lyrics (the
+     * local index does) answers here instead and is asked first.
+     */
+    suspend fun lyrics(itemId: String): String? = null
+
+    /**
+     * Word-timed lyrics for [itemId], or null when this backend cannot time
+     * individual words.
+     *
+     * Defaults to null so a source that only has LRC keeps answering through
+     * [lyrics] and the pane renders exactly what it always has; a backend that
+     * does time words opts in and the pane gains the karaoke highlight. Callers
+     * must treat an empty list like null (nothing to show).
+     */
+    suspend fun lyricsTimed(itemId: String): List<TimedLyricLine>? = null
+
+    /**
+     * True when this backend can serve a looping motion clip for an album, so
+     * detail and now-playing surfaces may draw it behind the static cover.
+     *
+     * Defaults to false: a backend without the capability keeps a single
+     * decoder (the audio one) on TV hardware and draws nothing extra.
+     */
+    val servesMotionArtwork: Boolean get() = false
+
+    /**
+     * URL of the motion loop for [itemId]'s album, or null when this backend has
+     * none for it.
+     *
+     * Non-suspending like [streamUri] because it is pure string work for the
+     * backends that answer it. A URL that turns out to be absent (a 404) must be
+     * treated by the caller as "no motion" and silently keep the static cover.
+     */
+    fun motionArtworkUrl(itemId: String): String? = null
+
     // ---- Browse (mirrors MediaRepository, main-safe there) ------------------
 
     /** Last cached copy of [prefix] (null when absent or expired). */
@@ -75,6 +160,23 @@ interface MusicSource {
 
     /** Single item detail (never filtered: detail screens open for any id). */
     suspend fun item(itemId: String): JellyfinItem?
+
+    /**
+     * Editorial bio for artist [artistId], or null when this backend has none.
+     *
+     * Defaults to null so a server-backed source keeps rendering the artist's
+     * Overview exactly as before; a backend whose copy lives outside the item
+     * (the index keeps its own bios) answers here and the detail screens prefer
+     * it over the item field. Callers must treat blank like null.
+     */
+    suspend fun artistBio(artistId: String): String? = null
+
+    /**
+     * Editorial bio for album (or any collection) [itemId], or null when this
+     * backend has none. Same fallback rule as [artistBio]; suspends because the
+     * answer may be a second round-trip.
+     */
+    suspend fun albumBio(itemId: String): String? = null
 
     suspend fun artistAlbums(artistId: String, limit: Int = 100): List<JellyfinItem>
 
@@ -108,6 +210,35 @@ interface MusicSource {
     suspend fun atmosAlbumIds(): Set<String>
 
     suspend fun atmosCatalog(): AtmosCatalog.Catalog
+
+    // ---- Catalog (search + import into the library) -----------------------
+
+    /**
+     * True when this backend can search a catalog it does not yet serve and pull
+     * an album into the library.
+     *
+     * Defaults to false so a server-backed build renders exactly what it always
+     * has: the search screen only grows a "From the catalog" section when a
+     * source opts in.
+     */
+    val supportsCatalogImport: Boolean get() = false
+
+    /**
+     * Catalog albums matching [term] that are *not* the library itself.
+     *
+     * Returns neutral [CatalogHit]s rather than library items on purpose — a hit
+     * has no playable tracks and no user data. Default: nothing.
+     */
+    suspend fun catalogSearch(term: String): List<CatalogHit> = emptyList()
+
+    /**
+     * Starts an import of catalog album [id]; returns the backend job id to poll
+     * with [catalogImportState], or null when the request could not be started.
+     */
+    suspend fun importFromCatalog(id: String): String? = null
+
+    /** Current state of an import job ("queued", "downloading", "ready", …), or null. */
+    suspend fun catalogImportState(jobId: String): String? = null
 
     // ---- Libraries / refresh ----------------------------------------------
 
@@ -147,5 +278,10 @@ object MusicSources {
 
     fun install(source: MusicSource) {
         installed = source
+    }
+
+    /** Test hook: forget the installed source (a Robolectric app start installs one). */
+    fun reset() {
+        installed = null
     }
 }

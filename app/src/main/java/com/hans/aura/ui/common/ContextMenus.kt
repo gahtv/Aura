@@ -6,10 +6,10 @@ import com.hans.aura.R
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.Mixes
-import com.hans.aura.data.SourceQueries
 import com.hans.aura.ui.player.PlayerConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import com.hans.aura.data.SourceQueries
 
 /**
  * Builds context menus for long-press on tracks and albums.
@@ -176,15 +176,15 @@ object ContextMenus {
     ): ContextMenuSpec {
         val actions = mutableListOf(
             ContextAction("Play next", R.drawable.ic_queue_play_next) {
-                scope.launch { albumTracks(album)?.let { player.playNext(it) } }
+                scope.launch { albumTracks(app, album)?.let { player.playNext(it) } }
             },
             ContextAction("Add to queue", R.drawable.ic_queue_music) {
-                scope.launch { albumTracks(album)?.let { player.addToQueue(it) } }
+                scope.launch { albumTracks(app, album)?.let { player.addToQueue(it) } }
             },
             ContextAction("Add to playlist", R.drawable.ic_playlist_add) {
                 scope.launch {
                     ContextMenuHost.current = null
-                    val tracks = albumTracks(album)
+                    val tracks = albumTracks(app, album)
                     if (tracks == null) {
                         Log.w(TAG, "add album ${album.id} to playlist skipped: no tracks")
                     } else {
@@ -281,14 +281,22 @@ object ContextMenus {
     }
 
     /** All audio tracks of an album/playlist, newest last (play order). */
-    private suspend fun albumTracks(album: JellyfinItem): List<JellyfinItem>? = runCatching {
-        SourceQueries.items(
-            parentId = album.id,
-            includeItemTypes = "Audio",
-            sortBy = "ParentIndexNumber,IndexNumber",
-            sortOrder = "Ascending",
-            limit = 500
-        ).items
-    }.onFailure { Log.w(TAG, "album tracks ${album.id} failed: ${it.message}") }
-        .getOrNull()
+    private suspend fun albumTracks(app: AuraApp, album: JellyfinItem): List<JellyfinItem>? {
+        val userId = app.jellyfin.auth.session?.userId
+        if (userId == null) {
+            Log.w(TAG, "album tracks ${album.id} skipped: no session")
+            return null
+        }
+        return runCatching {
+            SourceQueries.items(
+                userId = userId,
+                parentId = album.id,
+                includeItemTypes = "Audio",
+                sortBy = "ParentIndexNumber,IndexNumber",
+                sortOrder = "Ascending",
+                limit = 500
+            ).items
+        }.onFailure { Log.w(TAG, "album tracks ${album.id} failed: ${it.message}") }
+            .getOrNull()
+    }
 }

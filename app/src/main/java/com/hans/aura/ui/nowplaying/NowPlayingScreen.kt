@@ -39,9 +39,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.Favorites
@@ -50,6 +48,7 @@ import com.hans.aura.data.Mixes
 import com.hans.aura.ui.MirrorLink
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.common.InitialFocusOnPush
+import com.hans.aura.ui.common.MotionArtwork
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraShapes
@@ -250,12 +249,15 @@ fun NowPlayingScreen(
                 Row(Modifier.fillMaxSize()) {
                     currentItem?.let { cur ->
                         cur.primaryImageTag?.let { tag ->
-                            AsyncImage(
-                                model = AuthStore.imageUrl(
+                            // Motion artwork for the playing album when the source provides it.
+                            // Elsewhere this is exactly the still cover it always was.
+                            MotionArtwork(
+                                itemId = cur.id,
+                                posterModel = AuthStore.imageUrl(
                                     session.serverUrl, cur.id, tag, maxWidth = 800
                                 ),
                                 contentDescription = cur.name,
-                                contentScale = ContentScale.Crop,
+                                playing = isPlaying,
                                 modifier = Modifier
                                     .width(AuraSizes.artworkLarge)
                                     .height(AuraSizes.artworkLarge)

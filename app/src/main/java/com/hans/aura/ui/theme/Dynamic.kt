@@ -70,7 +70,9 @@ fun rememberDynamicColors(imageUrl: String?): DynamicColors? {
         }.onSuccess { (dom, sec) ->
             // Breadcrumb: palette extraction is silent otherwise, and a null
             // palette looks identical to a very dark image.
-            android.util.Log.d("AURA_THEME", "palette ${imageUrl?.takeLast(60)} dom=#${Integer.toHexString(dom)} sec=#${Integer.toHexString(sec)}")
+            // Strip the query string before logging: some backend artwork URLs carry the
+            // access token there, and the last 60 chars were mostly that token.
+            android.util.Log.d("AURA_THEME", "palette ${imageUrl?.substringBefore('?')?.takeLast(60)} dom=#${Integer.toHexString(dom)} sec=#${Integer.toHexString(sec)}")
             val packed = (dom.toLong() and 0xFFFFFFFFL) or ((sec.toLong() and 0xFFFFFFFFL) shl 32)
             imageUrl?.let { PaletteCache.put(it, packed) }
             pair = toColors(packed)

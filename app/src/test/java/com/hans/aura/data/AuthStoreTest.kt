@@ -26,6 +26,9 @@ class AuthStoreTest {
 
     @Before
     fun setUp() {
+        // A Robolectric app start installs the build's MusicSource; these assertions are about
+        // URL shape, so run them against the default (no source) behaviour.
+        MusicSources.reset()
         store = AuthStore(ApplicationProvider.getApplicationContext())
         store.clear()
     }

@@ -27,7 +27,13 @@ import com.hans.aura.data.Session
 import com.hans.aura.util.AuraLog
 import com.hans.aura.util.AuraTag
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+
+/** A replayed track inside this window is not a second play. */
+private const val PLAY_REPORT_INTERVAL_MS = 30L * 60L * 1000L
 
 /**
  * Owns the ExoPlayer instance. Direct play only: the container is fetched
@@ -41,6 +47,14 @@ class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var reporter: PlaybackReporter? = null
     private var remote: PlaybackRemote? = null
+
+    /**
+     * Backends that keep their own play history (the index) are told once per
+     * track start. Reporting runs off the player thread: a slow or dead history
+     * endpoint must never stall a transition.
+     */
+    private val playScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val reportedPlays = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     override fun onCreate() {
         super.onCreate()
@@ -62,46 +76,68 @@ class PlaybackService : MediaSessionService() {
                     AuraLog.i(AuraTag.VOL, "restoring unity gain (was ${player.volume})")
                     player.volume = 1f
                 }
+                // A track start is the play event. Jellyfin learns it from the session
+                // reports; a backend with its own history has to be told.
+                val source = app.container.source
+                if (mediaItem == null || !source.hasPlayHistory) return
+                val id = mediaItem.mediaId
+                if (id.isBlank()) return
+                val now = System.currentTimeMillis()
+                val last = reportedPlays[id] ?: 0L
+                // Repeat-one on a short track would otherwise write a play every few seconds.
+                if (now - last < PLAY_REPORT_INTERVAL_MS) return
+                reportedPlays[id] = now
+                playScope.launch {
+                    runCatching { source.recordPlay(id) }
+                        .onFailure { AuraLog.w(AuraTag.PLAY, "play report failed id=$id") }
+                }
             }
         })
 
         mediaSession = MediaSession.Builder(this, player).build()
-        reporter = PlaybackReporter(app.jellyfin, player).also { it.start() }
-        // Insert remote items without interrupting playback; only start
-        // playing if the queue was empty beforehand.
-        fun enqueue(items: List<JellyfinItem>, at: Int) {
-            val wasEmpty = player.mediaItemCount == 0
-            val idx = if (wasEmpty) 0 else at
-            items.forEachIndexed { i, item ->
-                player.addMediaItem(idx + i, buildMediaItem(item))
-            }
-            if (wasEmpty) {
-                player.prepare()
-                player.playWhenReady = true
-            }
-        }
-        remote = PlaybackRemote(app.jellyfin, player) { items, mode, startMs, startIndex ->
-            runOnMain {
-                when (mode) {
-                    PlaybackRemote.MODE_INSERT_NEXT ->
-                        enqueue(items, player.currentMediaItemIndex + 1)
-                    PlaybackRemote.MODE_APPEND_END ->
-                        enqueue(items, player.mediaItemCount)
-                    else -> {
-                        // Honour the sender's StartIndex: playing an album from
-                        // Jellyfin web arrives as the whole track list plus the
-                        // index of the chosen track.
-                        player.setMediaItems(
-                            items.map { buildMediaItem(it) },
-                            startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
-                            startMs.coerceAtLeast(0)
-                        )
-                        player.prepare()
-                        player.playWhenReady = true
-                    }
+
+        // Device-session side of playback: /Sessions/Playing* reports and the
+        // /socket remote-control channel are Jellyfin server concepts. A source
+        // without them gets neither, so nothing 404s on every tick and no
+        // socket reconnect loop is ever started.
+        if (app.container.source.reportsPlayState) {
+            reporter = PlaybackReporter(app.jellyfin, player).also { it.start() }
+            // Insert remote items without interrupting playback; only start
+            // playing if the queue was empty beforehand.
+            fun enqueue(items: List<JellyfinItem>, at: Int) {
+                val wasEmpty = player.mediaItemCount == 0
+                val idx = if (wasEmpty) 0 else at
+                items.forEachIndexed { i, item ->
+                    player.addMediaItem(idx + i, buildMediaItem(item))
+                }
+                if (wasEmpty) {
+                    player.prepare()
+                    player.playWhenReady = true
                 }
             }
-        }.also { it.start() }
+            remote = PlaybackRemote(app.jellyfin, player) { items, mode, startMs, startIndex ->
+                runOnMain {
+                    when (mode) {
+                        PlaybackRemote.MODE_INSERT_NEXT ->
+                            enqueue(items, player.currentMediaItemIndex + 1)
+                        PlaybackRemote.MODE_APPEND_END ->
+                            enqueue(items, player.mediaItemCount)
+                        else -> {
+                            // Honour the sender's StartIndex: playing an album from
+                            // Jellyfin web arrives as the whole track list plus the
+                            // index of the chosen track.
+                            player.setMediaItems(
+                                items.map { buildMediaItem(it) },
+                                startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
+                                startMs.coerceAtLeast(0)
+                            )
+                            player.prepare()
+                            player.playWhenReady = true
+                        }
+                    }
+                }
+            }.also { it.start() }
+        }
     }
 
     private fun runOnMain(block: () -> Unit) {
@@ -179,6 +215,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        playScope.cancel()
         remote?.stop()
         remote = null
         reporter?.stop()

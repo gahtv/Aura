@@ -3,9 +3,10 @@ package com.hans.aura.ui.collection
 import android.util.Log
 import com.hans.aura.data.JellyfinApi
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.SourceQueries
+import com.hans.aura.data.LibraryFilter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.hans.aura.data.SourceQueries
 
 /**
  * Shared hydration for the two detail screens (album/playlist and artist).
@@ -32,11 +33,11 @@ object DetailPresenter {
     fun artistSimilarKey(artistId: String): String = "artist_similar:$artistId"
 
     /** The full item (art tags, Overview) behind a stub; null on failure. */
-    suspend fun hydrateItem(itemId: String): JellyfinItem? =
+    suspend fun hydrateItem(api: JellyfinApi, userId: String, itemId: String): JellyfinItem? =
         withContext(Dispatchers.IO) {
-            SourceQueries.item(itemId).also { item ->
-                if (item == null) Log.w(TAG, "item=$itemId hydrate failed")
-            }
+            runCatching { SourceQueries.item(itemId) }
+                .onFailure { Log.w(TAG, "item=$itemId hydrate failed: ${it.message}") }
+                .getOrNull()
         }
 
     /** Playlist items in playlist order, or an album's tracks in disc order. */
@@ -49,7 +50,7 @@ object DetailPresenter {
         val result = when (type) {
             "Playlist" -> api.getPlaylistItems(playlistId = itemId, userId = userId)
             else -> SourceQueries.items(
-                parentId = itemId,
+                userId = userId, parentId = itemId,
                 includeItemTypes = "Audio", sortBy = "ParentIndexNumber,IndexNumber,SortName",
                 limit = 500
             )
@@ -58,23 +59,31 @@ object DetailPresenter {
     }
 
     /** Albums of one artist — NOT deduped: a FLAC copy and the Atmos copy are two. */
-    suspend fun loadArtistAlbums(artistId: String): List<JellyfinItem> =
-        withContext(Dispatchers.IO) {
-            SourceQueries.items(
+    suspend fun loadArtistAlbums(
+        api: JellyfinApi,
+        userId: String,
+        artistId: String
+    ): List<JellyfinItem> = withContext(Dispatchers.IO) {
+        SourceQueries.items(LibraryFilter.ItemsQuery(
                 includeItemTypes = "MusicAlbum",
                 albumArtistIds = artistId, recursive = true,
                 sortBy = "ProductionYear", sortOrder = "Descending", limit = 100
-            ).items
-        }
+            )
+        ).items
+    }
 
-    suspend fun loadArtistTopTracks(artistId: String): List<JellyfinItem> =
-        withContext(Dispatchers.IO) {
-            SourceQueries.items(
+    suspend fun loadArtistTopTracks(
+        api: JellyfinApi,
+        userId: String,
+        artistId: String
+    ): List<JellyfinItem> = withContext(Dispatchers.IO) {
+        SourceQueries.items(LibraryFilter.ItemsQuery(
                 includeItemTypes = "Audio",
                 albumArtistIds = artistId, recursive = true,
                 sortBy = "PlayCount", sortOrder = "Descending", limit = 10
-            ).items
-        }
+            )
+        ).items
+    }
 
     /**
      * GET /Artists/{itemId}/Similar — the collaboration graph Jellyfin Web's
@@ -87,7 +96,7 @@ object DetailPresenter {
         artistId: String,
         limit: Int = 20
     ): List<JellyfinItem> = withContext(Dispatchers.IO) {
-        runCatching { api.getSimilarArtists(artistId, userId, limit = limit).items }
+        runCatching { SourceQueries.similar(artistId, limit) }
             .onSuccess { Log.i("AURA_SIMILAR", "artist=$artistId n=${it.size}") }
             .onFailure { Log.w("AURA_SIMILAR", "artist=$artistId failed: ${it.message}") }
             .getOrDefault(emptyList())

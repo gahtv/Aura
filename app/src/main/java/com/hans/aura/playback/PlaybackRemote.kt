@@ -53,13 +53,21 @@ class PlaybackRemote(
 
     fun start() {
         val session = jellyfin.auth.session ?: return
-        scope.launch { connectWithRetry(session.accessToken, session.deviceId, session.serverUrl) }
-        // Server drops idle sockets after ~60s; announce liveness like official clients.
+        // One coroutine owns both the retry loop and the keepalive, so stop()
+        // (scope cancellation) takes the reconnect loop AND the liveness ping
+        // with it. A remote that is never started, or is stopped, cannot leave a
+        // zombie socket, a keepalive pinging into the void, or a retry waking up
+        // later to reconnect.
         scope.launch {
-            while (true) {
-                delay(30_000)
-                ws?.send(buildJsonObject { put("MessageType", "KeepAlive") }.toString())
+            launch {
+                // Server drops idle sockets after ~60s; announce liveness like
+                // official clients.
+                while (true) {
+                    delay(30_000)
+                    ws?.send(buildJsonObject { put("MessageType", "KeepAlive") }.toString())
+                }
             }
+            connectWithRetry(session.accessToken, session.deviceId, session.serverUrl)
         }
     }
 

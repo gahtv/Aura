@@ -35,6 +35,7 @@ tv-material = { module = "androidx.tv:tv-material", version.ref = "tvMaterial" }
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
 media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
 media3-common = { module = "androidx.media3:media3-common", version.ref = "media3" }
+media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
 
 # --- Networking / serialization ---
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }

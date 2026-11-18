@@ -34,6 +34,7 @@ enum class AuraTag(val tag: String) {
     FAV("AURA_FAV"),
     MIX("AURA_MIX"),
     ARTIST("AURA_ARTIST"),
+    PLAY("AURA_PLAY"),
 
     /** Jellyfin remote-control websocket (PlaybackRemote). */
     REMOTE("AuraRemote"),

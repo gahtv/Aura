@@ -42,9 +42,13 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
@@ -53,7 +57,10 @@ import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Lrclib
 import com.hans.aura.data.LyricLine
 import com.hans.aura.data.LyricsStore
+import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
+import com.hans.aura.data.TimedLyricLine
+import com.hans.aura.data.karaokeSpans
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
@@ -97,6 +104,9 @@ fun LyricsPane(
     val trackId = item?.id.orEmpty()
 
     var lines by remember(item?.id) { mutableStateOf<List<LyricLine>?>(null) }
+    // Word-timed copy of the same lines, when the source can time words. Null
+    // means "no karaoke" and the pane behaves exactly as it always has.
+    var timedLines by remember(item?.id) { mutableStateOf<List<TimedLyricLine>?>(null) }
     // Whether the online fallback was consulted for THIS track, and whether it
     // produced anything — drives the hint under the empty state.
     var webChecked by remember(item?.id) { mutableStateOf(false) }
@@ -117,9 +127,20 @@ fun LyricsPane(
     LaunchedEffect(item?.id) {
         val cur = item ?: return@LaunchedEffect
         lines = null
+        timedLines = null
         webChecked = false
         webFound = false
-        val local = LyricsStore.fetch(app.jellyfin.api, cur.id)
+        // Word-timed lyrics first: they carry the same lines plus per-word
+        // timestamps, so the pane can highlight as the line is sung. A source
+        // that has none (or fails to) answers null and nothing changes.
+        val timed = runCatching { MusicSources.current?.lyricsTimed(cur.id) }.getOrNull()
+        if (!timed.isNullOrEmpty()) {
+            timedLines = timed
+            lines = timed.map { LyricLine(startMs = it.startMs, text = it.text, isSynced = true) }
+            android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")
+            return@LaunchedEffect
+        }
+        val local = LyricsStore.fetchPreferred(app.jellyfin.api, cur.id)
         if (local.isNotEmpty()) {
             lines = local
             return@LaunchedEffect
@@ -261,6 +282,16 @@ fun LyricsPane(
                         },
                         label = "lyricLine"
                     )
+                    // Karaoke: on the line being sung, the words whose start_ms
+                    // has passed take the accent and the rest of the line stays
+                    // muted. Every other line is drawn exactly as before.
+                    val timed = timedLines?.getOrNull(i)
+                    val karaoke = isCurrent && timed != null
+                    val text = if (karaoke) {
+                        karaokeLine(timed!!, effectivePosition, highlightColor)
+                    } else {
+                        AnnotatedString(line.text.ifBlank { "\u00A0" })
+                    }
                     Box(
                         Modifier
                             .fillMaxWidth()
@@ -276,8 +307,8 @@ fun LyricsPane(
                             .padding(vertical = AuraSpacing.lyricLineVertical)
                     ) {
                         androidx.tv.material3.Text(
-                            line.text.ifBlank { "\u00A0" },
-                            color = color,
+                            text,
+                            color = if (karaoke) TextSecondary else color,
                             fontSize = if (isCurrent) AuraTypography.headline else AuraTypography.title,
                             fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
                             textAlign = TextAlign.Center,
@@ -427,3 +458,19 @@ fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
     }
     return idx
 }
+
+/**
+ * One word-timed line with the sung part in [accent] and the rest muted.
+ *
+ * The split is [karaokeSpans]' job (pure, JVM-tested); this only turns the runs
+ * into spans, so the highlight follows the same 500 ms position ticker the line
+ * jump uses — no extra clock and no per-word animation.
+ */
+private fun karaokeLine(line: TimedLyricLine, positionMs: Long, accent: Color): AnnotatedString =
+    buildAnnotatedString {
+        karaokeSpans(line, positionMs).forEach { span ->
+            withStyle(SpanStyle(color = if (span.sung) accent else TextSecondary)) {
+                append(span.text)
+            }
+        }
+    }

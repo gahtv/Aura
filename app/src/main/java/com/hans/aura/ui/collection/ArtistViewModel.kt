@@ -4,9 +4,9 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
+import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
-import com.hans.aura.data.SourceQueries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.hans.aura.data.SourceQueries
 
 private const val TAG = "AURA_ARTIST_VM"
 
@@ -105,7 +106,7 @@ class ArtistViewModel(
         loadJob?.cancel()
         val uid = userId
         loadJob = viewModelScope.launch {
-            DetailPresenter.hydrateItem(artistId)?.let { full ->
+            DetailPresenter.hydrateItem(app.jellyfin.api, uid, artistId)?.let { full ->
                 _state.update {
                     it.copy(fetchedArtist = full, overview = DetailPresenter.overview(full.overview))
                 }
@@ -118,13 +119,13 @@ class ArtistViewModel(
                     }
                 }
                 if (force || _state.value.albums == null) {
-                    DetailPresenter.loadArtistAlbums(artistId).also {
+                    DetailPresenter.loadArtistAlbums(app.jellyfin.api, uid, artistId).also {
                         LibraryCache.put(DetailPresenter.artistAlbumsKey(artistId), it)
                         _state.update { s -> s.copy(albums = it) }
                     }
                 }
                 if (force || _state.value.topTracks == null) {
-                    DetailPresenter.loadArtistTopTracks(artistId).also {
+                    DetailPresenter.loadArtistTopTracks(app.jellyfin.api, uid, artistId).also {
                         LibraryCache.put(DetailPresenter.artistTopTracksKey(artistId), it)
                         _state.update { s -> s.copy(topTracks = it) }
                     }

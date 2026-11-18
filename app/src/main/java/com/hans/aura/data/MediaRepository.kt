@@ -53,6 +53,7 @@ class MediaRepository(
         query: LibraryFilter.ItemsQuery,
         cachePrefix: String? = null
     ): ItemsResponse = withContext(Dispatchers.IO) {
+        MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.browse(query, cachePrefix) }
         val uid = userId() ?: return@withContext ItemsResponse()
         val result = LibraryFilter.queryItems(api(), uid, query)
         if (cachePrefix != null && result.items.isNotEmpty()) {
@@ -70,6 +71,7 @@ class MediaRepository(
 
     /** Item detail (never filtered: detail screens must open for any id). */
     suspend fun item(itemId: String): JellyfinItem? = withContext(Dispatchers.IO) {
+        MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.item(itemId) }
         val uid = userId() ?: return@withContext null
         runCatching { api().getItem(uid, itemId) }.getOrNull()
     }
@@ -79,6 +81,7 @@ class MediaRepository(
     /** Albums by an album artist, both FLAC and Atmos copies (no dedupe). */
     suspend fun artistAlbums(artistId: String, limit: Int = 100): List<JellyfinItem> =
         withContext(Dispatchers.IO) {
+        MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.artistAlbums(artistId, limit) }
             val uid = userId() ?: return@withContext emptyList()
             runCatching {
                 LibraryFilter.queryItems(
@@ -98,6 +101,7 @@ class MediaRepository(
     /** Most-played tracks of an album artist. */
     suspend fun artistTopTracks(artistId: String, limit: Int = 10): List<JellyfinItem> =
         withContext(Dispatchers.IO) {
+        MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.artistTopTracks(artistId, limit) }
             val uid = userId() ?: return@withContext emptyList()
             runCatching {
                 LibraryFilter.queryItems(
@@ -125,6 +129,7 @@ class MediaRepository(
 
     /** One query across tracks, albums, artists and playlists (split by caller). */
     suspend fun search(term: String, limit: Int = 60): ItemsResponse = withContext(Dispatchers.IO) {
+        MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.search(term, limit) }
         val uid = userId() ?: return@withContext ItemsResponse()
         runCatching {
             LibraryFilter.queryItems(
@@ -197,6 +202,7 @@ class MediaRepository(
         startIndex: Int = 0,
         limit: Int = 60
     ): ItemsResponse = withContext(Dispatchers.IO) {
+        MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.atmosAlbums(sortBy, desc, favoritesOnly, startIndex, limit) }
         val uid = userId() ?: return@withContext ItemsResponse()
         AtmosBrowse.albums(api(), uid, sortBy, desc, favoritesOnly, startIndex, limit)
     }
@@ -208,17 +214,20 @@ class MediaRepository(
         startIndex: Int = 0,
         limit: Int = 60
     ): ItemsResponse = withContext(Dispatchers.IO) {
+        MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.atmosTracks(sortBy, desc, favoritesOnly, startIndex, limit) }
         val uid = userId() ?: return@withContext ItemsResponse()
         AtmosBrowse.tracks(api(), uid, sortBy, desc, favoritesOnly, startIndex, limit)
     }
 
     /** Album ids carrying an E-AC-3 JOC track (one scan per session). */
     suspend fun atmosAlbumIds(): Set<String> = withContext(Dispatchers.IO) {
+        MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.atmosAlbumIds() }
         val uid = userId() ?: return@withContext emptySet()
         runCatching { AtmosCatalog.albumIds(api(), uid) }.getOrDefault(emptySet())
     }
 
     suspend fun atmosCatalog(): AtmosCatalog.Catalog = withContext(Dispatchers.IO) {
+        MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.atmosCatalog() }
         val uid = userId() ?: return@withContext AtmosCatalog.Catalog()
         runCatching { AtmosCatalog.catalog(api(), uid) }.getOrDefault(AtmosCatalog.Catalog())
     }
@@ -227,6 +236,7 @@ class MediaRepository(
 
     /** Re-reads /UserViews and remembers the list (Settings > Libraries). */
     suspend fun refreshLibraryList(): List<LibraryRef> = withContext(Dispatchers.IO) {
+        MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.refreshLibraryList() }
         val uid = userId() ?: return@withContext emptyList()
         runCatching { LibraryFilter.refreshLibraryList(api(), uid) }.getOrDefault(emptyList())
     }

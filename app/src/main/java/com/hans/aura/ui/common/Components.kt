@@ -25,9 +25,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
@@ -69,6 +72,13 @@ fun ArtworkCard(
     // Liked state for album cards (null = draw no heart, e.g. artists).
     favorite: Boolean? = null,
     onToggleFavorite: (() -> Unit)? = null,
+    // Opt-in motion cover. Off by default: every existing call site keeps a
+    // still cover, and only the browse surfaces pass true inside their
+    // visible window. A card that loses the motion budget draws the same still
+    // image it would have drawn anyway, so there is no pop-in either way.
+    animate: Boolean = false,
+    // Rank used by the budget to prefer on-screen rows over prefetch rows.
+    motionPriority: Int = 0,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -111,12 +121,27 @@ fun ArtworkCard(
             }
             if (imageItem != null) {
                 Box {
-                    AsyncImage(
-                        model = AuthStore.imageUrl(serverUrl, imageItem, tag, maxWidth = 480),
-                        contentDescription = item.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    val still = AuthStore.imageUrl(serverUrl, imageItem, tag, maxWidth = 480)
+                    if (animate) {
+                        // Same still image, with the motion loop over it when the
+                        // budget grants a slot. Losing the slot changes nothing
+                        // on screen: the poster is what was drawn before.
+                        MotionArtwork(
+                            itemId = imageItem,
+                            posterModel = still,
+                            contentDescription = item.name,
+                            budgeted = true,
+                            motionPriority = motionPriority,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        AsyncImage(
+                            model = still,
+                            contentDescription = item.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                     badge?.let { label ->
                         Box(
                             Modifier
@@ -320,11 +345,19 @@ fun ItemShelf(
     size: Dp = AuraSizes.shelfCardWidth,
     showLoading: Boolean = true,
     badgeFor: ((JellyfinItem) -> String?)? = null,
-    onLongPress: ((JellyfinItem) -> Unit)? = null
+    onLongPress: ((JellyfinItem) -> Unit)? = null,
+    // True only while this row is on screen (Home passes the flag from
+    // rememberOnScreen). Inside, the horizontal scroll offset narrows it again
+    // to the covers actually in view: a 20-card row must not request 20 slots.
+    animate: Boolean = false,
+    // Attached to the scrolling row so Home can measure whether the shelf is
+    // inside the window at all.
+    modifier: Modifier = Modifier
 ) {
     // "Only Atmos" (Settings) filters shelves without a second request: artists
     // pass through, albums/tracks must be in the Atmos catalog.
     val shown = items?.let { list -> list.filter { com.hans.aura.data.AtmosFilter.keep(it) } }
+    val scroll = rememberScrollState()
     when {
         items == null -> {
             if (showLoading) {
@@ -342,10 +375,31 @@ fun ItemShelf(
                 modifier = Modifier.padding(horizontal = AuraSpacing.screenHorizontal)
             )
             Spacer(Modifier.height(AuraSpacing.sm))
+
+            val stepPx = with(LocalDensity.current) {
+                size.toPx() + AuraSpacing.md.toPx()
+            }
+            var viewportPx by remember { mutableStateOf(0) }
+            // derivedStateOf, not a plain read: scroll.value changes on every
+            // scrolled pixel, but this only changes when a whole card passes.
+            val animatableRange by remember(scroll, stepPx, animate) {
+                derivedStateOf {
+                    if (!animate || stepPx <= 0f || viewportPx <= 0) {
+                        IntRange.EMPTY
+                    } else {
+                        val first = (scroll.value / stepPx).toInt()
+                        // One screen of covers plus two: the lookahead that lets
+                        // the next card start before it is fully scrolled in.
+                        val count = (viewportPx / stepPx).toInt() + 2
+                        first..(first + count)
+                    }
+                }
+            }
             Row(
-                Modifier
+                modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
+                    .onGloballyPositioned { viewportPx = it.size.width }
+                    .horizontalScroll(scroll)
                     .focusRestorer(),
                 horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md)
             ) {
@@ -358,6 +412,10 @@ fun ItemShelf(
                         badge = badgeFor?.invoke(item),
                         focusKeeper = focusKeeper,
                         onFocused = onFocused,
+                        animate = item.type == "MusicAlbum" && idx in animatableRange,
+                        // Earlier cards outrank later ones, so the budget keeps
+                        // the left edge of the visible row moving.
+                        motionPriority = -idx,
                         onLongPress = onLongPress?.let { cb -> { cb(item) } }
                     ) {
                         onOpen(item, idx)

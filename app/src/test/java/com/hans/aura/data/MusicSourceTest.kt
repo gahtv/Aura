@@ -4,6 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -73,5 +74,12 @@ class MusicSourceTest {
             "https://other:8920/Audio/item-2/stream.m4a?static=true",
             source.streamUri("item-2", container = "m4a", serverUrl = "https://other:8920")
         )
+    }
+
+    @Test
+    fun `server-backed source claims no lyrics of its own`() = runTest {
+        // The interface default keeps the Jellyfin flavour on its existing
+        // /Audio/{id}/lyrics path: the source itself answers null.
+        assertNull(source.lyrics("item-1"))
     }
 }

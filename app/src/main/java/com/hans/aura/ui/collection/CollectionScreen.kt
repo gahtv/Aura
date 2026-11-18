@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,7 @@ import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Mixes
 import com.hans.aura.ui.common.ErrorPane
+import com.hans.aura.ui.common.MotionArtwork
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.nowplaying.AtmosBadge
 import kotlinx.coroutines.launch
@@ -77,7 +79,22 @@ fun CollectionScreen(
     val state by viewModel.state.collectAsState()
     val tracks = state.tracks
     var showBio by remember { mutableStateOf(false) }
+    // An external source may store its editorial copy beside the album, not inside
+    // the item (so items carry no Overview), so the source is asked first and the item's
+    // field stays as the fallback for the Jellyfin flavour. A null (no bio, 404,
+    // a playlist, the default source) leaves today's text path untouched.
+    var sourceBio by remember(collection.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(collection.id) {
+        sourceBio = runCatching { com.hans.aura.data.MusicSources.current?.albumBio(collection.id) }
+            .getOrNull()
+    }
+    val bio = sourceBio?.takeIf { it.isNotBlank() } ?: state.overview
     val currentId by player.current.collectAsState()
+    // Motion artwork on this page follows the audio player (pausing music stops
+    // the loop rather than leaving a decoder running under a paused app), except
+    // before anything has ever played: then the page's own motion is free to run.
+    val audioPlaying by player.isPlaying.collectAsState()
+    val motionPlaying = audioPlaying || currentId == null
     // Playlist rows sit outside album context, so they carry per-track Atmos
     // chips (album detail pages derive their badge in the header instead).
     val atmosAlbumIds = if (collection.type == "Playlist") state.atmosAlbumIds else emptySet()
@@ -134,6 +151,8 @@ fun CollectionScreen(
                 )
         ) {
             shown.primaryImageTag?.let { tag ->
+                // The header stays a still: a square loop blown up to 960x320 crops into an
+                // unreadable smear. The motion belongs on the cover itself, below.
                 AsyncImage(
                     model = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 720),
                     contentDescription = null,
@@ -167,16 +186,22 @@ fun CollectionScreen(
                 verticalAlignment = Alignment.Bottom
             ) {
                 shown.primaryImageTag?.let { tag ->
-                    AsyncImage(
-                        model = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 400),
-                        contentDescription = collection.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
+                    Box(
+                        Modifier
                             .width(160.dp)
                             .height(160.dp)
                             .clip(RoundedCornerShape(6.dp))
                             .background(SurfaceHigh)
-                    )
+                    ) {
+                        // The loop plays on the cover tile — card-sized, square, where it reads.
+                        MotionArtwork(
+                            itemId = shown.id,
+                            posterModel = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 400),
+                            contentDescription = collection.name,
+                            playing = motionPlaying,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
                 Column(Modifier.padding(start = 28.dp)) {
                     androidx.tv.material3.Text(
@@ -200,7 +225,7 @@ fun CollectionScreen(
                             AtmosBadge(color = accent)
                         }
                     }
-                    state.overview?.let { bio ->
+                    bio?.let { text ->
                         Row(
                             Modifier
                                 .padding(top = 10.dp)
@@ -209,7 +234,7 @@ fun CollectionScreen(
                             verticalAlignment = Alignment.Top
                         ) {
                             androidx.tv.material3.Text(
-                                bio,
+                                text,
                                 fontSize = 14.sp, color = TextPrimary,
                                 // Exactly two lines: maxLines = 3 left the
                                 // ellipsis alone on a third line, which read as
@@ -334,21 +359,31 @@ fun CollectionScreen(
         }
         }
 
-        val overview = state.overview
-        if (showBio && overview != null) {
+        val shownBio = bio
+        if (showBio && shownBio != null) {
             com.hans.aura.ui.common.BioDialog(
                 title = collection.name,
                 subtitle = collection.albumArtist,
-                text = overview,
+                text = shownBio,
                 onDismiss = { showBio = false }
             )
         }
     }
 }
 
-private fun subtitle(collection: JellyfinItem, tracks: List<JellyfinItem>?): String {
-    val count = tracks?.size ?: 0
-    val kind = if (collection.type == "Playlist") "tracks" else "songs"
+internal fun subtitle(collection: JellyfinItem, tracks: List<JellyfinItem>?): String {
+    val noun = if (collection.type == "Playlist") "track" else "song"
+    // The catalog's count (childCount) can exceed what was actually indexed: a
+    // store-only interlude, or a music video the index deliberately skips
+    // (Speak Now: 22 files against a 23-track listing). Say "22 of 23 songs"
+    // rather than print a number that contradicts the album's own metadata.
+    val expected = collection.childCount ?: 0
+    val count = tracks?.size ?: expected
+    val kind = if (expected > count) {
+        "$count of " + com.hans.aura.ui.common.countLabel(expected, noun)
+    } else {
+        com.hans.aura.ui.common.countLabel(count, noun)
+    }
     val artist = collection.albumArtist?.let { " \u00B7 $it" } ?: ""
-    return "$count $kind$artist"
+    return "$kind$artist"
 }

@@ -1,5 +1,8 @@
 package com.hans.aura.data
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
 /**
  * The server-backed [MusicSource]: a thin adapter over the existing
  * [JellyfinClient] / [MediaRepository], with no logic of its own.
@@ -56,6 +59,16 @@ class JellyfinSource(
 
     override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse =
         media.browse(query, cachePrefix)
+
+    override suspend fun artists(
+        sortBy: String,
+        sortOrder: String,
+        limit: Int,
+        startIndex: Int
+    ): ItemsResponse = withContext(Dispatchers.IO) {
+        val uid = client.auth.session?.userId ?: return@withContext ItemsResponse()
+        LibraryFilter.queryAlbumArtists(client.api, uid, sortBy, sortOrder, limit, startIndex)
+    }
 
     override fun cachedPage(key: String): PagedLibrary.Page? = media.cachedPage(key)
 

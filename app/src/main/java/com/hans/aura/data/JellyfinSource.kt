@@ -2,9 +2,8 @@ package com.hans.aura.data
 
 import androidx.core.text.HtmlCompat
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The server-backed [MusicSource]: a thin adapter over the existing
@@ -32,32 +31,32 @@ class JellyfinSource(
     override val hasPlayHistory: Boolean = true
     override val playHistoryItemType: String = "Audio"
 
-    private val itemMutex = Mutex()
-    private val items = mutableMapOf<String, JellyfinItem>()
-    private val lyricMutex = Mutex()
-    private val serverLyrics = mutableMapOf<String, List<LyricLine>>()
-    private val webLyrics = mutableMapOf<String, List<LyricLine>>()
+    private val bios = ConcurrentHashMap<String, String>()
+    private val serverLyrics = ConcurrentHashMap<String, List<LyricLine>>()
+    private val webLyricsFound = ConcurrentHashMap<String, Boolean>()
 
     override suspend fun artistBio(artistId: String): String? = bio(artistId)
 
     override suspend fun albumBio(itemId: String): String? = bio(itemId)
 
-    private suspend fun bio(itemId: String): String? = item(itemId)?.overview?.let {
-        HtmlCompat.fromHtml(it, HtmlCompat.FROM_HTML_MODE_COMPACT).toString()
-            .trim().takeIf { text -> text.isNotBlank() }
+    private suspend fun bio(itemId: String): String? {
+        if (!bios.containsKey(itemId)) item(itemId)
+        return bios[itemId]?.takeIf { it.isNotBlank() }
     }
 
-    internal suspend fun jellyfinLyrics(itemId: String): List<LyricLine> = lyricMutex.withLock {
-        serverLyrics.getOrPut(itemId) { fetchLyrics(itemId) }
-    }
+    internal suspend fun jellyfinLyrics(itemId: String): List<LyricLine> =
+        serverLyrics[itemId] ?: fetchLyrics(itemId).also {
+            if (it.isNotEmpty()) serverLyrics[itemId] = it
+        }
 
-    fun cachedWebLyrics(itemId: String): List<LyricLine>? = webLyrics[itemId]
+    fun cachedWebLyricsFound(itemId: String): Boolean? = webLyricsFound[itemId]
 
     override suspend fun lyricsTimed(itemId: String): List<TimedLyricLine>? {
+        webLyricsFound.remove(itemId)
         val local = jellyfinLyrics(itemId)
         val lines = if (local.isNotEmpty() || !Prefs.lyricsWebFallback) local else {
             val track = item(itemId) ?: return null
-            webLyrics[itemId] ?: lookupLyrics(track).also { webLyrics[itemId] = it }
+            lookupLyrics(track).also { webLyricsFound[itemId] = it.isNotEmpty() }
         }
         return lines.filter { it.isSynced }.map { TimedLyricLine(it.startMs, it.text) }
             .takeIf { it.isNotEmpty() }
@@ -112,8 +111,10 @@ class JellyfinSource(
     override fun storePage(key: String, items: List<JellyfinItem>, total: Int) =
         media.storePage(key, items, total)
 
-    override suspend fun item(itemId: String): JellyfinItem? = itemMutex.withLock {
-        items[itemId] ?: media.item(itemId)?.also { items[itemId] = it }
+    override suspend fun item(itemId: String): JellyfinItem? = media.item(itemId)?.also { item ->
+        bios[itemId] = item.overview?.let {
+            HtmlCompat.fromHtml(it, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
+        }.orEmpty()
     }
 
     override suspend fun artistAlbums(artistId: String, limit: Int): List<JellyfinItem> =
@@ -156,9 +157,9 @@ class JellyfinSource(
     override suspend fun refreshAll() = media.refreshAll()
 
     override fun clearCaches() {
-        items.clear()
+        bios.clear()
         serverLyrics.clear()
-        webLyrics.clear()
+        webLyricsFound.clear()
         media.clearCaches()
     }
 

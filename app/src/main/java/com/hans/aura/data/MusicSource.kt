@@ -153,6 +153,17 @@ interface MusicSource {
     /** Runs one browse query, filtered by the current library selection. */
     suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String? = null): ItemsResponse
 
+    /** Album artists for the Artists tab and Home shelf. */
+    suspend fun artists(
+        sortBy: String = "SortName",
+        sortOrder: String = "Ascending",
+        limit: Int = 100,
+        startIndex: Int = 0
+    ): ItemsResponse = browse(LibraryFilter.ItemsQuery(
+        includeItemTypes = "MusicArtist", sortBy = sortBy, sortOrder = sortOrder,
+        limit = limit, startIndex = startIndex
+    ))
+
     /** Paged list store: accumulated page for a screen key, or null. */
     fun cachedPage(key: String): PagedLibrary.Page?
 

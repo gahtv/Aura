@@ -49,6 +49,10 @@ object SourceQueries {
             excludeItemTypes = excludeItemTypes,
             genres = genres,
             filters = filters,
+            enableUserData = enableUserData,
+            fields = fields ?: LibraryFilter.ItemsQuery.DEFAULT_FIELDS,
+            imageTypeLimit = imageTypeLimit ?: 1,
+            nameStartsWithOrGreater = nameStartsWithOrGreater,
             ids = ids,
             recursive = recursive,
             parentId = parentId,
@@ -68,16 +72,7 @@ object SourceQueries {
         sortOrder: String = "Ascending",
         limit: Int = 100,
         startIndex: Int = 0
-    ): ItemsResponse = items(
-        LibraryFilter.ItemsQuery(
-            includeItemTypes = "MusicArtist",
-            recursive = true,
-            sortBy = sortBy,
-            sortOrder = sortOrder,
-            limit = limit,
-            startIndex = startIndex
-        )
-    )
+    ): ItemsResponse = source()?.artists(sortBy, sortOrder, limit, startIndex) ?: ItemsResponse()
 
     suspend fun item(itemId: String): JellyfinItem? = source()?.item(itemId)
 

@@ -57,7 +57,9 @@ object LibraryFilter {
         val limit: Int = 100,
         val startIndex: Int = 0,
         val fields: String = DEFAULT_FIELDS,
-        val imageTypeLimit: Int = 1
+        val imageTypeLimit: Int = 1,
+        val nameStartsWithOrGreater: String? = null,
+        val enableUserData: Boolean = true
     ) {
         companion object {
             const val DEFAULT_FIELDS = "PrimaryImageAspectRatio,MediaSources,ChildCount,Path,UserData"
@@ -145,6 +147,7 @@ object LibraryFilter {
                 excludeItemTypes = q.excludeItemTypes,
                 genres = q.genres,
                 filters = q.filters,
+                enableUserData = q.enableUserData,
                 recursive = q.recursive,
                 parentId = q.parentId,
                 artistIds = q.artistIds,
@@ -156,7 +159,8 @@ object LibraryFilter {
                 limit = q.limit,
                 startIndex = q.startIndex,
                 fields = q.fields,
-                imageTypeLimit = q.imageTypeLimit
+                imageTypeLimit = q.imageTypeLimit,
+                nameStartsWithOrGreater = q.nameStartsWithOrGreater
             )
         }
         val libs = librariesFor(q.includeItemTypes)
@@ -175,6 +179,7 @@ object LibraryFilter {
                     excludeItemTypes = q.excludeItemTypes,
                     genres = q.genres,
                     filters = q.filters,
+                    enableUserData = q.enableUserData,
                     recursive = q.recursive,
                     parentId = lib.id,
                     artistIds = q.artistIds,
@@ -186,7 +191,8 @@ object LibraryFilter {
                     limit = perLibraryLimit,
                     startIndex = 0,
                     fields = q.fields,
-                    imageTypeLimit = q.imageTypeLimit
+                    imageTypeLimit = q.imageTypeLimit,
+                    nameStartsWithOrGreater = q.nameStartsWithOrGreater
                 )
             }.onFailure {
                 // An unreadable library must not kill the whole screen.
@@ -203,6 +209,7 @@ object LibraryFilter {
                         userId = userId,
                         includeItemTypes = "Playlist",
                         filters = q.filters,
+                        enableUserData = q.enableUserData,
                         recursive = true,
                         searchTerm = q.searchTerm,
                         sortBy = q.sortBy,
@@ -210,7 +217,8 @@ object LibraryFilter {
                         limit = perLibraryLimit,
                         startIndex = 0,
                         fields = q.fields,
-                        imageTypeLimit = q.imageTypeLimit
+                        imageTypeLimit = q.imageTypeLimit,
+                        nameStartsWithOrGreater = q.nameStartsWithOrGreater
                     )
                 }.getOrNull()
             )

@@ -26,9 +26,16 @@ class TtmlLyricsTest {
     @Test
     fun `clock and offset times and plain paragraphs`() {
         val lines = parse("""<p begin="01:02.345" end="65s">Clock</p><p begin="12.5s"><span begin="12.501">Offset</span></p><p begin="500ms">Milliseconds</p>""")
-        assertEquals(listOf(62345L, 12500L, 500L), lines.map { it.startMs })
+        assertEquals(listOf(500L, 12500L, 62345L), lines.map { it.startMs })
         assertEquals(12501L, lines[1].words.single().startMs)
         assertTrue(lines[0].words.isEmpty())
+    }
+
+    @Test
+    fun `paragraphs are sorted stably by start time`() {
+        val lines = parse("""<p begin="20s">Later</p><p begin="10s">First</p><p begin="10s">Second</p>""")
+        assertEquals(listOf(10000L, 10000L, 20000L), lines.map { it.startMs })
+        assertEquals(listOf("First", "Second", "Later"), lines.map { it.text })
     }
 
     @Test

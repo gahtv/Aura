@@ -76,6 +76,6 @@ internal object TtmlLyrics {
             }
             parser.next()
         }
-        lines
+        lines.sortedBy { it.startMs }
     }.getOrDefault(emptyList())
 }

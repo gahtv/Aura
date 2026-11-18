@@ -5,6 +5,7 @@ package com.hans.aura.ui.library
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -52,6 +53,7 @@ import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 import com.hans.aura.ui.theme.AuraShapes
@@ -344,9 +346,12 @@ fun LibraryScreen(
                     state = gridState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 32.dp)
                         .focusRequester(contentFocus)
                         .focusRestorer(),
+                    contentPadding = PaddingValues(
+                        horizontal = 32.dp,
+                        vertical = AuraMotion.artworkFocusInset(210.dp)
+                    ),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {

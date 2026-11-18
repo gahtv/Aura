@@ -45,6 +45,7 @@ import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Mixes
 import com.hans.aura.ui.common.ErrorPane
+import com.hans.aura.ui.common.FilledActionButton
 import com.hans.aura.ui.common.MotionArtwork
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.nowplaying.AtmosBadge
@@ -256,9 +257,14 @@ fun CollectionScreen(
                     // Fixed-height buttons: keep them whole no matter how long
                     // the title/bio above grows.
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        androidx.tv.material3.Button(onClick = {
-                            tracks?.let { player.playQueue(it, 0, resume = false) }
-                        }) { androidx.tv.material3.Text("Play") }
+                        FilledActionButton(
+                            label = "Play",
+                            containerColor = accent,
+                            modifier = Modifier.focusRequester(playButtonFocus),
+                            onClick = {
+                                tracks?.let { player.playQueue(it, 0, resume = false) }
+                            }
+                        )
                         androidx.tv.material3.Button(onClick = {
                             tracks?.let { list ->
                                 player.playQueue(list.shuffled(), 0, resume = false)

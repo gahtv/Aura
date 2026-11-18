@@ -147,6 +147,9 @@ fun LyricsPane(
         val local = LyricsStore.fetchPreferred(app.jellyfin.api, cur.id)
         if (local.isNotEmpty()) {
             lines = local
+            if (local.any { it.words.isNotEmpty() }) {
+                timedLines = local.map { TimedLyricLine(it.startMs, it.text, words = it.words) }
+            }
             return@LaunchedEffect
         }
         if (!Prefs.lyricsWebFallback) {
@@ -158,6 +161,9 @@ fun LyricsPane(
         webChecked = true
         webFound = remote.isNotEmpty()
         lines = remote
+        if (remote.any { it.words.isNotEmpty() }) {
+            timedLines = remote.map { TimedLyricLine(it.startMs, it.text, words = it.words) }
+        }
     }
 
     // +offset = the highlighted line is one step EARLIER than the audio clock.

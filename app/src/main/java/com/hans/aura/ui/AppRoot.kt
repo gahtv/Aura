@@ -11,14 +11,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.hans.aura.AuraApp
-import com.hans.aura.data.AtmosCatalog
-import com.hans.aura.data.LibraryCache
-import com.hans.aura.data.PagedLibrary
 import com.hans.aura.ui.collection.ArtistScreen
 import com.hans.aura.ui.collection.CollectionScreen
 import com.hans.aura.ui.common.ContextMenuHosts
@@ -43,6 +41,7 @@ import com.hans.aura.ui.shell.TopBar
 import com.hans.aura.ui.shell.endSession
 import com.hans.aura.ui.theme.Canvas
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 
 /**
  * App shell: auth gate, then the top bar + a single destination host over the
@@ -214,6 +213,7 @@ private fun DestinationHost(
     val actions = nav.actions
     val focusTick = nav.focusTick
     val pendingFocus = nav.pendingFocus
+    val scope = rememberCoroutineScope()
     when (val top = nav.top) {
         Screen.Home -> HomeScreen(
             app = app,
@@ -242,11 +242,10 @@ private fun DestinationHost(
             app = app,
             player = player,
             onRefreshLibrary = {
-                LibraryCache.clear()
-                PagedLibrary.clear()
-                AtmosCatalog.clear()
-                LibraryCache.markManualRefresh()
-                onRefreshKey()
+                scope.launch {
+                    app.container.source.refreshAll()
+                    onRefreshKey()
+                }
             },
             onSignInAgain = { endSession("sign in again", false) },
             onChangeServer = { endSession("change server", true) },

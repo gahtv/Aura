@@ -149,6 +149,36 @@ class SourceQueriesTest {
     }
 
     @Test
+    fun `refreshAll invalidates cached bios lyrics and web hints`() = runTest {
+        val source = MusicSources.current!!
+        body = """{"Id":"bio","Name":"Artist","Overview":"Original bio"}"""
+        assertEquals("Original bio", source.artistBio("bio"))
+        body = """{"LyricText":"[00:01]Original lyrics"}"""
+        assertEquals(listOf(TimedLyricLine(1000, "Original lyrics")), source.lyricsTimed("song"))
+        assertEquals("Original bio", source.albumBio("bio"))
+        source.lyricsTimed("song")
+        assertEquals(2, requests.size)
+
+        source.refreshAll()
+
+        body = """{"Id":"bio","Name":"Artist","Overview":"Corrected bio"}"""
+        assertEquals("Corrected bio", source.artistBio("bio"))
+        body = """{"LyricText":"[00:02]Corrected lyrics"}"""
+        assertEquals(listOf(TimedLyricLine(2000, "Corrected lyrics")), source.lyricsTimed("song"))
+        assertEquals(4, requests.size)
+
+        Prefs.lyricsWebFallback = true
+        body = """{"Id":"web","Name":"Track"}"""
+        val webSource = JellyfinSource(client, MediaRepository(client), fetchLyrics = { emptyList() }, lookupLyrics = {
+            LyricsStore.parseLrcText("[00:03]Web lyrics")
+        })
+        webSource.lyricsTimed("web")
+        assertEquals(true, webSource.cachedWebLyricsFound("web"))
+        webSource.refreshAll()
+        assertNull(webSource.cachedWebLyricsFound("web"))
+    }
+
+    @Test
     fun `jellyfin timed lyrics use ticks and line karaoke`() = runTest {
         body = """{"Lyrics":[{"Text":"First","Start":123400000},{"Text":"Second","Start":150000000}]}"""
         val lines = MusicSources.current!!.lyricsTimed("song")!!

@@ -154,7 +154,10 @@ class JellyfinSource(
 
     override fun knownLibraries(): List<LibraryRef> = media.knownLibraries()
 
-    override suspend fun refreshAll() = media.refreshAll()
+    override suspend fun refreshAll() {
+        clearCaches()
+        media.refreshAll()
+    }
 
     override fun clearCaches() {
         bios.clear()

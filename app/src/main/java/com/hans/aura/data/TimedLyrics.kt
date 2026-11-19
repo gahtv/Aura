@@ -3,13 +3,12 @@ package com.hans.aura.data
 /**
  * One word inside a word-timed lyric line.
  *
- * [startMs] is on the playback clock, so the karaoke highlight is a pure
- * comparison against the position the player is already publishing — no extra
- * clock, no animation driver.
+ * [startMs] and optional source-provided [endMs] are on the playback clock.
  */
 data class TimedWord(
     val startMs: Long,
-    val text: String
+    val text: String,
+    val endMs: Long? = null
 )
 
 /**
@@ -36,14 +35,8 @@ data class TimedLyricLine(
 internal fun LyricLine.toTimedLyricLine() =
     TimedLyricLine(startMs, text, translation = translation, words = words, voice = voice, adlib = adlib, credits = credits, part = part)
 
-/** A run of a lyric line, [sung] once the audio clock has passed its first word. */
-data class KaraokeSpan(
-    val text: String,
-    val sung: Boolean
-)
-
 /** Exact display text (including spacing), optionally timed to the playback clock. */
-data class AdlibSegment(val text: String, val startMs: Long? = null)
+data class AdlibSegment(val text: String, val startMs: Long? = null, val endMs: Long? = null)
 
 /** Any lyric sub-line (adlib or translation), with optional independent timing. */
 data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null) {
@@ -51,57 +44,47 @@ data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null)
     private val startMs = segments.mapNotNull { it.startMs }.minOrNull()
     val isTimed: Boolean get() = startMs != null
 
-    internal fun karaokeSpans(positionMs: Long, leadIsCurrent: Boolean): List<KaraokeSpan> {
+    internal fun karaokeFills(positionMs: Long, leadIsCurrent: Boolean): List<KaraokeFill> {
         val overlapping = endMs != null && startMs != null && positionMs in startMs until endMs
         val active = leadIsCurrent || overlapping
-        return segments.map { segment ->
-            KaraokeSpan(segment.text, active && segment.startMs?.let { positionMs >= it } == true)
+        var offset = 0
+        return segments.flatMap { segment ->
+            val start = segment.startMs
+            val fills = if (active && start != null) {
+                val next = segments.mapNotNull { it.startMs }.filter { it > start }.minOrNull()
+                karaokeFills(TimedLyricLine(start, segment.text,
+                    words = listOf(TimedWord(start, segment.text, segment.endMs ?: next))), positionMs, endMs)
+            } else listOf(KaraokeFill(0, segment.text.length, 0f))
+            fills.map { it.copy(start = it.start + offset, end = it.end + offset) }
+                .also { offset += segment.text.length }
         }
     }
 }
 
-/**
- * Splits [line] into runs that share a highlight state at [positionMs].
- *
- * The words are re-joined with whatever separator reproduces the line's own
- * text (word tokens often carry no spaces at all, or already carry their own),
- * and when they still cannot reconstruct the line the whole line is returned as
- * a single run — so a line always renders exactly the text the backend gave us,
- * just with the sung part of it marked.
- */
-fun karaokeSpans(line: TimedLyricLine, positionMs: Long): List<KaraokeSpan> {
+data class KaraokeFill(val start: Int, val end: Int, val fraction: Float)
+
+fun wordFillFraction(word: TimedWord, endMs: Long, positionMs: Long): Float = when {
+    positionMs < word.startMs -> 0f
+    endMs <= word.startMs -> 1f
+    else -> ((positionMs.toDouble() - word.startMs) / (endMs.toDouble() - word.startMs)).toFloat().coerceIn(0f, 1f)
+}
+
+/** Ends use explicit end, then next word start, then the earlier of next line start and a one-second cap. */
+fun karaokeFills(line: TimedLyricLine, positionMs: Long, nextLineStartMs: Long? = null): List<KaraokeFill> {
     val words = line.words.filter { it.text.isNotBlank() }
-    if (words.isEmpty()) return listOf(KaraokeSpan(line.text, positionMs >= line.startMs))
-
-    val tight = words.joinToString("") { it.text }
-    val spaced = words.joinToString(" ") { it.text }
-    // Pick the separator that reproduces the backend's line text: tokens often
-    // carry no spaces at all, and some carry their own trailing one. Exact match
-    // first, then a whitespace-insensitive one (punctuation/extra spaces differ).
-    val separator = when {
-        spaced.trim() == line.text.trim() -> " "
-        tight.trim() == line.text.trim() -> ""
-        sameText(spaced, line.text) -> " "
-        sameText(tight, line.text) -> ""
-        // Words that do not rebuild the line (different punctuation, a partial
-        // transcription): keep the backend's line text, mark it as a whole.
-        else -> return listOf(KaraokeSpan(line.text, positionMs >= words.first().startMs))
+    fun fallback() = listOf(KaraokeFill(0, line.text.length,
+        if (positionMs >= (words.firstOrNull()?.startMs ?: line.startMs)) 1f else 0f))
+    if (words.isEmpty()) return fallback()
+    val offsets = line.text.indices.filter { !line.text[it].isWhitespace() }
+    val rebuilt = words.joinToString("") { it.text }.filterNot { it.isWhitespace() }
+    if (!rebuilt.equals(offsets.map { line.text[it] }.joinToString(""), ignoreCase = true)) return fallback()
+    var cursor = 0
+    return words.mapIndexed { index, word ->
+        val length = word.text.count { !it.isWhitespace() }
+        val start = offsets[cursor]
+        cursor += length
+        val cap = word.startMs + 1000L
+        val end = word.endMs ?: words.getOrNull(index + 1)?.startMs ?: minOf(nextLineStartMs ?: cap, cap)
+        KaraokeFill(start, offsets[cursor - 1] + 1, wordFillFraction(word, end, positionMs))
     }
-
-    val spans = ArrayList<KaraokeSpan>(words.size)
-    words.forEachIndexed { i, word ->
-        val sung = positionMs >= word.startMs
-        val piece = if (i == 0) word.text else separator + word.text
-        val last = spans.lastOrNull()
-        if (last != null && last.sung == sung) {
-            spans[spans.lastIndex] = last.copy(text = last.text + piece)
-        } else {
-            spans += KaraokeSpan(piece, sung)
-        }
-    }
-    return spans
 }
-
-/** Whitespace-insensitive comparison: tokens may or may not carry spaces. */
-private fun sameText(a: String, b: String): Boolean =
-    a.filterNot { it.isWhitespace() }.equals(b.filterNot { it.isWhitespace() }, ignoreCase = true)

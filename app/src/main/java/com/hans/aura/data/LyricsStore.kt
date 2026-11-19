@@ -43,13 +43,13 @@ object LyricsStore {
         // 1) Structured synced/plain lines
         val dtoLines = resp.lyrics
         if (!dtoLines.isNullOrEmpty()) {
-            // If any line has a non-zero start (or multiple lines), treat ticks as sync.
-            val hasTicks = (dtoLines.size > 1 && dtoLines.any { it.start > 0 }) ||
-                dtoLines.any { !it.cues.isNullOrEmpty() || wordTag.containsMatchIn(it.text) }
+            val firstInlineStart = mutableMapOf<String, Long>()
             return dtoLines.map {
                 val original = it.text.trim()
                 val (content, voice) = LrcVoices.split(original)
                 val prefixLength = it.text.indexOf(original) + original.length - content.length
+                val lineStartMs = it.start?.div(10_000L)
+                val hasInlineTags = wordTag.containsMatchIn(content)
                 val words = it.cues?.mapNotNull { cue ->
                     val start = maxOf(cue.position, prefixLength)
                     val end = cue.endPosition
@@ -57,11 +57,17 @@ object LyricsStore {
                         normalize(it.text.substring(start, end)).takeIf { word -> word.isNotEmpty() }
                             ?.let { word -> TimedWord(cue.start / 10_000L, word) }
                     }
-                }?.takeIf { words -> words.isNotEmpty() } ?: inlineWords(content)
+                }?.takeIf { words -> words.isNotEmpty() } ?: if (hasInlineTags) {
+                    // Jellyfin expands repeated line stamps but leaves their inline word stamps unchanged.
+                    val offset = lineStartMs?.let { start ->
+                        start - firstInlineStart.getOrPut(original) { start }
+                    } ?: 0L
+                    inlineWords(content).map { word -> word.copy(startMs = word.startMs + offset) }
+                } else emptyList()
                 LyricLine(
-                    startMs = if (hasTicks) it.start / 10_000L else 0L,
-                    text = if (wordTag.containsMatchIn(content)) normalize(content.replace(wordTag, "")) else content,
-                    isSynced = hasTicks,
+                    startMs = lineStartMs ?: 0L,
+                    text = if (hasInlineTags) normalize(content.replace(wordTag, "")) else content,
+                    isSynced = lineStartMs != null || !it.cues.isNullOrEmpty() || hasInlineTags,
                     words = words,
                     voice = voice
                 )

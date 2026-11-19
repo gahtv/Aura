@@ -115,6 +115,8 @@ class TransportBarFocusTest {
     private fun showTransport(onOpen: () -> Unit) {
         val app = ApplicationProvider.getApplicationContext<AuraApp>()
         val player = newPlayer(app)
+        // The playing seek bar continuously requests frames.
+        compose.mainClock.autoAdvance = false
         compose.setContent {
             AuraTheme {
                 TransportBar(

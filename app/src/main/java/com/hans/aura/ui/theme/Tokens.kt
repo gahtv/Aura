@@ -156,7 +156,8 @@ object AuraTypography {
 
 /** Surface shapes for cards, action sheets, and dialogs in order of prominence. */
 object AuraShapes {
-    val card = RoundedCornerShape(12.dp)
+    val cardRadius = 12.dp
+    val card = RoundedCornerShape(cardRadius)
     val sheet = RoundedCornerShape(16.dp)
     val dialog = RoundedCornerShape(28.dp)
     val control = card
@@ -197,6 +198,12 @@ object AuraSizes {
     val transportPlateExtra: Dp = 40.dp
     val transportButtonPlate: Dp = 64.dp
     val seekBarHeight: Dp = 8.dp
+    val wavySeekBarHeight: Dp = 24.dp
+    val seekStroke: Dp = 4.dp
+    val seekWavelength: Dp = 40.dp
+    val seekAmplitude: Dp = 3.dp
+    val seekGap: Dp = 4.dp
+    val seekHandleHeight: Dp = 20.dp
 
     // ---- Rows / lists ---------------------------------------------------------
     val trackRowHeight: Dp = 56.dp

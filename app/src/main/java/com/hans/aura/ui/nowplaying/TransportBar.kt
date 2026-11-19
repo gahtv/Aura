@@ -45,11 +45,9 @@ import com.hans.aura.R
 import com.hans.aura.ui.common.formatDuration
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraColors
-import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
-import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 
@@ -87,21 +85,13 @@ internal fun TransportBar(
         }
 
     Column {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(AuraSizes.seekBarHeight)
-                .clip(AuraShapes.pill)
-                .background(Border)
-        ) {
-            val frac = if (duration > 0) position.toFloat() / duration else 0f
-            Box(
-                Modifier
-                    .fillMaxWidth(frac)
-                    .height(AuraSizes.seekBarHeight)
-                    .background(accent)
-            )
-        }
+        WavySeekBar(
+            progress = if (duration > 0) position.toFloat() / duration else 0f,
+            isPlaying = isPlaying,
+            accent = accent,
+            modifier = Modifier.focusProperties { down = playPauseFocus },
+            onSeek = player::seekBy
+        )
         Spacer(Modifier.height(AuraSpacing.xs))
         Row(Modifier.fillMaxWidth()) {
             androidx.tv.material3.Text(

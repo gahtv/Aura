@@ -168,9 +168,9 @@ internal object TtmlLyrics {
                         val line = normalize(text.toString())
                         val begin = lineBegin
                         // Undeclared lyric paragraphs may use track-relative word timestamps.
-                        val adjustment = if (legacyWordTimes && begin != null && words.any { it.start - interval.start >= begin }) {
-                            begin
-                        } else 0.0
+                        val adjustment = if (legacyWordTimes && begin != null &&
+                            words.any { (it.start - interval.start).roundToLong() >= begin.roundToLong() }
+                        ) begin else 0.0
                         val timedWords = words.mapNotNull {
                             val start = it.start - adjustment
                             if (start < interval.end) TimedWord(start.roundToLong(), it.text) else null

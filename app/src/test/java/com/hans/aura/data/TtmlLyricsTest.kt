@@ -131,6 +131,12 @@ class TtmlLyricsTest {
     }
 
     @Test
+    fun `span time that rounds to the paragraph start stays absolute`() {
+        val line = parse("""<p begin="12s"><span begin="11.9999s">Hello</span></p>""").single()
+        assertEquals(listOf(TimedWord(12000, "Hello")), line.words)
+    }
+
+    @Test
     fun `untimed ttml is plain and malformed ttml is empty`() {
         val line = parse("<p>Plain <span>words</span></p>").single()
         assertEquals("Plain words", line.text)

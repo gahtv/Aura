@@ -294,18 +294,95 @@ class LibraryFilterTest {
     }
 
     @Test
-    fun `one failing library propagates instead of returning a cacheable partial page`() = runTest {
+    fun `one failing library does not kill the page`() = runTest {
         hide("lib-movies")
         val api = FakeJellyfinApi(
             itemsByParent = mapOf("lib-atmos" to listOf(Fixtures.item("a", sortName = "A"))),
             failingParents = setOf("lib-music")
         )
 
+        val res = LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio"))
+
+        assertEquals(listOf("a"), res.items.map { it.id })
+    }
+
+    @Test
+    fun `all failed library requests throw`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val api = FakeJellyfinApi(failingParents = setOf("lib-music", "lib-atmos"))
+
         assertThrows(IllegalStateException::class.java) {
-            runBlocking {
-                LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio"))
-            }
+            runBlocking { LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio")) }
         }
+        assertEquals(2, api.itemQueries.size)
+    }
+
+    @Test
+    fun `artist fan out keeps partial results but throws when all requests fail`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val api = FakeJellyfinApi(
+            artistsByParent = mapOf("lib-atmos" to listOf(Fixtures.artist("a"))),
+            failingParents = setOf("lib-music")
+        )
+        assertEquals(listOf("a"), LibraryFilter.queryAlbumArtists(api, "u").items.map { it.id })
+
+        val failed = FakeJellyfinApi(failingParents = setOf("lib-music", "lib-atmos"))
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { LibraryFilter.queryAlbumArtists(failed, "u") }
+        }
+    }
+
+    @Test
+    fun `mixed query tolerates failures if libraries or playlists answer`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val query = LibraryFilter.ItemsQuery(includeItemTypes = "Audio,Playlist")
+        val libraries = FakeJellyfinApi(
+            itemsByParent = mapOf("lib-music" to listOf(Fixtures.track("track"))),
+            failingParents = setOf(null)
+        )
+        assertEquals(listOf("track"), LibraryFilter.queryItems(libraries, "u", query).items.map { it.id })
+
+        val playlists = FakeJellyfinApi(
+            itemsByParent = mapOf(null to listOf(Fixtures.item("playlist", type = "Playlist"))),
+            failingParents = setOf("lib-music", "lib-atmos")
+        )
+        assertEquals(listOf("playlist"), LibraryFilter.queryItems(playlists, "u", query).items.map { it.id })
+
+        val failed = FakeJellyfinApi(failingParents = setOf("lib-music", "lib-atmos", null))
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { LibraryFilter.queryItems(failed, "u", query) }
+        }
+    }
+
+    @Test
+    fun `empty successful library response is not a total failure`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val api = FakeJellyfinApi(failingParents = setOf("lib-music"))
+
+        assertTrue(LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio")).items.isEmpty())
+        assertTrue(LibraryFilter.queryAlbumArtists(api, "u").items.isEmpty())
+    }
+
+    @Test
+    fun `failed Atmos scan publishes no partial catalog and can retry`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        AtmosCatalog.clear()
+        val tracks = mapOf<String?, List<JellyfinItem>>(
+            "lib-music" to listOf(Fixtures.track("track").copy(albumId = "album"))
+        )
+        val failed = FakeJellyfinApi(itemsByParent = tracks, failingParents = setOf("lib-atmos"))
+
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { AtmosCatalog.albumIds(failed, "u") }
+        }
+        assertEquals(0, AtmosCatalog.size)
+        assertTrue(AtmosFilter.albumIds().isEmpty())
+
+        val recovered = FakeJellyfinApi(itemsByParent = tracks)
+        assertEquals(setOf("album"), AtmosCatalog.albumIds(recovered, "u"))
+        assertEquals(1, AtmosCatalog.size)
+        assertEquals(setOf("track"), AtmosFilter.trackIds())
+        AtmosCatalog.clear()
     }
 
     // ---- cache suffix -------------------------------------------------------

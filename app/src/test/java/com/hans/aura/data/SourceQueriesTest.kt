@@ -680,7 +680,7 @@ class SourceQueriesTest {
         status = 500
 
         assertThrows(HttpException::class.java) { runBlocking { SourceQueries.artists() } }
-        assertEquals(1, requests.size)
+        assertEquals(2, requests.size)
         assertTrue(requests.all { it.encodedPath == "/Artists/AlbumArtists" })
     }
 }

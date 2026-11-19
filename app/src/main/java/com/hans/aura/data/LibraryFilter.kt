@@ -1,6 +1,7 @@
 package com.hans.aura.data
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 
 /**
  * Library selection enforcement, at the DATA layer.
@@ -195,8 +196,9 @@ object LibraryFilter {
                     nameStartsWithOrGreater = q.nameStartsWithOrGreater
                 )
             }.onFailure {
+                if (it is CancellationException) throw it
                 Log.w(TAG, "library \"${lib.name}\" (${lib.id}) query failed: ${it.message}")
-            }.getOrThrow()
+            }
         }
         // Mixed-type queries (search) also ask for Playlists, which live in the
         // server's virtual playlists view rather than inside a music library —
@@ -219,11 +221,11 @@ object LibraryFilter {
                         imageTypeLimit = q.imageTypeLimit,
                         nameStartsWithOrGreater = q.nameStartsWithOrGreater
                     )
-                }.getOrThrow()
+                }.onFailure { if (it is CancellationException) throw it }
             )
         } else emptyList()
         logStrategy(q.includeItemTypes, libs)
-        return merge(responses + playlists, q)
+        return merge(successfulResponses(responses + playlists), q)
     }
 
     /** Same treatment for the album-artist endpoint (Artists tab + Home shelf). */
@@ -259,12 +261,21 @@ object LibraryFilter {
                     parentId = lib.id
                 )
             }.onFailure {
+                if (it is CancellationException) throw it
                 Log.w(TAG, "library \"${lib.name}\" artist query failed: ${it.message}")
-            }.getOrThrow()
+            }
         }
         logStrategy("MusicArtist", libs)
-        return merge(responses, ItemsQuery(sortBy = sortBy, sortOrder = sortOrder,
+        return merge(successfulResponses(responses), ItemsQuery(sortBy = sortBy, sortOrder = sortOrder,
             limit = limit, startIndex = startIndex))
+    }
+
+    private fun successfulResponses(results: List<Result<ItemsResponse>>): List<ItemsResponse> {
+        // An unreadable library must not kill the whole screen. Keep any answered
+        // page (including playlists); only a total failure must remain retryable.
+        val responses = results.mapNotNull { it.getOrNull() }
+        if (responses.isEmpty()) results.firstOrNull()?.getOrThrow()
+        return responses
     }
 
     /** Merge per-library pages: honour the requested sort, then the page window. */

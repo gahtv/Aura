@@ -23,7 +23,9 @@ internal class PausedAudioOutput(private val player: ExoPlayer) : Player.Listene
             shouldReleasePausedAudioOutput(player.audioFormat?.sampleMimeType)
 
     override fun onEvents(player: Player, events: Player.Events) {
-        if (player.playWhenReady || player.playbackState != Player.STATE_IDLE) {
+        if (player.playWhenReady || player.playbackState != Player.STATE_IDLE ||
+            player.mediaItemCount == 0
+        ) {
             released = false
         }
         if (!shouldRelease()) {

@@ -25,6 +25,7 @@ class PausedAudioOutputLifecycleTest {
     private var state = Player.STATE_READY
     private var mime = "audio/eac3-joc"
     private var stops = 0
+    private var items = 1
     private val player = Proxy.newProxyInstance(
         ExoPlayer::class.java.classLoader, arrayOf(ExoPlayer::class.java)
     ) { _, method, _ ->
@@ -32,6 +33,7 @@ class PausedAudioOutputLifecycleTest {
             "getApplicationLooper" -> Looper.getMainLooper()
             "getPlayWhenReady" -> ready
             "getPlaybackState" -> state
+            "getMediaItemCount" -> items
             "getAudioFormat" -> Format.Builder().setSampleMimeType(mime).build()
             "stop" -> { stops++; state = Player.STATE_IDLE; null }
             "removeListener" -> null
@@ -74,6 +76,18 @@ class PausedAudioOutputLifecycleTest {
             Player.Events(FlagSet.Builder().add(Player.EVENT_MEDIA_ITEM_TRANSITION).build())
         )
         assertTrue(output.released)
+        output.close()
+    }
+
+    @Test
+    fun `clearing the queue after release ends internal release`() {
+        val output = PausedAudioOutput(player)
+        update(output)
+        advance(3)
+        assertTrue(output.released)
+        items = 0
+        update(output)
+        assertFalse(output.released)
         output.close()
     }
 

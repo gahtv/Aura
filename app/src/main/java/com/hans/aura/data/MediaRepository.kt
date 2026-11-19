@@ -32,6 +32,35 @@ class MediaRepository(
 
     // ---- Browse ------------------------------------------------------------
 
+    suspend fun recentlyPlayed(limit: Int = 20): List<JellyfinItem> = withContext(Dispatchers.IO) {
+        val uid = userId() ?: return@withContext emptyList()
+        if (limit <= 0) return@withContext emptyList()
+        runCatching {
+            LibraryFilter.queryItems(api(), uid, LibraryFilter.ItemsQuery(
+                includeItemTypes = "Audio", filters = "IsPlayed",
+                sortBy = "DatePlayed", sortOrder = "Descending", limit = limit
+            )).items
+        }.getOrDefault(emptyList())
+    }
+
+    suspend fun recentArtists(limit: Int = 20): List<JellyfinItem> = withContext(Dispatchers.IO) {
+        val uid = userId() ?: return@withContext emptyList()
+        if (limit <= 0) return@withContext emptyList()
+        val ids = recentlyPlayed(maxOf(100, limit)).asSequence().flatMap { track ->
+            track.artistItems.orEmpty().filter { it.id.isNotBlank() }
+                .ifEmpty { track.albumArtists.orEmpty().filter { it.id.isNotBlank() } }
+                .asSequence()
+        }.map { it.id }.distinct().take(limit).toList()
+        if (ids.isEmpty()) return@withContext emptyList()
+
+        runCatching {
+            val artists = LibraryFilter.queryItems(api(), uid, LibraryFilter.ItemsQuery(
+                includeItemTypes = "MusicArtist", ids = ids.joinToString(","), limit = limit
+            )).items.associateBy { it.id }
+            ids.mapNotNull { artists[it] }
+        }.getOrDefault(emptyList())
+    }
+
     /**
      * Last cached copy of [prefix] (null when absent or past the 24h TTL).
      *

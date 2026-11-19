@@ -93,6 +93,22 @@ interface MusicSource {
      */
     val playHistoryItemType: String get() = "Audio"
 
+    suspend fun recentlyPlayed(limit: Int = 20): List<JellyfinItem> =
+        if (!hasPlayHistory || limit <= 0) emptyList() else runCatching {
+            browse(LibraryFilter.ItemsQuery(
+                includeItemTypes = playHistoryItemType,
+                sortBy = "DatePlayed", sortOrder = "Descending", limit = limit
+            )).items
+        }.getOrDefault(emptyList())
+
+    suspend fun recentArtists(limit: Int = 20): List<JellyfinItem> =
+        if (!hasPlayHistory || playHistoryItemType != "Audio" || limit <= 0) emptyList() else runCatching {
+            browse(LibraryFilter.ItemsQuery(
+                includeItemTypes = "MusicArtist",
+                sortBy = "DatePlayed", sortOrder = "Descending", limit = limit
+            )).items
+        }.getOrDefault(emptyList())
+
     /**
      * Record one play. Backends with their own history (the index) implement
      * this; Jellyfin learns it from the session reports and leaves it alone.

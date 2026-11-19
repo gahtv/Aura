@@ -127,31 +127,12 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
         // Browse queries go through SourceQueries: the installed source decides
         // how (or whether) to answer, and hidden libraries still apply on Jellyfin.
         if (_state.value.historyShelves && _state.value.recentlyPlayed == null) {
-            val items = shelf("recently played") {
-                // Jellyfin records plays per track; the index keeps album-level history, so
-                // the same shelf is built from albums there.
-                SourceQueries.items(LibraryFilter.ItemsQuery(
-                        includeItemTypes = MusicSources.current?.playHistoryItemType ?: "Audio",
-                        recursive = true,
-                        sortBy = "DatePlayed", sortOrder = "Descending", limit = 20
-                    )
-                ).items
-            }
+            val items = shelf("recently played") { SourceQueries.recentlyPlayed(limit = 20) }
             LibraryCache.put("home_recent:$uid", items)
             _state.update { it.copy(recentlyPlayed = items) }
         }
-        // A per-artist play history is a Jellyfin concept; an album-level backend has none,
-        // and asking anyway would list every artist it knows.
-        val artistHistory = _state.value.historyShelves &&
-            (MusicSources.current?.playHistoryItemType ?: "Audio") == "Audio"
-        if (artistHistory && _state.value.recentArtists == null) {
-            val items = shelf("recently played artists") {
-                SourceQueries.items(LibraryFilter.ItemsQuery(
-                        includeItemTypes = "MusicArtist", recursive = true,
-                        sortBy = "DatePlayed", sortOrder = "Descending", limit = 20
-                    )
-                ).items
-            }
+        if (_state.value.historyShelves && _state.value.recentArtists == null) {
+            val items = shelf("recently played artists") { SourceQueries.recentArtists(limit = 20) }
             LibraryCache.put("home_recent_artists:$uid", items)
             _state.update { it.copy(recentArtists = items) }
         }

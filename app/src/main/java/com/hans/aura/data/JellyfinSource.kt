@@ -96,6 +96,10 @@ class JellyfinSource(
     override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse =
         media.browse(query, cachePrefix)
 
+    override suspend fun recentlyPlayed(limit: Int): List<JellyfinItem> = media.recentlyPlayed(limit)
+
+    override suspend fun recentArtists(limit: Int): List<JellyfinItem> = media.recentArtists(limit)
+
     override suspend fun artists(
         sortBy: String,
         sortOrder: String,

@@ -79,8 +79,11 @@ per-device token registry.
 
 HTTP is unencrypted and the listener is not restricted to a particular interface or
 subnet. Use only on a trusted LAN; do not expose port 8099 to the internet. Pair requests
-block the single HTTP worker until answered or timed out, so other requests can stall
-during pairing. Clients should use a pairing timeout longer than 90 seconds.
+wait for consent on a bounded pool of HTTP workers; other requests can proceed during
+pairing. Pairing prompts are serialized. Clients should use a pairing timeout longer
+than 90 seconds. Incomplete requests are dropped after 2 seconds without input;
+this read timeout does not limit the consent wait. At capacity (8 active and 16 queued
+connections), new connections are closed.
 
 ### State and navigation
 

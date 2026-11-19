@@ -42,12 +42,10 @@ class MediaRepository(
     suspend fun recentlyPlayed(limit: Int = 20): List<JellyfinItem> = withContext(Dispatchers.IO) {
         val uid = userId() ?: return@withContext emptyList()
         if (limit <= 0) return@withContext emptyList()
-        runCatching {
-            LibraryFilter.queryItems(api(), uid, LibraryFilter.ItemsQuery(
-                includeItemTypes = "Audio", filters = "IsPlayed",
-                sortBy = "DatePlayed", sortOrder = "Descending", limit = limit
-            )).items
-        }.getOrDefault(emptyList())
+        LibraryFilter.queryItems(api(), uid, LibraryFilter.ItemsQuery(
+            includeItemTypes = "Audio", filters = "IsPlayed",
+            sortBy = "DatePlayed", sortOrder = "Descending", limit = limit
+        )).items
     }
 
     suspend fun recentArtists(limit: Int = 20): List<JellyfinItem> = withContext(Dispatchers.IO) {
@@ -60,12 +58,10 @@ class MediaRepository(
         }.map { it.id }.distinct().take(limit).toList()
         if (ids.isEmpty()) return@withContext emptyList()
 
-        runCatching {
-            val artists = LibraryFilter.queryItems(api(), uid, LibraryFilter.ItemsQuery(
-                includeItemTypes = "MusicArtist", ids = ids.joinToString(","), limit = limit
-            )).items.associateBy { it.id }
-            ids.mapNotNull { artists[it] }
-        }.getOrDefault(emptyList())
+        val artists = LibraryFilter.queryItems(api(), uid, LibraryFilter.ItemsQuery(
+            includeItemTypes = "MusicArtist", ids = ids.joinToString(","), limit = limit
+        )).items.associateBy { it.id }
+        ids.mapNotNull { artists[it] }
     }
 
     /**
@@ -259,7 +255,7 @@ class MediaRepository(
     suspend fun atmosAlbumIds(): Set<String> = withContext(Dispatchers.IO) {
         MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.atmosAlbumIds() }
         val uid = userId() ?: return@withContext emptySet()
-        runCatching { AtmosCatalog.albumIds(api(), uid) }.getOrDefault(emptySet())
+        AtmosCatalog.albumIds(api(), uid)
     }
 
     suspend fun atmosCatalog(): AtmosCatalog.Catalog = withContext(Dispatchers.IO) {

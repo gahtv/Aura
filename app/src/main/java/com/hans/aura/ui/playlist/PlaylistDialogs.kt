@@ -4,6 +4,7 @@ package com.hans.aura.ui.playlist
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -48,6 +50,7 @@ import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.TextPrimary
@@ -154,20 +157,22 @@ fun PlaylistPickerDialog(
         }.onFailure { playlists = emptyList() }
     }
 
+    val loaded = playlists
     Box(
         Modifier
-            .fillMaxWidth()
-            .height(720.dp)
-            .padding(48.dp),
+            .fillMaxSize()
+            .padding(AuraSpacing.xxl),
         contentAlignment = Alignment.Center
     ) {
         Column(
             Modifier
-                .widthIn(max = 720.dp)
+                .widthIn(max = if (loaded.isNullOrEmpty()) 400.dp else 720.dp)
+                .fillMaxWidth()
                 .clip(AuraShapes.dialog)
                 .background(Surface)
                 .focusProperties { exit = { FocusRequester.Cancel } }
-                .padding(32.dp)
+                .focusGroup()
+                .padding(AuraSpacing.xl)
         ) {
             androidx.tv.material3.Text(
                 if (tracksToAdd.size == 1) "Add to playlist" else "Save ${tracksToAdd.size} tracks as playlist",
@@ -228,6 +233,7 @@ fun PlaylistPickerDialog(
                         modifier = Modifier.focusRequester(createFocus)
                     ) { androidx.tv.material3.Text(if (creating) "Creating\u2026" else "Create") }
                     androidx.tv.material3.Button(onClick = {
+                        firstFocus.requestFocus()
                         creatingName = null
                         newName = ""
                         status = null
@@ -243,23 +249,24 @@ fun PlaylistPickerDialog(
                 Spacer(Modifier.height(12.dp))
             }
 
-            when (val loaded = playlists) {
-                null -> androidx.tv.material3.Text("Loading playlists\u2026", color = TextSecondary)
-                else -> {
-                    if (loaded.isEmpty() && creatingName == null) {
+            when {
+                loaded == null -> androidx.tv.material3.Text("Loading playlists\u2026", color = TextSecondary)
+                loaded.isEmpty() -> {
+                    if (creatingName == null) {
                         androidx.tv.material3.Text(
                             "No playlists yet \u2014 create one above",
                             color = TextSecondary
                         )
                     }
+                }
+                else -> {
                     Column(
                         Modifier
                             .fillMaxWidth()
-                            .height(360.dp)
-                            // Scrollable: the fixed 360dp box silently clipped
-                            // everything past the ~6th playlist.
-                            .verticalScroll(rememberScrollState())
+                            .weight(1f, fill = false)
                             .background(Border.copy(alpha = 0.3f), AuraShapes.card)
+                            .focusGroup()
+                            .verticalScroll(rememberScrollState())
                     ) {
                         loaded.forEach { pl ->
                             var rowFocused by remember(pl.id) { mutableStateOf(false) }

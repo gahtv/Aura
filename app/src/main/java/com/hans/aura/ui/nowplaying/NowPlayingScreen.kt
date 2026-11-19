@@ -38,7 +38,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.hans.aura.AuraApp
-import com.hans.aura.data.AuthStore
 import com.hans.aura.data.Favorites
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Mixes
@@ -47,6 +46,7 @@ import com.hans.aura.ui.MirrorLink
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.common.InitialFocusOnPush
 import com.hans.aura.ui.common.MotionArtwork
+import com.hans.aura.ui.common.resolveArtwork
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraShapes
@@ -115,11 +115,8 @@ fun NowPlayingScreen(
 
     // Dynamic color wash from the playing track's album art: darkened dominant
     // as the background, a distinct lighter swatch as the transport/lyric accent.
-    val dynArtUrl = currentItem?.let { cur ->
-        cur.primaryImageTag?.let { tag ->
-            AuthStore.imageUrl(session.serverUrl, cur.id, tag, maxWidth = 480)
-        }
-    }
+    val artwork = currentItem?.resolveArtwork()
+    val dynArtUrl = artwork?.url(session.serverUrl, maxWidth = 480)
     val dyn = rememberDynamicColors(dynArtUrl)
     val dynBg = dyn?.primary ?: Surface
     val dynAccent = dyn?.secondary ?: Accent
@@ -251,28 +248,24 @@ fun NowPlayingScreen(
                     }
                     // Album art + song details, bottom-left, ALWAYS visible —
                     // draws over the lyric lines once the controls hide.
-                    NowPlayingChip(app, player)
+                    NowPlayingChip(currentItem, artwork?.url(session.serverUrl, maxWidth = 200))
                 }
             } else {
                 Row(Modifier.fillMaxSize()) {
-                    currentItem?.let { cur ->
-                        cur.primaryImageTag?.let { tag ->
-                            // Motion artwork for the playing album when the source provides it.
-                            // Elsewhere this is exactly the still cover it always was.
-                            MotionArtwork(
-                                itemId = cur.id,
-                                posterModel = AuthStore.imageUrl(
-                                    session.serverUrl, cur.id, tag, maxWidth = 800
-                                ),
-                                contentDescription = cur.name,
-                                playing = isPlaying,
-                                modifier = Modifier
-                                    .width(AuraSizes.artworkLarge)
-                                    .height(AuraSizes.artworkLarge)
-                                    .clip(AuraShapes.card)
-                                    .background(SurfaceHigh)
-                            )
-                        }
+                    if (artwork != null) {
+                        // Motion artwork for the playing album when the source provides it.
+                        // Elsewhere this is exactly the still cover it always was.
+                        MotionArtwork(
+                            itemId = artwork.itemId,
+                            posterModel = artwork.url(session.serverUrl, maxWidth = 800),
+                            contentDescription = currentItem?.name,
+                            playing = isPlaying,
+                            modifier = Modifier
+                                .width(AuraSizes.artworkLarge)
+                                .height(AuraSizes.artworkLarge)
+                                .clip(AuraShapes.card)
+                                .background(SurfaceHigh)
+                        )
                     }
                     Column(
                         Modifier

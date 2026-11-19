@@ -17,10 +17,10 @@ object SourceQueries {
     }
 
     suspend fun recentlyPlayed(limit: Int = 20): List<JellyfinItem> =
-        runCatching { source()?.recentlyPlayed(limit).orEmpty() }.getOrDefault(emptyList())
+        source()?.recentlyPlayed(limit).orEmpty()
 
     suspend fun recentArtists(limit: Int = 20): List<JellyfinItem> =
-        runCatching { source()?.recentArtists(limit).orEmpty() }.getOrDefault(emptyList())
+        source()?.recentArtists(limit).orEmpty()
 
     /** Query-object form: the shape [LibraryFilter] and the ViewModels build. */
     suspend fun items(query: LibraryFilter.ItemsQuery, cachePrefix: String? = null): ItemsResponse =

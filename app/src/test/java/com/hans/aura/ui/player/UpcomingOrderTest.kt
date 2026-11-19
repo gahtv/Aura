@@ -2,8 +2,36 @@ package com.hans.aura.ui.player
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlin.random.Random
 
 class UpcomingOrderTest {
+    @Test fun restoredOrderKeepsSavedSurvivorsThenAppendedEntries() {
+        assertEquals(listOf("b", "a", "new2", "new1"), restoredUpcomingOrder(
+            listOf("b", "gone", "a"), listOf("a", "new2", "b", "new1")))
+    }
+
+    @Test fun restoredOrderPreservesDuplicateSemantics() {
+        assertEquals(listOf("b", "b", "a", "new", "new"), restoredUpcomingOrder(
+            listOf("b", "b", "a", "gone"), listOf("a", "a", "new", "b", "new")))
+    }
+
+    @Test fun restoredOrderHandlesEmptyAndDisjointQueues() {
+        assertEquals(emptyList<String>(), restoredUpcomingOrder(listOf("a"), emptyList()))
+        assertEquals(listOf("b", "b"), restoredUpcomingOrder(emptyList(), listOf("b", "b")))
+        assertEquals(emptyList<String>(), restoredUpcomingOrder(emptyList(), emptyList()))
+        assertEquals(listOf("b"), restoredUpcomingOrder(listOf("a"), listOf("b")))
+    }
+
+    @Test fun restoredOrderMatchesListMembershipForRandomQueues() {
+        val random = Random(48291)
+        repeat(1000) {
+            val saved = List(random.nextInt(100)) { "id${random.nextInt(20)}" }
+            val live = List(random.nextInt(100)) { "id${random.nextInt(30)}" }
+            assertEquals(saved.filter { it in live } + live.filter { it !in saved },
+                restoredUpcomingOrder(saved, live))
+        }
+    }
+
     @Test fun fullQueueUsesShuffledHistoryAndPreservesTimelineIndices() {
         val order = listOf(3, 2, 0, 5, 1, 4)
         val result = queueIndices(6, 0,

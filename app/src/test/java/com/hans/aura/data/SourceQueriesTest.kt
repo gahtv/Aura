@@ -489,7 +489,7 @@ class SourceQueriesTest {
         assertEquals("Hello world", line.text)
         assertEquals(LyricVoice("v2", LyricVoice.Kind.SECONDARY), line.voice)
         assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
-        body = """{"Lyrics":[{"Text":"v2: Hello world","Start":120000000,"Cues":[{"Position":0,"EndPosition":9,"Start":120000000},{"Position":10,"EndPosition":15,"Start":125000000}]}]}"""
+        body = """{"Lyrics":[{"Text":"v2: Hello world","Start":120000000,"Cues":[{"Position":0,"EndPosition":9,"Start":120000000},{"Position":10,"EndPosition":15,"Start":125000000,"End":130000000}]}]}"""
         assertEquals(line, MusicSources.current!!.lyricsTimed("voice-cues")!!.single())
     }
 

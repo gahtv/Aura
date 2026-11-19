@@ -5,7 +5,9 @@ data class LyricLine(
     val text: String,
     val isSynced: Boolean,
     val words: List<TimedWord> = emptyList(),
-    val voice: LyricVoice? = null
+    val voice: LyricVoice? = null,
+    /** When the line stops being sung, if the source says so. */
+    val endMs: Long? = null
 )
 
 /**
@@ -36,6 +38,34 @@ object LyricsStore {
         }
     }
 
+    /** Enhanced LRC's closing `<mm:ss.xx>` after the last word marks when the line ends. */
+    private fun inlineEnd(text: String): Long? {
+        val tags = wordTag.findAll(text).toList()
+        val last = tags.lastOrNull()?.takeIf { tags.size > 1 && text.substring(it.range.last + 1).isBlank() }
+            ?: return null
+        return stampMs(last.groupValues[1], last.groupValues[2])
+    }
+
+    /**
+     * A blank synced line is how LRC (and Jellyfin's copy of it) marks the end of
+     * the line before it: fold it into that line's [LyricLine.endMs] instead of
+     * rendering an empty row.
+     */
+    internal fun foldBlankLines(lines: List<LyricLine>): List<LyricLine> {
+        val folded = ArrayList<LyricLine>(lines.size)
+        for (line in lines) {
+            val previous = folded.lastOrNull()
+            if (line.isSynced && line.text.isBlank()) {
+                if (previous != null && previous.endMs == null && previous.startMs < line.startMs) {
+                    folded[folded.lastIndex] = previous.copy(endMs = line.startMs)
+                }
+            } else {
+                folded += line
+            }
+        }
+        return folded
+    }
+
     suspend fun fetch(api: JellyfinApi, itemId: String): List<LyricLine> {
         val resp = runCatching { api.getLyrics(itemId) }.getOrNull()
             ?: return emptyList()
@@ -44,7 +74,7 @@ object LyricsStore {
         val dtoLines = resp.lyrics
         if (!dtoLines.isNullOrEmpty()) {
             val firstInlineStart = mutableMapOf<String, Long>()
-            return dtoLines.map {
+            return foldBlankLines(dtoLines.map {
                 val original = it.text.trim()
                 val (content, voice) = LrcVoices.split(original)
                 val prefixLength = it.text.indexOf(original) + original.length - content.length
@@ -57,21 +87,21 @@ object LyricsStore {
                         normalize(it.text.substring(start, end)).takeIf { word -> word.isNotEmpty() }
                             ?.let { word -> TimedWord(cue.start / 10_000L, word) }
                     }
-                }?.takeIf { words -> words.isNotEmpty() } ?: if (hasInlineTags) {
-                    // Jellyfin expands repeated line stamps but leaves their inline word stamps unchanged.
-                    val offset = lineStartMs?.let { start ->
-                        start - firstInlineStart.getOrPut(original) { start }
-                    } ?: 0L
-                    inlineWords(content).map { word -> word.copy(startMs = word.startMs + offset) }
-                } else emptyList()
+                }?.takeIf { words -> words.isNotEmpty() }
+                // Jellyfin expands repeated line stamps but leaves their inline word stamps unchanged.
+                val inlineOffset = if (hasInlineTags && lineStartMs != null) {
+                    lineStartMs - firstInlineStart.getOrPut(original) { lineStartMs }
+                } else 0L
                 LyricLine(
                     startMs = lineStartMs ?: 0L,
                     text = if (hasInlineTags) normalize(content.replace(wordTag, "")) else content,
                     isSynced = lineStartMs != null || !it.cues.isNullOrEmpty() || hasInlineTags,
-                    words = words,
-                    voice = voice
+                    words = words ?: inlineWords(content).map { word -> word.copy(startMs = word.startMs + inlineOffset) },
+                    voice = voice,
+                    endMs = it.cues?.mapNotNull { cue -> cue.end }?.maxOrNull()?.div(10_000L)
+                        ?: inlineEnd(content)?.plus(inlineOffset)
                 )
-            }
+            })
         }
 
         // 2) Raw text, possibly LRC-formatted
@@ -113,15 +143,17 @@ object LyricsStore {
                 continue
             }
             val firstMs = stampMs(stamps.first().groupValues[1], stamps.first().groupValues[2])
+            val endMs = inlineEnd(content)
             for (m in stamps) {
                 val ms = stampMs(m.groupValues[1], m.groupValues[2])
                 synced.add(LyricLine(startMs = ms, text = text, isSynced = true,
-                    words = words.map { it.copy(startMs = it.startMs + ms - firstMs) }, voice = voice))
+                    words = words.map { it.copy(startMs = it.startMs + ms - firstMs) }, voice = voice,
+                    endMs = endMs?.plus(ms - firstMs)))
             }
         }
 
         return when {
-            synced.isNotEmpty() -> synced.sortedBy { it.startMs }
+            synced.isNotEmpty() -> foldBlankLines(synced.sortedBy { it.startMs })
             plain.isNotEmpty() -> plain
             else -> emptyList()
         }

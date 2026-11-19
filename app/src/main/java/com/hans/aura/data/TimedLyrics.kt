@@ -25,8 +25,15 @@ data class TimedLyricLine(
     val text: String,
     val translation: String? = null,
     val words: List<TimedWord> = emptyList(),
-    val voice: LyricVoice? = null
+    val voice: LyricVoice? = null,
+    val endMs: Long? = null
 )
+
+internal fun LyricLine.toTimed(): TimedLyricLine =
+    TimedLyricLine(startMs, text, words = words, voice = voice, endMs = endMs)
+
+internal fun TimedLyricLine.toLyricLine(): LyricLine =
+    LyricLine(startMs, text, isSynced = true, words = words, voice = voice, endMs = endMs)
 
 /** A run of a lyric line, [sung] once the audio clock has passed its first word. */
 data class KaraokeSpan(

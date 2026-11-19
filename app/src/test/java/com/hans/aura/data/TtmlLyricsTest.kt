@@ -85,4 +85,14 @@ class TtmlLyricsTest {
         assertTrue(LyricsStore.parseLyricsText("<tt><body><p>broken").isEmpty())
         assertTrue(parse("<p> </p>").isEmpty())
     }
+
+    @Test
+    fun `ttml end, dur and span ends become line ends`() {
+        val lines = parse(
+            """<p begin="1s" end="3s">End</p><p begin="4s" dur="2s">Dur</p>""" +
+                """<p begin="10s"><span begin="10s" end="11s">Abs</span> <span begin="11s" end="12.5s">spans</span></p>""" +
+                """<p begin="20s"><span begin="0s" end="1s">Rel</span> <span begin="1s" end="2s">spans</span></p>""" +
+                """<p begin="30s">Open</p>""")
+        assertEquals(listOf(3_000L, 6_000L, 12_500L, 22_000L, null), lines.map { it.endMs })
+    }
 }

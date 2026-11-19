@@ -16,6 +16,11 @@ object AuraMotion {
 
     /** Full growth reserves room for the caption and the spring's overshoot. */
     fun artworkFocusInset(size: Dp): Dp = size * (artworkFocusedScale - 1f)
+
+    /** Instrumental-break dots: a slow breath while the lyrics rest. */
+    const val lyricBreakBreathMs = 1200
+    const val lyricBreakBreathScale = 1.15f
+    const val lyricBreakDimAlpha = 0.3f
 }
 
 /**
@@ -217,6 +222,7 @@ object AuraSizes {
     /** Measured pitch of one lyric line box (26/22sp + 20dp padding). */
     val lyricLinePitch: Dp = 70.dp
     val lyricsTailSpace: Dp = 600.dp
+    val lyricBreakDot: Dp = 14.dp
 
     // ---- Icons / chips --------------------------------------------------------
     val iconSmall: Dp = 20.dp

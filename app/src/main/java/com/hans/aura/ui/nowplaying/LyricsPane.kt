@@ -1,12 +1,23 @@
 package com.hans.aura.ui.nowplaying
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -32,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -52,6 +65,7 @@ import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.LyricBreak
 import com.hans.aura.data.Lrclib
 import com.hans.aura.data.LyricLine
 import com.hans.aura.data.LyricVoice
@@ -60,10 +74,14 @@ import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
 import com.hans.aura.data.TimedLyricLine
 import com.hans.aura.data.karaokeSpans
+import com.hans.aura.data.lyricBreaks
+import com.hans.aura.data.toLyricLine
+import com.hans.aura.data.toTimed
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
@@ -162,7 +180,7 @@ fun LyricsPane(
         webFound = sourceWeb == true
         if (!timed.isNullOrEmpty()) {
             timedLines = timed
-            lines = timed.map { LyricLine(startMs = it.startMs, text = it.text, isSynced = true, words = it.words, voice = it.voice) }
+            lines = timed.map { it.toLyricLine() }
             android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")
             return@LaunchedEffect
         }
@@ -170,7 +188,7 @@ fun LyricsPane(
         if (local.isNotEmpty()) {
             lines = local
             if (local.any { it.words.isNotEmpty() }) {
-                timedLines = local.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice) }
+                timedLines = local.map { it.toTimed() }
             }
             return@LaunchedEffect
         }
@@ -184,7 +202,7 @@ fun LyricsPane(
         webFound = remote.isNotEmpty()
         lines = remote
         if (remote.any { it.words.isNotEmpty() }) {
-            timedLines = remote.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice) }
+            timedLines = remote.map { it.toTimed() }
         }
     }
 
@@ -193,6 +211,12 @@ fun LyricsPane(
     val currentLineIndex = remember(lines, effectivePosition) {
         computeCurrentLine(lines, effectivePosition)
     }
+    val breaks = remember(lines) { lyricBreaks(lines.orEmpty()) }
+    val activeBreak = breaks.firstOrNull { effectivePosition in it }
+    val rows = remember(lines, breaks) { lyricRows(lines.orEmpty().size, breaks) }
+    // During a break the dots take the current line's anchor slot.
+    val followRow = activeBreak?.let { rows.indexOf(LyricRow.Break(it)) }
+        ?: rows.indexOf(LyricRow.Line(currentLineIndex.coerceAtLeast(0)))
 
     // Anchor offset: the current line lands ~3 line-heights below the top, so
     // exactly the previous three lines stay visible above it.
@@ -228,11 +252,11 @@ fun LyricsPane(
         chipVisible = false
     }
 
-    LaunchedEffect(lines, currentLineIndex, followPaused) {
+    LaunchedEffect(lines, followRow, followPaused) {
         if (lines.isNullOrEmpty() || followPaused) return@LaunchedEffect
         // Before the first synced line's timestamp (currentLineIndex == -1)
-        // anchor the FIRST line instead.
-        val target = if (currentLineIndex >= 0) currentLineIndex else 0
+        // anchor the FIRST line, or the intro dots, instead.
+        val target = followRow
         listState.animateScrollToItem(
             index = target + 1, // +1: head spacer item
             scrollOffset = -anchorOffsetPx
@@ -304,10 +328,28 @@ fun LyricsPane(
                 // Small head spacer so the first line never glues to the top
                 // edge; the anchor then shows the previous lines above current.
                 item { Spacer(Modifier.height(AuraSpacing.screenHorizontal)) }
-                items(loadedLines.size) { i ->
+                items(rows.size) { r ->
+                    val row = rows[r]
+                    if (row is LyricRow.Break) {
+                        val next = loadedLines.getOrNull(row.gap.afterLine + 1)
+                        val (alignment, _) = lyricVoiceStyle(next?.voice, multipleVoices, highlightColor)
+                        LyricBreakDots(
+                            visible = row.gap == activeBreak,
+                            progress = row.gap.progress(effectivePosition),
+                            alignment = when (alignment) {
+                                TextAlign.Start -> Alignment.Start
+                                TextAlign.End -> Alignment.End
+                                else -> Alignment.CenterHorizontally
+                            },
+                            modifier = if (multipleVoices) Modifier.padding(horizontal = AuraSpacing.screenHorizontal) else Modifier
+                        )
+                        return@items
+                    }
+                    val i = (row as LyricRow.Line).index
                     val line = loadedLines[i]
                     val (alignment, lineHighlight) = lyricVoiceStyle(line.voice, multipleVoices, highlightColor)
-                    val isCurrent = i == currentLineIndex
+                    // The line that just ended rests with the others through a break.
+                    val isCurrent = i == currentLineIndex && activeBreak == null
                     // Line-only timestamps do not carry karaoke word timing.
                     val timed = timedLines?.getOrNull(i)?.takeIf { isCurrent && it.words.isNotEmpty() }
                     val text = if (timed != null) {
@@ -471,6 +513,79 @@ private fun LyricsTrackCard(app: AuraApp, item: JellyfinItem, accent: Color) {
         }
     }
 }
+
+private sealed interface LyricRow {
+    data class Line(val index: Int) : LyricRow
+    data class Break(val gap: LyricBreak) : LyricRow
+}
+
+/** Lines in order, each break slotted in right after the line it follows. */
+private fun lyricRows(lineCount: Int, breaks: List<LyricBreak>): List<LyricRow> {
+    val after = breaks.associateBy { it.afterLine }
+    return buildList {
+        after[-1]?.let { add(LyricRow.Break(it)) }
+        for (i in 0 until lineCount) {
+            add(LyricRow.Line(i))
+            after[i]?.let { add(LyricRow.Break(it)) }
+        }
+    }
+}
+
+/**
+ * Three dots holding the current-line slot through an instrumental break.
+ * They light up one by one as the break runs out and breathe while they wait;
+ * the row collapses to nothing when no break is active.
+ */
+@Composable
+private fun LyricBreakDots(
+    visible: Boolean,
+    progress: Float,
+    alignment: Alignment.Horizontal,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier.fillMaxWidth(),
+        enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+        exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
+    ) {
+        // The position only ticks every 500 ms; easing across each tick keeps the fill continuous.
+        val fill by animateFloatAsState(progress, tween(POSITION_TICK_MS, easing = LinearEasing), label = "breakFill")
+        val breath by rememberInfiniteTransition(label = "breakBreath").animateFloat(
+            initialValue = 1f,
+            targetValue = AuraMotion.lyricBreakBreathScale,
+            animationSpec = infiniteRepeatable(
+                tween(AuraMotion.lyricBreakBreathMs, easing = FastOutSlowInEasing),
+                RepeatMode.Reverse
+            ),
+            label = "breakScale"
+        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(AuraSizes.lyricLinePitch),
+            horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm, alignment),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            repeat(BREAK_DOTS) { dot ->
+                val lit = (fill * BREAK_DOTS - dot).coerceIn(0f, 1f)
+                Box(
+                    Modifier
+                        .size(AuraSizes.lyricBreakDot)
+                        .graphicsLayer {
+                            scaleX = breath
+                            scaleY = breath
+                            alpha = AuraMotion.lyricBreakDimAlpha + (1f - AuraMotion.lyricBreakDimAlpha) * lit
+                        }
+                        .background(TextPrimary, CircleShape)
+                )
+            }
+        }
+    }
+}
+
+private const val BREAK_DOTS = 3
+private const val POSITION_TICK_MS = 500
 
 fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
     if (lines.isNullOrEmpty()) return -1

@@ -64,7 +64,7 @@ class LyricsStoreTest {
         assertTrue(lines.all { it.text == "Hello world" })
         assertTrue(LyricsStore.parseLrcText("[00:01]Plain  line").single().words.isEmpty())
         assertEquals("Plain  line", LyricsStore.parseLrcText("[00:01]Plain  line").single().text)
-        assertTrue(LyricsStore.parseLrcText("[00:01]<00:01> <00:02>").single().words.isEmpty())
+        assertTrue(LyricsStore.parseLrcText("[00:01]<00:01> <00:02>").isEmpty())
     }
 
     @Test

@@ -43,6 +43,8 @@ internal object TtmlLyrics {
         var skipDepth = -1
         var wordDepth = -1
         var lineStart: Long? = null
+        var lineEnd: Long? = null
+        var spanEnd: Long? = null
         var wordStart: Long? = null
         var lineAgent: String? = null
         val text = StringBuilder()
@@ -59,6 +61,9 @@ internal object TtmlLyrics {
                     if (parser.name == "p") {
                         lineDepth = parser.depth
                         lineStart = timeMs(parser.getAttributeValue(null, "begin"))
+                        lineEnd = timeMs(parser.getAttributeValue(null, "end"))
+                            ?: timeMs(parser.getAttributeValue(null, "dur"))?.let { dur -> lineStart?.plus(dur) }
+                        spanEnd = null
                         lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
                         text.clear()
                         words = mutableListOf()
@@ -70,6 +75,9 @@ internal object TtmlLyrics {
                         else if (parser.name == "span") {
                             if (lineAgent == null) {
                                 lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
+                            }
+                            timeMs(parser.getAttributeValue(null, "end"))?.let { end ->
+                                spanEnd = maxOf(spanEnd ?: end, end)
                             }
                             if (wordDepth < 0) {
                                 timeMs(parser.getAttributeValue(null, "begin"))?.let {
@@ -97,10 +105,14 @@ internal object TtmlLyrics {
                         val line = normalize(text.toString())
                         val start = lineStart ?: words.firstOrNull()?.startMs
                         val paragraphStart = lineStart
+                        var end = lineEnd ?: spanEnd
                         if (paragraphStart != null && words.isNotEmpty() && words.all { it.startMs < paragraphStart }) {
                             words = words.map { it.copy(startMs = it.startMs + paragraphStart) }.toMutableList()
+                            if (lineEnd == null) end = spanEnd?.plus(paragraphStart)
                         }
-                        if (line.isNotEmpty()) lines += LyricLine(start ?: 0L, line, start != null, words, voice(lineAgent))
+                        if (line.isNotEmpty()) {
+                            lines += LyricLine(start ?: 0L, line, start != null, words, voice(lineAgent), end)
+                        }
                         lineDepth = -1
                     }
                 }

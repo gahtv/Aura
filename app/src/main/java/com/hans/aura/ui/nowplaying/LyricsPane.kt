@@ -237,7 +237,7 @@ fun LyricsPane(
     // During a break the dots take the current line's anchor slot.
     val followRow = activeBreak?.let { rows.indexOf(LyricRow.Break(it)) }
         ?: rows.indexOf(LyricRow.Line(currentLineIndex.coerceAtLeast(0)))
-    val hasTimedAdlibs = remember(lines) { lines.orEmpty().any { it.adlib?.isTimed == true } }
+    val hasTimedAdlibs = remember(lines) { lines.orEmpty().any { it.adlib?.isTimed == true || it.translation?.isTimed == true } }
     val adlibPosition = remember(trackId) { mutableStateOf<Long?>(null) }
     LaunchedEffect(player, adlibPosition, hasTimedAdlibs, isPlaying) {
         adlibPosition.value = null
@@ -412,6 +412,10 @@ fun LyricsPane(
                         val adlib = line.adlib
                         if (adlib != null && adlib.text.isNotBlank()) {
                             AdlibText(adlib, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
+                        }
+                        val translation = line.translation
+                        if (translation != null && translation.text.isNotBlank()) {
+                            AdlibText(translation, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
                         }
                     }
                     // After the part's last line, so the current-line anchor stays on the text.

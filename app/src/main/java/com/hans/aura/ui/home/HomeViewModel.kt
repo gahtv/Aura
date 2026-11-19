@@ -11,6 +11,7 @@ import com.hans.aura.data.MusicSources
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,7 +23,7 @@ import com.hans.aura.data.SourceQueries
 private const val TAG = "AURA_HOME"
 
 /**
- * Home's shelves. `null` = not loaded yet, empty list = loaded empty (the shelf hides).
+ * Home's shelves. `null` = unavailable, empty list = loaded empty (the shelf hides).
  *
  * Every shelf is answered by the installed MusicSource, so a backend that has no
  * playlists simply reports none and that shelf never appears.
@@ -34,11 +35,12 @@ data class HomeUiState(
     val atmosAlbums: List<JellyfinItem>? = null,
     val artists: List<JellyfinItem>? = null,
     val playlists: List<JellyfinItem>? = null,
+    val loading: Boolean = false,
     val error: String? = null,
     /** Only a backend with play history has these shelves at all. */
     val historyShelves: Boolean = false
 ) {
-    /** Nothing at all loaded — the only state where a failure surface helps. */
+    /** No content to keep visible behind a full-page failure surface. */
     val allShelvesEmpty: Boolean
         get() = listOf(recentlyPlayed, recentArtists, recentAlbums, atmosAlbums, artists, playlists)
             .all { it.isNullOrEmpty() }
@@ -99,13 +101,16 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
             playlists = LibraryCache.get("home_playlists:$uid")
         )
         if (_state.value.fullyCached) return
+        _state.update { it.copy(loading = true) }
         loadJob = viewModelScope.launch {
-            runCatching {
+            try {
                 withContext(Dispatchers.IO) { fetchMissing(uid) }
-            }.onFailure { e ->
+            } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.w(TAG, "shelf load failed: ${e.message}")
                 _state.update { it.copy(error = e.message ?: "Couldn't load from server") }
+            } finally {
+                if (isActive) _state.update { it.copy(loading = false) }
             }
         }
     }

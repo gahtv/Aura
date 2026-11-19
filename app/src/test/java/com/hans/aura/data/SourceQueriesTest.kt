@@ -207,6 +207,7 @@ class SourceQueriesTest {
             assertNull(viewModel.state.value.atmosAlbums)
             assertNull(viewModel.state.value.artists)
             assertNull(viewModel.state.value.playlists)
+            assertEquals(false, viewModel.state.value.loading)
             status = 200
             val recovered = Fixtures.track("recovered").copy(
                 albumId = "recovered", artistItems = listOf(NameId(id = "recovered"))
@@ -222,17 +223,26 @@ class SourceQueriesTest {
             assertEquals(listOf("recovered"), viewModel.state.value.atmosAlbums!!.map { it.id })
             assertTrue(viewModel.state.value.fullyCached)
             assertNull(viewModel.state.value.error)
+            assertEquals(false, viewModel.state.value.loading)
             val recoveredRequests = requests.size
             viewModel.retry()
             assertEquals(recoveredRequests, requests.size)
 
             LibraryCache.clear()
             AtmosCatalog.clear()
-            respond = { url -> (if (url.queryParameter("IncludeItemTypes") == "MusicAlbum") 500 else 200) to
-                """{"Items":[],"TotalRecordCount":0}""" }
+            respond = { url ->
+                val albums = url.queryParameter("IncludeItemTypes") == "MusicAlbum"
+                (if (albums) 500 else 200) to
+                    if (url.encodedPath == "/Artists/AlbumArtists") {
+                        Json.encodeToString(ItemsResponse(items = listOf(Fixtures.artist("loaded"))))
+                    } else """{"Items":[],"TotalRecordCount":0}"""
+            }
             val partial = HomeViewModel(app)
             withTimeout(10_000) { partial.viewModelScope.coroutineContext[Job]!!.children.toList().joinAll() }
             assertNull(partial.state.value.recentAlbums)
+            assertEquals(false, partial.state.value.loading)
+            assertTrue(partial.state.value.error != null)
+            assertEquals(false, partial.state.value.allShelvesEmpty)
             assertEquals(5, LibraryCache.size)
             requests.clear()
             respond = null

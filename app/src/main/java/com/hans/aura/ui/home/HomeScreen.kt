@@ -78,7 +78,7 @@ fun HomeScreen(
             .focusRequester(contentFocus)
             .focusRestorer()
     ) {
-        if (state.error != null && state.allShelvesEmpty) {
+        if (!state.loading && state.error != null && state.allShelvesEmpty) {
             ErrorPane(
                 message = "Couldn't load from server",
                 detail = state.error,
@@ -88,12 +88,20 @@ fun HomeScreen(
         }
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            if (!state.loading && state.error != null) {
+                ErrorPane(
+                    message = "Some shelves couldn't load",
+                    onRetry = { viewModel.retry() },
+                    modifier = Modifier.height(200.dp)
+                )
+            }
             // History shelves only exist on a backend that records play history; on a
             // backend without it they are absent rather than empty.
             if (!state.recentlyPlayed.isNullOrEmpty()) {
                 MotionShelf(
                     title = "Recently played",
                     items = state.recentlyPlayed,
+                    showLoading = state.loading,
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
                     onFocused = { focusedCardId = it },
@@ -107,6 +115,7 @@ fun HomeScreen(
                 MotionShelf(
                     title = "Recently played artists",
                     items = state.recentArtists,
+                    showLoading = state.loading,
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
                     onFocused = { focusedCardId = it },
@@ -116,6 +125,7 @@ fun HomeScreen(
             MotionShelf(
                 title = "Recently added",
                 items = state.recentAlbums,
+                showLoading = state.loading,
                 serverUrl = serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { focusedCardId = it },
@@ -125,6 +135,7 @@ fun HomeScreen(
             MotionShelf(
                 title = "Your Atmos",
                 items = state.atmosAlbums,
+                showLoading = state.loading,
                 serverUrl = serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { focusedCardId = it },
@@ -135,6 +146,7 @@ fun HomeScreen(
             MotionShelf(
                 title = "Artists",
                 items = state.artists,
+                showLoading = state.loading,
                 serverUrl = serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { focusedCardId = it },
@@ -146,6 +158,7 @@ fun HomeScreen(
                 MotionShelf(
                     title = "Playlists",
                     items = state.playlists,
+                    showLoading = state.loading,
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
                     onFocused = { focusedCardId = it },
@@ -173,6 +186,7 @@ fun HomeScreen(
 private fun MotionShelf(
     title: String,
     items: List<JellyfinItem>?,
+    showLoading: Boolean,
     serverUrl: String,
     focusKeeper: com.hans.aura.ui.common.FocusKeeper,
     onFocused: (String) -> Unit,
@@ -184,6 +198,7 @@ private fun MotionShelf(
     com.hans.aura.ui.common.ItemShelf(
         title = title,
         items = items,
+        showLoading = showLoading,
         serverUrl = serverUrl,
         focusKeeper = focusKeeper,
         onFocused = onFocused,

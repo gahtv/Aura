@@ -126,41 +126,13 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
     private suspend fun fetchMissing(uid: String) {
         // Browse queries go through SourceQueries: the installed source decides
         // how (or whether) to answer, and hidden libraries still apply on Jellyfin.
-        val jellyfin = MusicSources.current?.id == "jellyfin"
-        var playedTracks = _state.value.recentlyPlayed
         if (_state.value.historyShelves && _state.value.recentlyPlayed == null) {
-            val items = shelf("recently played") {
-                // Jellyfin records plays per track; the index keeps album-level history, so
-                // the same shelf is built from albums there.
-                SourceQueries.items(LibraryFilter.ItemsQuery(
-                        includeItemTypes = MusicSources.current?.playHistoryItemType ?: "Audio",
-                        recursive = true,
-                        filters = if (jellyfin) "IsPlayed" else null,
-                        sortBy = "DatePlayed", sortOrder = "Descending",
-                        limit = if (jellyfin && _state.value.recentArtists == null) 100 else 20
-                    )
-                ).items
-            }
-            playedTracks = items
-            val recent = items.take(20)
-            LibraryCache.put("home_recent:$uid", recent)
-            _state.update { it.copy(recentlyPlayed = recent) }
+            val items = shelf("recently played") { SourceQueries.recentlyPlayed(limit = 20) }
+            LibraryCache.put("home_recent:$uid", items)
+            _state.update { it.copy(recentlyPlayed = items) }
         }
-        // A per-artist play history is a Jellyfin concept; an album-level backend has none,
-        // and asking anyway would list every artist it knows.
-        val artistHistory = _state.value.historyShelves &&
-            (MusicSources.current?.playHistoryItemType ?: "Audio") == "Audio"
-        if (artistHistory && _state.value.recentArtists == null) {
-            val items = shelf("recently played artists") {
-                if (jellyfin) {
-                    artistsFromPlayedTracks(playedTracks.orEmpty())
-                } else {
-                    SourceQueries.items(LibraryFilter.ItemsQuery(
-                        includeItemTypes = "MusicArtist", recursive = true,
-                        sortBy = "DatePlayed", sortOrder = "Descending", limit = 20
-                    )).items
-                }
-            }
+        if (_state.value.historyShelves && _state.value.recentArtists == null) {
+            val items = shelf("recently played artists") { SourceQueries.recentArtists(limit = 20) }
             LibraryCache.put("home_recent_artists:$uid", items)
             _state.update { it.copy(recentArtists = items) }
         }
@@ -214,19 +186,5 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
             LibraryCache.put("home_playlists:$uid", items)
             _state.update { it.copy(playlists = items) }
         }
-    }
-
-    private suspend fun artistsFromPlayedTracks(tracks: List<JellyfinItem>): List<JellyfinItem> {
-        val ids = tracks.asSequence().flatMap { track ->
-            track.artistItems.orEmpty().filter { it.id.isNotBlank() }
-                .ifEmpty { track.albumArtists.orEmpty().filter { it.id.isNotBlank() } }
-                .asSequence()
-        }.map { it.id }.distinct().take(20).toList()
-        if (ids.isEmpty()) return emptyList()
-
-        val artists = SourceQueries.items(
-            includeItemTypes = "MusicArtist", ids = ids.joinToString(","), limit = 20
-        ).items.associateBy { it.id }
-        return ids.mapNotNull { artists[it] }
     }
 }

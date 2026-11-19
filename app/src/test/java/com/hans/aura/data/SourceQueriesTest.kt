@@ -88,12 +88,15 @@ class SourceQueriesTest {
         loadHome()
 
         val request = requests.single {
-            it.queryParameter("IncludeItemTypes") == "Audio" && it.queryParameter("SortBy") == "DatePlayed"
+            it.queryParameter("IncludeItemTypes") == "Audio" && it.queryParameter("SortBy") == "DatePlayed" &&
+                it.queryParameter("Limit") == "20"
         }
         assertEquals("DatePlayed", request.queryParameter("SortBy"))
         assertEquals("Descending", request.queryParameter("SortOrder"))
-        assertTrue(request.queryParameter("Limit")!!.toInt() >= 20)
+        assertEquals("20", request.queryParameter("Limit"))
         assertEquals("IsPlayed", request.queryParameter("Filters"))
+        assertTrue(requests.filter { it.queryParameter("SortBy") == "DatePlayed" }
+            .all { it.queryParameter("Filters") == "IsPlayed" })
     }
 
     @Test
@@ -109,18 +112,20 @@ class SourceQueriesTest {
 
         assertEquals(listOf("b", "a", "c"), state.recentArtists!!.map { it.id })
         assertEquals("b,a,c", requests.single { it.queryParameter("Ids") != null }.queryParameter("Ids"))
-        assertEquals(1, requests.count { it.queryParameter("SortBy") == "DatePlayed" })
+        assertEquals(2, requests.count { it.queryParameter("SortBy") == "DatePlayed" })
     }
 
     @Test
-    fun `home recent artists reuse cached played tracks`() {
+    fun `home recent artists load independently of the cached track row`() {
         val tracks = listOf(historyTrack("cached", "b", "a"))
-        historyResponses(emptyList())
+        historyResponses(listOf(historyTrack("latest", "c", "b")))
 
         val state = loadHome(cachedRecent = tracks)
 
-        assertEquals(listOf("b", "a"), state.recentArtists!!.map { it.id })
-        assertTrue(requests.none { it.queryParameter("SortBy") == "DatePlayed" })
+        assertEquals(tracks, state.recentlyPlayed)
+        assertEquals(listOf("c", "b"), state.recentArtists!!.map { it.id })
+        assertEquals("100", requests.single { it.queryParameter("SortBy") == "DatePlayed" }
+            .queryParameter("Limit"))
     }
 
     @Test
@@ -132,8 +137,8 @@ class SourceQueriesTest {
 
         assertEquals(20, state.recentlyPlayed!!.size)
         assertEquals((0 until 20).map { "a$it" }, state.recentArtists!!.map { it.id })
-        assertTrue(requests.single { it.queryParameter("SortBy") == "DatePlayed" }
-            .queryParameter("Limit")!!.toInt() > 20)
+        assertTrue(requests.any { it.queryParameter("SortBy") == "DatePlayed" &&
+            it.queryParameter("Limit")!!.toInt() > 20 })
     }
 
     @Test
@@ -142,6 +147,8 @@ class SourceQueriesTest {
         val source = MusicSources.current!!
         MusicSources.install(object : MusicSource by source {
             override val id = "other"
+            override suspend fun recentlyPlayed(limit: Int) = super<MusicSource>.recentlyPlayed(limit)
+            override suspend fun recentArtists(limit: Int) = super<MusicSource>.recentArtists(limit)
             override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
                 queries.add(query)
                 return ItemsResponse(items = when (query.includeItemTypes) {
@@ -169,7 +176,7 @@ class SourceQueriesTest {
 
         assertEquals(listOf("played"), state.recentlyPlayed!!.map { it.id })
         assertEquals(emptyList<JellyfinItem>(), state.recentArtists)
-        assertTrue(state.error != null)
+        assertNull(state.error)
     }
 
     private fun historyTrack(id: String, vararg artists: String) =
@@ -184,7 +191,7 @@ class SourceQueriesTest {
                     url.queryParameter("SortBy") == "DatePlayed" -> tracks
                 url.queryParameter("IncludeItemTypes") == "MusicArtist" -> listOf(JellyfinItem(id = "unplayed"))
                 else -> emptyList()
-            }
+            }.take(url.queryParameter("Limit")?.toInt() ?: 100)
             (if (ids != null) hydrationStatus else 200) to
                 Json.encodeToString(ItemsResponse(items = items, totalRecordCount = items.size))
         }
@@ -204,13 +211,101 @@ class SourceQueriesTest {
 
     @Test
     fun `home history request failures leave both history shelves empty`() {
-        status = 500
+        respond = { url -> (if (url.queryParameter("SortBy") == "DatePlayed") 500 else 200) to body }
 
         val state = loadHome()
 
         assertEquals(emptyList<JellyfinItem>(), state.recentlyPlayed)
         assertEquals(emptyList<JellyfinItem>(), state.recentArtists)
-        assertTrue(state.error != null)
+        assertNull(state.error)
+    }
+
+    @Test
+    fun `history seam returns empty without an installed source`() = runTest {
+        MusicSources.reset()
+
+        assertTrue(SourceQueries.recentlyPlayed().isEmpty())
+        assertTrue(SourceQueries.recentArtists().isEmpty())
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test
+    fun `history seam contains failures from a source`() = runTest {
+        val source = MusicSources.current!!
+        MusicSources.install(object : MusicSource by source {
+            override suspend fun recentlyPlayed(limit: Int): List<JellyfinItem> = error("unavailable")
+            override suspend fun recentArtists(limit: Int): List<JellyfinItem> = error("unavailable")
+        })
+
+        assertTrue(SourceQueries.recentlyPlayed().isEmpty())
+        assertTrue(SourceQueries.recentArtists().isEmpty())
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test
+    fun `generic album history keeps its item type and has no artist history`() = runTest {
+        val queries = mutableListOf<LibraryFilter.ItemsQuery>()
+        val source = object : MusicSource by MusicSources.current!! {
+            override val playHistoryItemType = "MusicAlbum"
+            override suspend fun recentlyPlayed(limit: Int) = super<MusicSource>.recentlyPlayed(limit)
+            override suspend fun recentArtists(limit: Int) = super<MusicSource>.recentArtists(limit)
+            override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
+                queries.add(query)
+                return ItemsResponse(items = listOf(JellyfinItem(id = "album")))
+            }
+        }
+        MusicSources.install(source)
+
+        assertEquals(listOf("album"), SourceQueries.recentlyPlayed(limit = 5).map { it.id })
+        assertTrue(SourceQueries.recentArtists(limit = 5).isEmpty())
+        assertEquals("MusicAlbum", queries.single().includeItemTypes)
+        assertEquals("DatePlayed", queries.single().sortBy)
+        assertEquals("Descending", queries.single().sortOrder)
+        assertEquals(5, queries.single().limit)
+        assertNull(queries.single().filters)
+    }
+
+    @Test
+    fun `generic history contains browse failures and skips unsupported history`() = runTest {
+        val source = object : MusicSource by MusicSources.current!! {
+            override suspend fun recentlyPlayed(limit: Int) = super<MusicSource>.recentlyPlayed(limit)
+            override suspend fun recentArtists(limit: Int) = super<MusicSource>.recentArtists(limit)
+            override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse =
+                error("unavailable")
+        }
+        assertTrue(source.recentlyPlayed().isEmpty())
+        assertTrue(source.recentArtists().isEmpty())
+
+        var queried = false
+        val unsupported = object : MusicSource by source {
+            override val hasPlayHistory = false
+            override suspend fun recentlyPlayed(limit: Int) = super<MusicSource>.recentlyPlayed(limit)
+            override suspend fun recentArtists(limit: Int) = super<MusicSource>.recentArtists(limit)
+            override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
+                queried = true
+                return ItemsResponse()
+            }
+        }
+        assertTrue(unsupported.recentlyPlayed().isEmpty())
+        assertTrue(unsupported.recentArtists().isEmpty())
+        assertTrue(!queried)
+    }
+
+    @Test
+    fun `Jellyfin history respects caller limits and skips invalid limits or missing sessions`() = runTest {
+        historyResponses((0 until 10).map { historyTrack("t$it", "a$it") })
+
+        assertEquals(3, SourceQueries.recentlyPlayed(limit = 3).size)
+        assertEquals(listOf("a0", "a1", "a2"), SourceQueries.recentArtists(limit = 3).map { it.id })
+        assertEquals("3", requests.single { it.queryParameter("Ids") != null }.queryParameter("Limit"))
+        requests.clear()
+
+        assertTrue(SourceQueries.recentlyPlayed(limit = 0).isEmpty())
+        assertTrue(SourceQueries.recentArtists(limit = -1).isEmpty())
+        client.auth.clear()
+        assertTrue(SourceQueries.recentlyPlayed().isEmpty())
+        assertTrue(SourceQueries.recentArtists().isEmpty())
+        assertTrue(requests.isEmpty())
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

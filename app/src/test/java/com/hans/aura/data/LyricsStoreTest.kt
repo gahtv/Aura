@@ -10,6 +10,22 @@ import org.junit.Test
 /** LRC parsing: synced stamps, multi-stamp lines, and the plain-text fallback. */
 class LyricsStoreTest {
     @Test
+    fun `cue-only and inline-only DTO lines without line stamps stay separate`() = runBlocking {
+        for (response in listOf(
+            LyricsResponse(lyrics = listOf(
+                LyricLineDto("First", cues = listOf(LyricCueDto(0, 5, 10000000))),
+                LyricLineDto("Second", cues = listOf(LyricCueDto(0, 6, 20000000)))
+            )),
+            LyricsResponse(lyrics = listOf(LyricLineDto("<00:01>First"), LyricLineDto("<00:02>Second")))
+        )) {
+            val lines = LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track")
+            assertEquals(listOf("First", "Second"), lines.map { it.text })
+            assertEquals(listOf(1000L, 2000L), lines.map { it.words.single().startMs })
+            assertTrue(lines.all { it.isSynced && it.translation == null })
+        }
+    }
+
+    @Test
     fun `raw and structured LRC pair only first adjacent same stamp follower`() = runBlocking {
         val entries = listOf(
             12000L to "v1: Across the sky",

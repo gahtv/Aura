@@ -82,13 +82,16 @@ object LyricsStore {
         }.ifEmpty { listOf(AdlibSegment(line.text)) }
     }
 
-    private fun pairSameStampTranslations(lines: List<LyricLine>): List<LyricLine> {
+    private data class LrcEntry(val line: LyricLine, val hasLineStamp: Boolean)
+
+    private fun pairSameStampTranslations(entries: List<LrcEntry>): List<LyricLine> {
         val paired = mutableListOf<LyricLine>()
-        var previous: LyricLine? = null
+        var previous: LrcEntry? = null
         var runLength = 0
-        for (line in lines) {
-            val lead = previous
-            runLength = if (line.isSynced && lead?.isSynced == true && line.startMs == lead.startMs) runLength + 1 else 1
+        for (entry in entries) {
+            val line = entry.line
+            val lead = previous?.line
+            runLength = if (entry.hasLineStamp && previous?.hasLineStamp == true && line.startMs == lead?.startMs) runLength + 1 else 1
             if (runLength == 2 && lead != null && lead.text.isNotBlank() && line.text.isNotBlank() &&
                 (line.voice == null || line.voice == lead.voice)
             ) {
@@ -96,7 +99,7 @@ object LyricsStore {
             } else {
                 paired += line
             }
-            previous = line
+            previous = entry
         }
         return paired
     }
@@ -114,8 +117,8 @@ object LyricsStore {
             )
         }.filterNot { isHeader(it.text) }.sortedBy { it.startMs }
 
-    private fun finishLrc(lines: List<LyricLine>, offsetMs: Long): List<LyricLine> =
-        applyLrcOffsetAndSort(pairSameStampTranslations(lines), offsetMs)
+    private fun finishLrc(entries: List<LrcEntry>, offsetMs: Long): List<LyricLine> =
+        applyLrcOffsetAndSort(pairSameStampTranslations(entries), offsetMs)
 
     suspend fun fetch(api: JellyfinApi, itemId: String): List<LyricLine> {
         val response = try {
@@ -167,7 +170,7 @@ object LyricsStore {
                     words = words,
                     voice = voice,
                     credits = credits
-                )
+                ).let { line -> LrcEntry(line, lineStartMs != null && !isHeader(content)) }
             }
             return finishLrc(parsed, offsetMs)
         }
@@ -226,7 +229,7 @@ object LyricsStore {
 
         val credits = headerCredits(headers.asSequence())
         val hasSynced = parsed.any { it.isSynced }
-        return finishLrc(parsed, offsetMs).filter {
+        return finishLrc(parsed.map { LrcEntry(it, it.isSynced) }, offsetMs).filter {
             if (hasSynced) it.isSynced else it.text.isNotEmpty()
         }.map { it.copy(credits = credits) }
     }

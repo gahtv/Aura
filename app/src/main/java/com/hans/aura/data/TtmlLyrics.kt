@@ -45,6 +45,7 @@ internal object TtmlLyrics {
         var lineStart: Long? = null
         var wordStart: Long? = null
         var lineAgent: String? = null
+        var part = 0
         val text = StringBuilder()
         val wordText = StringBuilder()
         var words = mutableListOf<TimedWord>()
@@ -56,6 +57,7 @@ internal object TtmlLyrics {
                             agentTypes[it] = parser.getAttributeValue(null, "type").orEmpty()
                         }
                     }
+                    if (parser.name == "div") part++
                     if (parser.name == "p") {
                         lineDepth = parser.depth
                         lineStart = timeMs(parser.getAttributeValue(null, "begin"))
@@ -100,7 +102,7 @@ internal object TtmlLyrics {
                         if (paragraphStart != null && words.isNotEmpty() && words.all { it.startMs < paragraphStart }) {
                             words = words.map { it.copy(startMs = it.startMs + paragraphStart) }.toMutableList()
                         }
-                        if (line.isNotEmpty()) lines += LyricLine(start ?: 0L, line, start != null, words, voice(lineAgent))
+                        if (line.isNotEmpty()) lines += LyricLine(start ?: 0L, line, start != null, words, voice(lineAgent), part)
                         lineDepth = -1
                     }
                 }

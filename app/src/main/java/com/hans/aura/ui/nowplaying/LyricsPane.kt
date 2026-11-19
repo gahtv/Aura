@@ -162,7 +162,7 @@ fun LyricsPane(
         webFound = sourceWeb == true
         if (!timed.isNullOrEmpty()) {
             timedLines = timed
-            lines = timed.map { LyricLine(startMs = it.startMs, text = it.text, isSynced = true, words = it.words, voice = it.voice) }
+            lines = timed.map { LyricLine(startMs = it.startMs, text = it.text, isSynced = true, words = it.words, voice = it.voice, part = it.part) }
             android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")
             return@LaunchedEffect
         }
@@ -170,7 +170,7 @@ fun LyricsPane(
         if (local.isNotEmpty()) {
             lines = local
             if (local.any { it.words.isNotEmpty() }) {
-                timedLines = local.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice) }
+                timedLines = local.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice, part = it.part) }
             }
             return@LaunchedEffect
         }
@@ -184,7 +184,7 @@ fun LyricsPane(
         webFound = remote.isNotEmpty()
         lines = remote
         if (remote.any { it.words.isNotEmpty() }) {
-            timedLines = remote.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice) }
+            timedLines = remote.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice, part = it.part) }
         }
     }
 
@@ -338,6 +338,8 @@ fun LyricsPane(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
+                    // After the part's last line, so the current-line anchor stays on the text.
+                    if (endsSongPart(loadedLines, i)) Spacer(Modifier.height(AuraSpacing.lyricPartGap))
                 }
                 // Enough trailing scroll range that the FINAL line can reach the
                 // top anchor (the bottom-left chip may overlap it — accepted).
@@ -471,6 +473,9 @@ private fun LyricsTrackCard(app: AuraApp, item: JellyfinItem, accent: Color) {
         }
     }
 }
+
+internal fun endsSongPart(lines: List<LyricLine>, index: Int): Boolean =
+    index < lines.lastIndex && lines[index].part != lines[index + 1].part
 
 fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
     if (lines.isNullOrEmpty()) return -1

@@ -33,6 +33,21 @@ class TtmlLyricsTest {
         assertEquals(listOf("Hello", "world"), lines[1].words.map { it.text })
     }
 
+    @Test
+    fun `each div is its own song part`() {
+        val lines = LyricsStore.parseLyricsText("""<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"><body>
+            <div begin="1s" itunes:song-part="Verse"><p begin="1s">Verse one</p><p begin="2s">Verse two</p></div>
+            <div begin="3s" itunes:song-part="Chorus"><p begin="3s">Chorus one</p></div>
+            <div begin="4s" itunes:song-part="Verse"><p begin="4s">Verse three</p></div></body></tt>""")
+        assertEquals(listOf("Verse one", "Verse two", "Chorus one", "Verse three"), lines.map { it.text })
+        assertEquals(listOf(1, 1, 2, 3), lines.map { it.part })
+    }
+
+    @Test
+    fun `lines in a single div share one part`() {
+        assertEquals(setOf(1), parse("""<p begin="1s">One</p><p begin="2s">Two</p>""").map { it.part }.toSet())
+    }
+
     private fun parse(body: String) = LyricsStore.parseLyricsText(
         """<?xml version="1.0"?><tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>$body</div></body></tt>""")
 

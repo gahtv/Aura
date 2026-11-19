@@ -334,11 +334,13 @@ fun PlaylistPickerDialog(
                                         fontWeight = if (rowFocused) FontWeight.SemiBold
                                         else FontWeight.Normal
                                     )
-                                    Spacer(Modifier.width(12.dp))
-                                    androidx.tv.material3.Text(
-                                        countLabel(pl.childCount ?: 0, "track"),
-                                        color = TextSecondary, fontSize = 12.sp
-                                    )
+                                    playlistCountLabel(pl.childCount)?.let { label ->
+                                        Spacer(Modifier.width(12.dp))
+                                        androidx.tv.material3.Text(
+                                            label,
+                                            color = TextSecondary, fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -353,3 +355,6 @@ fun PlaylistPickerDialog(
         }
     }
 }
+
+internal fun playlistCountLabel(childCount: Int?): String? =
+    childCount?.let { countLabel(it, "track") }

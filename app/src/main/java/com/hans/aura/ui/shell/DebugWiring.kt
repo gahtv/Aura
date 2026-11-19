@@ -66,7 +66,7 @@ internal fun DebugWiring(
                 kotlinx.coroutines.delay(1000)
                 runCatching {
                     val session = app.jellyfin.auth.session ?: return@collect
-                    val item = app.jellyfin.api.getItem(session.userId, itemId)
+                    val item = app.jellyfin.api.getItem(itemId = itemId, userId = session.userId)
                     val spec = if (item.type == "Audio") {
                         ContextMenus.forTrack(
                             app, player, this, item,

@@ -453,13 +453,28 @@ class SourceQueriesTest {
         )
 
         val request = requests.remove()
-        assertEquals("/Users/u/Items", request.encodedPath)
+        assertEquals("/Items", request.encodedPath)
+        assertEquals("u", request.queryParameter("userId"))
         assertEquals("M", request.queryParameter("nameStartsWithOrGreater"))
         assertEquals("SortName", request.queryParameter("Fields"))
         assertEquals("2", request.queryParameter("ImageTypeLimit"))
         assertEquals("false", request.queryParameter("EnableUserData"))
         assertEquals("25", request.queryParameter("Limit"))
         assertEquals("50", request.queryParameter("StartIndex"))
+    }
+
+    @Test
+    fun `item details use the item path and preserve user data`() = runTest {
+        body = """{"Id":"track","UserData":{"IsFavorite":true,"PlaybackPositionTicks":100}}"""
+
+        val item = SourceQueries.item("track")
+
+        val request = requests.remove()
+        assertEquals("/Items/track", request.encodedPath)
+        assertEquals("u", request.queryParameter("userId"))
+        assertEquals("track", item?.id)
+        assertEquals(true, item?.userData?.isFavorite)
+        assertEquals(100L, item?.userData?.playbackPositionTicks)
     }
 
     @Test

@@ -30,9 +30,9 @@ interface JellyfinApi {
 
     // ---- Browse ----
 
-    @GET("Users/{userId}/Items")
+    @GET("Items")
     suspend fun getItems(
-        @retrofit2.http.Path("userId") userId: String,
+        @Query("userId") userId: String,
         @Query("IncludeItemTypes") includeItemTypes: String? = null,
         @Query("ExcludeItemTypes") excludeItemTypes: String? = null,
         @Query("Genres") genres: String? = null,
@@ -81,10 +81,10 @@ interface JellyfinApi {
         @Query("imageTypeLimit") imageTypeLimit: Int = 1
     ): ItemsResponse
 
-    @GET("Users/{userId}/Items/{itemId}")
+    @GET("Items/{itemId}")
     suspend fun getItem(
-        @retrofit2.http.Path("userId") userId: String,
-        @retrofit2.http.Path("itemId") itemId: String
+        @retrofit2.http.Path("itemId") itemId: String,
+        @Query("userId") userId: String
     ): JellyfinItem
 
     /** The user's libraries (Settings > Libraries shown in Aura, and the list the

@@ -101,7 +101,7 @@ class FakeJellyfinApi(
         imageTypeLimit: Int
     ): ItemsResponse = nope("getInstantMix")
 
-    override suspend fun getItem(userId: String, itemId: String): JellyfinItem = nope("getItem")
+    override suspend fun getItem(itemId: String, userId: String): JellyfinItem = nope("getItem")
 
     override suspend fun instantMix(
         itemId: String,

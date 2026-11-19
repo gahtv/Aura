@@ -504,16 +504,25 @@ class SourceQueriesTest {
     @Test
     fun `artists fans out only to visible music libraries and merges page`() = runTest {
         Prefs.hiddenLibraries = setOf("lib-music")
-        body = """{"Items":[{"Id":"a","Name":"A"},{"Id":"b","Name":"B"}],"TotalRecordCount":2}"""
+        respond = { url ->
+            val items = listOf(Fixtures.artist("b"), Fixtures.artist("a"))
+            val start = url.queryParameter("StartIndex")!!.toInt()
+            val limit = url.queryParameter("Limit")!!.toInt()
+            200 to Json.encodeToString(ItemsResponse(items = items.drop(start).take(limit),
+                totalRecordCount = items.size, startIndex = start))
+        }
 
         val result = SourceQueries.artists(sortOrder = "Descending", limit = 1, startIndex = 1)
 
         assertEquals(listOf("a"), result.items.map { it.id })
-        assertEquals(2, requests.size)
+        assertEquals(4, requests.size)
         val seen = requests.toList()
         assertEquals(setOf("lib-atmos", "lib-mixed"), seen.map { it.queryParameter("ParentId") }.toSet())
         assertTrue(seen.all { it.encodedPath == "/Artists/AlbumArtists" })
-        assertTrue(seen.all { it.queryParameter("Limit") == "2" && it.queryParameter("StartIndex") == "0" })
+        assertTrue(seen.all { it.queryParameter("Limit") == "1" })
+        seen.groupBy { it.queryParameter("ParentId") }.values.forEach { pages ->
+            assertEquals(listOf("0", "1"), pages.map { it.queryParameter("StartIndex") })
+        }
     }
 
     @Test

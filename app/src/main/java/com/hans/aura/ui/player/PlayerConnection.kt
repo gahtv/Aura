@@ -81,6 +81,7 @@ class PlayerConnection(
     private val _queue = MutableStateFlow<List<JellyfinItem>>(emptyList())
     private val _queueIndex = MutableStateFlow(0)
     private val _upcoming = MutableStateFlow<List<IndexedValue<JellyfinItem>>>(emptyList())
+    private val _playOrder = MutableStateFlow<List<IndexedValue<JellyfinItem>>>(emptyList())
     private val _shuffleEnabled = MutableStateFlow(false)
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
     private val _smartShuffle = MutableStateFlow(false)
@@ -95,6 +96,7 @@ class PlayerConnection(
     val queue: StateFlow<List<JellyfinItem>> = _queue
     val queueIndex: StateFlow<Int> = _queueIndex
     val upcoming: StateFlow<List<IndexedValue<JellyfinItem>>> = _upcoming
+    val playOrder: StateFlow<List<IndexedValue<JellyfinItem>>> = _playOrder
     val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled
     val repeatMode: StateFlow<Int> = _repeatMode
 
@@ -208,6 +210,14 @@ class PlayerConnection(
         _upcoming.value = upcomingIndices(timeline.windowCount, c.currentMediaItemIndex) { index ->
             timeline.getNextWindowIndex(index, repeat, c.shuffleModeEnabled)
         }.mapNotNull { index ->
+            registry.get(c.getMediaItemAt(index).mediaId)?.let { IndexedValue(index, it) }
+        }
+        _playOrder.value = queueIndices(
+            timeline.windowCount,
+            c.currentMediaItemIndex,
+            previous = { timeline.getPreviousWindowIndex(it, Player.REPEAT_MODE_OFF, c.shuffleModeEnabled) },
+            next = { timeline.getNextWindowIndex(it, repeat, c.shuffleModeEnabled) }
+        ).mapNotNull { index ->
             registry.get(c.getMediaItemAt(index).mediaId)?.let { IndexedValue(index, it) }
         }
     }

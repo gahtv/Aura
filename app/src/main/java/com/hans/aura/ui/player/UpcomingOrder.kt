@@ -11,3 +11,15 @@ internal fun upcomingIndices(count: Int, current: Int, next: (Int) -> Int): List
     }
     return result
 }
+
+internal fun queueIndices(
+    count: Int,
+    current: Int,
+    previous: (Int) -> Int,
+    next: (Int) -> Int
+): List<Int> {
+    if (current !in 0 until count) return emptyList()
+    val history = upcomingIndices(count, current, previous).asReversed()
+    val upcoming = upcomingIndices(count, current, next)
+    return (history + current + upcoming).distinct()
+}

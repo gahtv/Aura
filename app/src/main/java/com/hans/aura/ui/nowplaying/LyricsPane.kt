@@ -1,5 +1,6 @@
 package com.hans.aura.ui.nowplaying
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -38,15 +39,20 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -55,20 +61,21 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.ResolvedTextDirection
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.KaraokeSpan
+import com.hans.aura.data.KaraokeFill
 import com.hans.aura.data.Lrclib
 import com.hans.aura.data.LyricBreak
 import com.hans.aura.data.LyricAdlib
@@ -80,7 +87,7 @@ import com.hans.aura.data.LyricsStore
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
 import com.hans.aura.data.TimedLyricLine
-import com.hans.aura.data.karaokeSpans
+import com.hans.aura.data.karaokeFills
 import com.hans.aura.data.lyricBreaks
 import com.hans.aura.data.toLyricLine
 import com.hans.aura.data.toTimedLyricLine
@@ -149,6 +156,7 @@ fun LyricsPane(
     val item by player.current.collectAsState()
     val position = player.positionMs.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
+    val positionAnchor = remember(position.value, isPlaying) { SystemClock.uptimeMillis() }
     val trackId = item?.id.orEmpty()
 
     var lines by remember(item?.id) { mutableStateOf<List<LyricLine>?>(null) }
@@ -374,11 +382,6 @@ fun LyricsPane(
                     val isCurrent = i == currentLineIndex && activeBreak == null
                     // Line-only timestamps do not carry karaoke word timing.
                     val timed = timedLines?.getOrNull(i)?.takeIf { isCurrent && it.words.isNotEmpty() }
-                    val text = if (timed != null) {
-                        karaokeText(karaokeSpans(timed, effectivePosition), lineHighlight)
-                    } else {
-                        AnnotatedString(line.text.ifBlank { "\u00A0" })
-                    }
                     Column(
                         Modifier
                             .fillMaxWidth()
@@ -393,17 +396,22 @@ fun LyricsPane(
                             .padding(vertical = AuraSpacing.lyricLineVertical)
                             .then(if (multipleVoices) Modifier.padding(horizontal = AuraSpacing.screenHorizontal) else Modifier)
                     ) {
-                        androidx.tv.material3.Text(
-                            text,
-                            color = TextPrimary,
-                            fontSize = if (isCurrent) AuraTypography.headline else AuraTypography.title,
-                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
-                            textAlign = alignment,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        if (timed != null) {
+                            KaraokeLine(timed, effectivePosition, loadedLines.getOrNull(i + 1)?.startMs,
+                                isPlaying, positionAnchor, lineHighlight, alignment)
+                        } else {
+                            androidx.tv.material3.Text(
+                                AnnotatedString(line.text.ifBlank { "\u00A0" }),
+                                color = TextPrimary,
+                                fontSize = if (isCurrent) AuraTypography.headline else AuraTypography.title,
+                                fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                                textAlign = alignment,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                         val adlib = line.adlib
                         if (adlib != null && adlib.text.isNotBlank()) {
-                            AdlibText(adlib, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight)
+                            AdlibText(adlib, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
                         }
                     }
                     // After the part's last line, so the current-line anchor stays on the text.
@@ -663,6 +671,58 @@ fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
 }
 
 @Composable
+private fun KaraokeLine(
+    line: TimedLyricLine,
+    positionMs: Long,
+    nextLineStartMs: Long?,
+    playing: Boolean,
+    anchorMs: Long,
+    accent: Color,
+    alignment: TextAlign,
+    fontSize: TextUnit = AuraTypography.headline,
+    fontWeight: FontWeight? = FontWeight.SemiBold,
+    modifier: Modifier = Modifier,
+    fills: (Long) -> List<KaraokeFill> = { karaokeFills(line, it, nextLineStartMs) }
+) {
+    val elapsed = remember(line, positionMs, playing) { mutableLongStateOf(0L) }
+    var layout by remember(line) { mutableStateOf<TextLayoutResult?>(null) }
+    LaunchedEffect(line, positionMs, playing, anchorMs) {
+        elapsed.longValue = 0L
+        if (playing) while (true) {
+            withFrameMillis { elapsed.longValue = (SystemClock.uptimeMillis() - anchorMs).coerceIn(0L, 750L) }
+        }
+    }
+    androidx.tv.material3.Text(
+        line.text,
+        color = TextSecondary,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        textAlign = alignment,
+        onTextLayout = { layout = it },
+        modifier = modifier.fillMaxWidth().drawWithContent {
+            drawContent()
+            val result = layout ?: return@drawWithContent
+            val path = Path()
+            fills(positionMs + elapsed.longValue).forEach { fill ->
+                val glyphs = (fill.start until fill.end).map { offset ->
+                    result.getBoundingBox(offset) to result.getBidiRunDirection(offset)
+                }.distinct()
+                var remaining = glyphs.sumOf { it.first.width.toDouble() }.toFloat() * fill.fraction
+                glyphs.forEach { (box, direction) ->
+                    val width = remaining.coerceIn(0f, box.width.coerceAtLeast(0f))
+                    if (width > 0f) {
+                        path.addRect(if (direction == ResolvedTextDirection.Rtl) box.copy(left = box.right - width)
+                            else box.copy(right = box.left + width))
+                    }
+                    remaining -= box.width
+                }
+            }
+            clipPath(path) { drawText(result, color = accent) }
+        }
+    )
+}
+
+@Composable
 private fun AdlibText(
     adlib: LyricAdlib,
     adlibPosition: State<Long?>,
@@ -670,28 +730,23 @@ private fun AdlibText(
     offsetMs: Long,
     leadIsCurrent: Boolean,
     alignment: TextAlign,
-    accent: Color
+    accent: Color,
+    playing: Boolean
 ) {
-    val text = if (adlib.isTimed) {
+    val modifier = Modifier.fillMaxWidth().padding(top = AuraSpacing.xxs)
+    if (adlib.isTimed) {
         val positionMs = ((adlibPosition.value ?: playbackPosition.value) + offsetMs).coerceAtLeast(0L)
-        karaokeText(adlib.karaokeSpans(positionMs, leadIsCurrent), accent)
+        val anchorMs = remember(positionMs, playing) { SystemClock.uptimeMillis() }
+        KaraokeLine(TimedLyricLine(0L, adlib.text), positionMs, null, playing, anchorMs, accent, alignment,
+            fontSize = AuraTypography.body, fontWeight = null, modifier = modifier,
+            fills = { adlib.karaokeFills(it, leadIsCurrent) })
     } else {
-        AnnotatedString(adlib.text)
+        androidx.tv.material3.Text(
+            adlib.text,
+            color = TextSecondary,
+            fontSize = AuraTypography.body,
+            textAlign = alignment,
+            modifier = modifier
+        )
     }
-    androidx.tv.material3.Text(
-        text,
-        color = TextSecondary,
-        fontSize = AuraTypography.body,
-        textAlign = alignment,
-        modifier = Modifier.fillMaxWidth().padding(top = AuraSpacing.xxs)
-    )
 }
-
-private fun karaokeText(spans: List<KaraokeSpan>, accent: Color): AnnotatedString =
-    buildAnnotatedString {
-        spans.forEach { span ->
-            withStyle(SpanStyle(color = if (span.sung) accent else TextSecondary)) {
-                append(span.text)
-            }
-        }
-    }

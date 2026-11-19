@@ -447,8 +447,8 @@ class SourceQueriesTest {
         val lines = MusicSources.current!!.lyricsTimed("song")!!
         assertEquals(listOf(12340L, 15000L), lines.map { it.startMs })
         assertTrue(lines.all { it.words.isEmpty() })
-        assertEquals(listOf(KaraokeSpan("First", false)), karaokeSpans(lines[0], 12339))
-        assertEquals(listOf(KaraokeSpan("First", true)), karaokeSpans(lines[0], 12340))
+        assertEquals(listOf(KaraokeFill(0, 5, 0f)), karaokeFills(lines[0], 12339))
+        assertEquals(listOf(KaraokeFill(0, 5, 1f)), karaokeFills(lines[0], 12340))
         LyricsStore.fetchPreferred(client.api, "song")
         assertEquals(1, requests.size)
         assertEquals("/Audio/song/lyrics", requests.single().encodedPath)
@@ -476,13 +476,14 @@ class SourceQueriesTest {
 
     @Test
     fun `jellyfin repeats raw inline word tags unchanged across line stamps`() = runTest {
-        body = """{"Metadata":{},"Lyrics":[{"Text":"v1: <00:06.00>One <00:07.00>two","Start":60000000,"Cues":[]},{"Text":"v1: <00:06.00>One <00:07.00>two","Start":100000000,"Cues":[]}]}"""
+        body = """{"Metadata":{},"Lyrics":[{"Text":"v1: <00:06.00>One <00:07.00>two<00:08.50>","Start":60000000,"Cues":[]},{"Text":"v1: <00:06.00>One <00:07.00>two<00:08.50>","Start":100000000,"Cues":[]}]}"""
         val lines = MusicSources.current!!.lyricsTimed("multi")!!
         assertEquals(listOf(6000L, 10000L), lines.map { it.startMs })
-        assertEquals(listOf(TimedWord(6000, "One"), TimedWord(7000, "two")), lines[0].words)
-        assertEquals(listOf(TimedWord(10000, "One"), TimedWord(11000, "two")), lines[1].words)
+        assertEquals(listOf(TimedWord(6000, "One"), TimedWord(7000, "two", 8500)), lines[0].words)
+        assertEquals(listOf(TimedWord(10000, "One"), TimedWord(11000, "two", 12500)), lines[1].words)
         assertTrue(lines.all { it.text == "One two" && it.voice == LyricVoice("v1", LyricVoice.Kind.PRIMARY) })
-        assertEquals(listOf(KaraokeSpan("One", true), KaraokeSpan(" two", false)), karaokeSpans(lines[1], 10500))
+        assertEquals(listOf(KaraokeFill(0, 3, 0.5f), KaraokeFill(4, 7, 0f)), karaokeFills(lines[1], 10500))
+        assertEquals(0.5f, karaokeFills(lines[1], 11750).last().fraction)
     }
 
     @Test
@@ -490,9 +491,11 @@ class SourceQueriesTest {
         body = """{"Lyrics":[{"Text":"Hello world","Start":120000000,"Cues":[{"Position":0,"EndPosition":5,"Start":120000000,"End":125000000},{"Position":6,"EndPosition":11,"Start":125000000,"End":130000000},{"Position":-1,"EndPosition":999,"Start":0}]}]}"""
         val line = MusicSources.current!!.lyricsTimed("cues")!!.single()
         assertEquals("Hello world", line.text)
-        assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
+        assertEquals(listOf(TimedWord(12000, "Hello", 12500), TimedWord(12500, "world", 13000)), line.words)
+        assertEquals(listOf(KaraokeFill(0, 5, 0.5f), KaraokeFill(6, 11, 0f)), karaokeFills(line, 12250))
         body = """{"Lyrics":[{"Text":"<00:12>Hello <00:12.50>world<00:13>","Start":120000000}]}"""
-        assertEquals(line, MusicSources.current!!.lyricsTimed("inline")!!.single())
+        assertEquals(line.copy(words = listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world", 13000))),
+            MusicSources.current!!.lyricsTimed("inline")!!.single())
     }
 
     @Test
@@ -500,9 +503,9 @@ class SourceQueriesTest {
         body = """{"LyricText":"<tt xmlns='http://www.w3.org/ns/ttml' xmlns:ttm='http://www.w3.org/ns/ttml#metadata'><body><div><p begin='12s'><span begin='12s'>Hello</span> <span begin='12.5s'>world</span><span ttm:role='x-bg' begin='12.2s'>echo</span></p></div></body></tt>"}"""
         val line = MusicSources.current!!.lyricsTimed("ttml-adlib")!!.single()
         assertEquals(listOf(AdlibSegment("echo", 12200)), line.adlib?.segments)
-        assertEquals(listOf(KaraokeSpan("echo", false)), line.adlib?.karaokeSpans(12199, true))
-        assertEquals(listOf(KaraokeSpan("echo", true)), line.adlib?.karaokeSpans(12200, true))
-        assertEquals(listOf(KaraokeSpan("Hello", true), KaraokeSpan(" world", false)), karaokeSpans(line, 12300))
+        assertEquals(listOf(KaraokeFill(0, 4, 0f)), line.adlib?.karaokeFills(12199, true))
+        assertEquals(listOf(KaraokeFill(0, 4, 0.5f)), line.adlib?.karaokeFills(12700, true))
+        assertEquals(listOf(KaraokeFill(0, 5, 0.6f), KaraokeFill(6, 11, 0f)), karaokeFills(line, 12300))
     }
 
     @Test
@@ -511,9 +514,10 @@ class SourceQueriesTest {
         val line = MusicSources.current!!.lyricsTimed("voice-inline")!!.single()
         assertEquals("Hello world", line.text)
         assertEquals(LyricVoice("v2", LyricVoice.Kind.SECONDARY), line.voice)
-        assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
-        body = """{"Lyrics":[{"Text":"v2: Hello world","Start":120000000,"Cues":[{"Position":0,"EndPosition":9,"Start":120000000},{"Position":10,"EndPosition":15,"Start":125000000,"End":130000000}]}]}"""
-        assertEquals(line, MusicSources.current!!.lyricsTimed("voice-cues")!!.single())
+        assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world", 13000)), line.words)
+        body = """{"Lyrics":[{"Text":"v2: Hello world","Start":120000000,"Cues":[{"Position":0,"EndPosition":9,"Start":120000000},{"Position":10,"EndPosition":15,"Start":125000000}]}]}"""
+        assertEquals(line.copy(words = line.words.map { it.copy(endMs = null) }, endMs = null),
+            MusicSources.current!!.lyricsTimed("voice-cues")!!.single())
     }
 
     @Test

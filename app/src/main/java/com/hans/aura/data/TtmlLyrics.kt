@@ -19,7 +19,7 @@ internal object TtmlLyrics {
     private fun normalize(text: String): String = text.replace(whitespace, " ").trim()
 
     private class Background {
-        private data class Timing(val depth: Int, val start: Double?, val end: Double)
+        private data class Timing(val depth: Int, val start: Double?, val end: Double, val segmentEnd: Double?)
 
         private val timings = ArrayDeque<Timing>()
         private val segments = mutableListOf<AdlibSegment>()
@@ -27,15 +27,14 @@ internal object TtmlLyrics {
         private var endMs: Long? = null
         val inside: Boolean get() = timings.isNotEmpty()
 
-        fun enter(depth: Int, begin: Double?, end: Double?, duration: Double?) {
+        fun enter(depth: Int, begin: Double?, end: Double?, duration: Double?, containerEnd: Double = Double.POSITIVE_INFINITY) {
             val parent = timings.lastOrNull()
             val start = begin ?: parent?.start
-            val limit = minOf(
-                parent?.end ?: Double.POSITIVE_INFINITY,
-                end ?: Double.POSITIVE_INFINITY,
-                duration?.let { start?.plus(it) } ?: Double.POSITIVE_INFINITY
-            )
-            timings.addLast(Timing(depth, start, limit))
+            val explicitEnd = listOfNotNull(end, duration?.let { start?.plus(it) }).minOrNull()
+            val limit = minOf(parent?.end ?: Double.POSITIVE_INFINITY,
+                explicitEnd ?: Double.POSITIVE_INFINITY, containerEnd)
+            val segmentEnd = explicitEnd ?: parent?.segmentEnd?.takeIf { begin == null }
+            timings.addLast(Timing(depth, start, limit, segmentEnd?.let { minOf(it, limit) }))
         }
 
         fun leave(depth: Int) {
@@ -54,7 +53,7 @@ internal object TtmlLyrics {
                 val separator = if (segments.isNotEmpty() && (pendingSpace || normalized.startsWith(' '))) " " else ""
                 val timing = timings.last()
                 val start = timing.start?.takeIf { it < timing.end }
-                segments += AdlibSegment(separator + content, start?.roundToLong())
+                segments += AdlibSegment(separator + content, start?.roundToLong(), timing.segmentEnd?.roundToLong())
                 if (start != null && timing.end.isFinite()) {
                     val end = timing.end.roundToLong()
                     endMs = maxOf(end, endMs ?: end)
@@ -131,7 +130,7 @@ internal object TtmlLyrics {
         }
     }
 
-    private data class Word(val start: Double, val text: String)
+    private data class Word(val start: Double, val text: String, val end: Double?, val limit: Double)
 
     fun parse(raw: String): List<LyricLine> = runCatching {
         val parser = Xml.newPullParser()
@@ -160,7 +159,7 @@ internal object TtmlLyrics {
         val intervals = mutableListOf(Interval())
         var lineBegin: Double? = null
         var legacyWordTimes = false
-        var wordsEnd: Double? = null
+        var wordEnd: Double? = null
         var lineAgent: String? = null
         var part = 0
         var itunesMetadataDepth = -1
@@ -191,6 +190,7 @@ internal object TtmlLyrics {
                         }
                     }
                     val parent = intervals.last()
+                    val referenceStart = if (appleTrackTimes) 0.0 else parent.start
                     val timedElement = when (parser.name) {
                         "body", "div", "p", "span" -> true
                         else -> false
@@ -210,7 +210,6 @@ internal object TtmlLyrics {
                         lineDepth = parser.depth
                         lineBegin = begin
                         legacyWordTimes = parser.getAttributeValue(null, "timeContainer") == null
-                        wordsEnd = null
                         lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
                         text.clear()
                         background = Background()
@@ -223,11 +222,12 @@ internal object TtmlLyrics {
                             skipDepth = parser.depth
                         } else if (background.inside || role == "x-bg") {
                             if (!background.inside || parser.name == "br") background.space()
-                            if (legacyWordTimes) {
+                            if (legacyWordTimes && !appleTrackTimes) {
                                 // Apple-style background cues use the track clock and may overlap the lead.
                                 background.enter(parser.depth, begin, end, duration)
                             } else {
-                                background.enter(parser.depth, interval.start.takeIf { begin != null }, interval.end, null)
+                                background.enter(parser.depth, interval.start.takeIf { begin != null },
+                                    end?.let { referenceStart + it }, duration, interval.end)
                             }
                         } else if (parser.name == "span") {
                             if (lineAgent == null) {
@@ -235,6 +235,8 @@ internal object TtmlLyrics {
                             }
                             if (wordDepth < 0 && begin != null) {
                                 wordDepth = parser.depth
+                                wordEnd = listOfNotNull(end?.let { referenceStart + it },
+                                    duration?.let { interval.start + it }).minOrNull()
                                 wordText.clear()
                             }
                         } else if (parser.name == "br") text.append(' ')
@@ -261,9 +263,8 @@ internal object TtmlLyrics {
                     val interval = intervals.removeAt(intervals.lastIndex)
                     if (parser.depth == wordDepth) {
                         normalize(wordText.toString()).takeIf { it.isNotEmpty() }?.let {
-                            words += Word(interval.start, it)
+                            words += Word(interval.start, it, wordEnd, interval.end)
                         }
-                        if (interval.end.isFinite()) wordsEnd = maxOf(wordsEnd ?: interval.end, interval.end)
                         wordDepth = -1
                     }
                     if (parser.depth == skipDepth) skipDepth = -1
@@ -277,15 +278,18 @@ internal object TtmlLyrics {
                         ) begin else 0.0
                         val timedWords = words.mapNotNull {
                             val start = it.start - adjustment
-                            if (start < interval.end) TimedWord(start.roundToLong(), it.text) else null
+                            val end = it.end?.let { end ->
+                                minOf(end - adjustment, if (adjustment == 0.0) it.limit else interval.end).roundToLong()
+                            }
+                            if (start < interval.end) TimedWord(start.roundToLong(), it.text, end) else null
                         }
                         val start = if (begin != null) interval.start.roundToLong()
                             else timedWords.firstOrNull()?.startMs ?: interval.start.roundToLong().takeIf { interval.timed }
-                        val end = interval.end.takeIf { it.isFinite() } ?: wordsEnd?.minus(adjustment)
+                        val end = interval.end.takeIf { it.isFinite() }?.roundToLong() ?: timedWords.mapNotNull { it.endMs }.maxOrNull()
                         if (line.isNotEmpty() && interval.start < interval.end) {
                             lines += LyricLine(
                                 start ?: 0L, line, start != null, timedWords, voice(lineAgent), background.toAdlib(),
-                                part = part, endMs = end?.roundToLong()
+                                part = part, endMs = end
                             )
                         }
                         lineDepth = -1

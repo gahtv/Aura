@@ -67,7 +67,11 @@ object LyricsStore {
         return tags.mapIndexedNotNull { index, tag ->
             val word = normalize(text.substring(tag.range.last + 1, tags.getOrNull(index + 1)?.range?.first ?: text.length))
             word.takeIf { it.isNotEmpty() }?.let {
-                TimedWord(stampMs(tag.groupValues[1], tag.groupValues[2]), it)
+                val trailing = tags.getOrNull(index + 1)?.takeIf { next ->
+                    text.substring(next.range.last + 1).isBlank()
+                }
+                TimedWord(stampMs(tag.groupValues[1], tag.groupValues[2]), it,
+                    trailing?.let { next -> stampMs(next.groupValues[1], next.groupValues[2]) })
             }
         }
     }
@@ -134,7 +138,7 @@ object LyricsStore {
                     val end = cue.endPosition
                     if (cue.position < 0 || end <= start || end > it.text.length) null else {
                         normalize(it.text.substring(start, end)).takeIf { word -> word.isNotEmpty() }
-                            ?.let { word -> TimedWord(cue.start / 10_000L, word) }
+                            ?.let { word -> TimedWord(cue.start / 10_000L, word, cue.end?.div(10_000L)) }
                     }
                 }?.takeIf { words -> words.isNotEmpty() }
                 // Jellyfin expands repeated line stamps but leaves their inline word stamps unchanged.
@@ -145,8 +149,11 @@ object LyricsStore {
                     startMs = lineStartMs?.let { shifted(it, offsetMs) } ?: 0L,
                     text = if (hasInlineTags) normalize(content.replace(wordTag, "")) else content,
                     isSynced = lineStartMs != null || !it.cues.isNullOrEmpty() || hasInlineTags,
-                    words = (words ?: inlineWords(content).map { word -> word.copy(startMs = word.startMs + inlineOffset) })
-                        .map { word -> word.copy(startMs = shifted(word.startMs, offsetMs)) },
+                    words = (words ?: inlineWords(content).map { word ->
+                        word.copy(startMs = word.startMs + inlineOffset, endMs = word.endMs?.plus(inlineOffset))
+                    }).map { word ->
+                        word.copy(startMs = shifted(word.startMs, offsetMs), endMs = word.endMs?.let { end -> shifted(end, offsetMs) })
+                    },
                     voice = voice,
                     credits = credits,
                     endMs = (it.cues?.mapNotNull { cue -> cue.end }?.maxOrNull()?.div(10_000L)
@@ -204,7 +211,8 @@ object LyricsStore {
             for (m in stamps) {
                 val ms = stampMs(m.groupValues[1], m.groupValues[2])
                 synced.add(LyricLine(startMs = shifted(ms, offsetMs), text = text, isSynced = true,
-                    words = words.map { it.copy(startMs = shifted(it.startMs + ms - firstMs, offsetMs)) }, voice = voice,
+                    words = words.map { it.copy(startMs = shifted(it.startMs + ms - firstMs, offsetMs),
+                        endMs = it.endMs?.let { end -> shifted(end + ms - firstMs, offsetMs) }) }, voice = voice,
                     endMs = endMs?.let { shifted(it + ms - firstMs, offsetMs) }))
             }
         }

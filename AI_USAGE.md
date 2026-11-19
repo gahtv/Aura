@@ -26,10 +26,12 @@ they're looking at.
 - The code is **not line-by-line hand-reviewed** by a human before it ships.
   Treat it accordingly: it works on the author's hardware (Jellyfin 12.2.0,
   Google TV Streamer, Android TV API 26+), but it has had **no security
-  review** and only informal testing.
+  review**. Hardware checks are informal; automated JVM tests and baseline-filtered lint
+  now cover parts of the implementation (see the README).
 - You use it with your own Jellyfin server at your own risk. Credentials are
   sent only to your configured Jellyfin server; the app contains no telemetry
-  and no third-party network calls beyond your Jellyfin host.
+  and optional LRCLIB lyrics lookup is the third-party network exception: when enabled
+  in Settings it sends song metadata to lrclib.net, not your Jellyfin credentials.
 - Contributions, issues, and bug reports are welcome — with the understanding
   that fixes will likely also be AI-assisted.
 
@@ -40,5 +42,5 @@ they're looking at.
 | Application code (Kotlin, Compose, Media3) | Written by AI agent, human-directed and human-tested |
 | Build config (Gradle, R8, scripts) | Written by AI agent |
 | Documentation (README, ARCHITECTURE, this file) | AI-drafted, human-approved |
-| Testing | Human, on real/emulated hardware |
+| Testing | Human hardware/emulator checks plus automated JVM tests and lint |
 | Security review | None — AI-assisted development, not audited |

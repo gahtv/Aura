@@ -2,6 +2,10 @@
 
 Personal project, but PRs are welcome. Ground rules:
 
+- Use JDK 17 and the Gradle wrapper. Run compile, lint and JVM tests as described in
+  [README.md](README.md#checks); `scripts/check.sh` first needs its shared macOS paths
+  adapted on other machines. Playback and focus changes also need device checks.
+
 - **Verify on a release build** before claiming a perf or playback fix — debug builds are
   not representative of TV hardware behavior.
 - **No hardcoded secrets.** API keys go in a gitignored root `.env` (see `.env.example`);
@@ -9,5 +13,7 @@ Personal project, but PRs are welcome. Ground rules:
 - Follow the existing patterns: manual back-stack navigation in `AppRoot`, shared
   `JellyfinClient` `Json` with `encodeDefaults = true`, overlays at screen root,
   `docs/ARCHITECTURE.md` has the full list of invariants.
+- Route browse work through `SourceQueries` / `MusicSource`; keep Jellyfin-specific
+  implementation in the data layer. Use the shared theme typography and shape tokens.
 - Keep the user-visible UX rules: unmistakable focus outlines, ~120dp bottom spacer so
   the now-playing bar never covers the last row, BACK restores exact focus + scroll.

@@ -37,6 +37,10 @@ lyrics, mirroring and pairing.
 
 **Now Playing**
 - Synced LRC lyrics, top-anchored with the current line held in view.
+- Word-by-word karaoke when enhanced LRC, Jellyfin cues or TTML provide word timings;
+  singer/duet metadata changes lyric alignment and colour. Plain LRC stays line-synced.
+- Artwork-accented Play/Pause, an animated wavy seek bar while playing, and stronger
+  current-line typography. Cards and controls share rounded shapes and TV focus styling.
 - Transport controls, jump ±10 s, queue view, and a now-playing pill in the top bar.
 
 **Integration**
@@ -73,17 +77,18 @@ lyrics, mirroring and pairing.
 - Lyrics you can line up: nudge a track's timing with the D-pad when the words run early or late — remembered per
   track — and a clear "no lyrics" state when there are none.
 - Optional online lyrics lookup for tracks Jellyfin has none for (off by default; LRCLIB).
-- Press DOWN on the transport controls for a quick "up next" peek, and a Radio button that restarts the mix from
-  the track that is playing.
+- A quick "up next" peek from the transport controls: DOWN from Play/Pause moves to Shuffle, and DOWN from
+  Shuffle or Repeat opens the peek. A Radio button restarts the mix from the track that is playing.
 - Search remembers your last few terms as chips you can re-run, takes voice input from the remote, and accepts
   ENTER without losing the field.
 
 ## Next
 
-- **Retire ADB.** Auto-launching Aura from the remote is the only thing that still needs USB debugging;
-  moving to the Android TV Remote v2 protocol (PIN pairing) removes it entirely.
-- **Live state instead of polling.** The remote polls the mirror link every couple of seconds; a push
-  channel would make queue and progress changes instant.
+- **Live state instead of polling.** The mirror link currently exposes HTTP snapshots;
+  a push channel could make queue and progress changes instant.
+
+Remote launch/discovery plans belong in [Aura Remote](https://github.com/gahtv/aura-remote).
+Aura's own HTTP link cannot launch an app whose process is not running.
 
 ## Considering
 

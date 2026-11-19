@@ -100,24 +100,35 @@ for that URL together with the headers the request must carry. It is deliberatel
 mirror of the server API — an implementation is a thin adapter over whatever it wraps, and
 does not re-derive the caching, filtering or paging rules `MediaRepository` owns.
 
-`JellyfinSource` is today's only implementation and has no logic of its own: every browse
-call forwards to `MediaRepository`, and streaming keeps the two rules the player already
+`JellyfinSource` is today's only implementation: most browse calls forward to
+`MediaRepository`, album artists use `LibraryFilter.queryAlbumArtists`, and streaming keeps the two rules the player already
 relied on (direct-play URL, `Authorization` header resolved per request from the current
-session). `AppContainer.buildSource` picks one implementation from
-`BuildConfig.MUSIC_SOURCE` — fed from root `.env`, so a plain checkout gets the default —
-and `MusicSources.install` publishes that same instance for the call sites built outside
-the graph (the queue builder and the playback service). Adding a backend is a branch there
-and nothing else: no screen, ViewModel or queue builder learns what it is.
+session). `AppContainer` calls `di/BackendFactory.create`, which currently always constructs
+`JellyfinSource`; `BuildConfig.MUSIC_SOURCE` defaults to `jellyfin` and is logged, but
+changing that field alone does not select a different implementation. `MusicSources.install`
+publishes the same instance for call sites outside the graph (the queue builder and playback
+service). A new backend needs factory wiring and capability implementations, not
+backend-specific browse logic in screens, ViewModels or queue builders.
 
-Invariant: **a source that cannot answer a query returns an empty result, never an
-exception.** `SourceQueries` already answers an empty `ItemsResponse` when no source is
-installed, and `atmosAlbumIds` answers an empty set; any method added to the seam keeps the
-same shape, because a throw from here surfaces on a screen that has no way to tell one
-backend from another.
+Unsupported capabilities return empty/null defaults. `SourceQueries` answers an empty
+`ItemsResponse` when no source is installed, and `atmosAlbumIds` answers an empty set.
+Actual request failures can propagate to the screen state holder and its error pane;
+they are not universally swallowed by the source seam.
 
-Two queries sit outside the seam for now — the album-artist listing (no counterpart on
-`MusicSource` yet) and the A–Z jump (`ItemsQuery` carries no `nameStartsWithOrGreater`) —
-and still go through `LibraryFilter`; they move here when the interface grows.
+Album-artist listings now use `SourceQueries.artists` / `MusicSource.artists`, and A–Z
+jumps carry `nameStartsWithOrGreater` through `ItemsQuery`.
+
+The source also exposes optional bios, timed lyrics, play history, motion artwork and
+catalog import capabilities. Jellyfin supplies bios (HTML stripped from Overview), timed
+lyrics and history; it does **not** serve motion artwork or catalog imports. The motion
+renderer and its decoder budget are infrastructure, not an animated-cover feature for
+the current Jellyfin build. Source caches for bios and lyrics clear on manual refresh;
+missing server lyrics are not cached as permanent failures.
+
+`LyricsStore`, `TimedLyrics`, `TtmlLyrics` and `LyricVoice` preserve line/word timing and
+singer metadata from enhanced LRC, Jellyfin cues and TTML. `LyricsPane` highlights words
+only when word timings exist; ordinary LRC remains line-synced. LRCLIB is an opt-in
+fallback, and does not require a configured app-id header.
 
 ## Navigation contract
 
@@ -255,7 +266,9 @@ that fails shows a retry affordance instead of an empty grid.
 
 `ui/theme/Tokens.kt` is the 10-foot scale: `AuraColors` (cursor ring, focused fill, scrims,
 text roles), `AuraSpacing` (4/8/12/16/24/32/48), `AuraTypography` (~8 sizes), `AuraShapes`,
-`AuraSizes` (TV constants: top-bar height, card sizes, the 120 dp bottom spacer). The base
+`AuraSizes` (TV constants: top-bar height, card sizes, the 120 dp bottom spacer). Shared
+M3 typography roles and semantic corner shapes now style controls, cards and dialogs;
+artwork cards scale on focus with spring motion. The base
 palette remains plain `val`s in `Theme.kt` because every screen imports them directly.
 
 Token values were chosen to preserve the hard 960 dp budgets: the top bar's right edge stays
@@ -305,7 +318,7 @@ playlist contents are never filtered. Album dedupe is not a thing: the FLAC and 
 of a release are two tiles, and "Only Atmos" is a filter, never a dedupe rule.
 
 All app preferences live in `aura_prefs` (`Prefs`); the session lives in `aura_session` and
-cache stamps in `aura_cache`. There is no third store.
+cache stamps in `aura_cache`. Mirror pairing has its own `aura_mirror` token store.
 
 ## Accounts and sign-in
 
@@ -327,11 +340,12 @@ resolves new-server item ids against old-server metadata.
 
 ## Lyrics, search, discovery
 
-`LyricsPane` owns the LRC parse, the top-anchored auto-scroll, a 4 s auto-follow pause on
+`LyricsStore` and `TtmlLyrics` parse lyrics; `LyricsPane` owns top-anchored auto-scroll, a 4 s auto-follow pause on
 manual scroll, and per-track timing nudges stored as `lyrics_offset_<trackId>`. When Jellyfin
 has nothing and the setting is on, `Lrclib` queries `lrclib.net/api/get` (fallback
-`/api/search`) identifying itself with `Lrclib-App-Id` from `BuildConfig.LRCLIB_APP_ID`
-(root `.env`, never in source); hits and misses are cached, errors are not.
+`/api/search`) identifying itself with a versioned client header and, when configured,
+`Lrclib-App-Id` from `BuildConfig.LRCLIB_APP_ID` (root `.env`, never in source);
+hits and misses are cached, errors are not.
 
 Search runs one query with `IncludeItemTypes=Audio,MusicAlbum,MusicArtist,Playlist` and splits
 results client-side into three stacked shelves — no tabs. The field auto-focuses on entry,
@@ -351,11 +365,14 @@ picking any other sort or filter clears the letter first.
 - `scripts/check.sh` — the one command that must be green before anything lands:
   `:app:compileDebugKotlin --rerun-tasks` (without `--rerun-tasks` Gradle can report
   UP-TO-DATE and not compile the edit at all), then `:app:lintDebug`, then
-  `:app:testDebugUnitTest`. Never installs, never touches a device.
+  `:app:testDebugUnitTest`. Never installs, never touches a device. It sources
+  `scripts/common.sh`, whose hardcoded macOS JDK/SDK paths must be adapted elsewhere;
+  the README provides equivalent direct Gradle commands.
 - JVM tests (`app/src/test/`) cover `LibraryFilter` query construction,
   `LibraryCache` keys and TTL, `AtmosFilter.keep`, `Prefs` (including resume points), LRC
   parsing, `SortMode` mapping, `AuthStore` persistence and `PlayerConnection`'s pure helpers.
-  Robolectric is used only where a `Context` is genuinely needed. 90 tests, no device.
+  Additional tests cover source routing, TTML/word timing, motion scheduling and UI helpers.
+  Robolectric supplies Android context/resources where needed; no device is required.
 - `util/AuraLog.kt` — `AuraTag` is the enum of log tags (`AURA_NAV`, `AURA_MENU`,
   `AURA_QUEUE`, `AURA_MIRROR`, …). The tags are the headless verification harness, so they
   are a contract, not decoration. Not every call site has migrated yet; the tags themselves
@@ -385,8 +402,8 @@ picking any other sort or filter clears the letter first.
   the context menu or in a real button row.
 - A `MutableStateFlow` collected without `.drop(1)` replays its current value. That is how a
   0-valued "open Now Playing" counter pushed the screen on every cold start.
-- The deployed artifact is the **release** build (R8 + resource shrink, ~3.6 MB vs ~14 MB
-  debug) — debug builds are markedly slower on TV hardware and are only for emulator UI
+- The deployed artifact is the **release** build (R8 minification; resource shrinking is
+  not enabled) — debug builds are markedly slower on TV hardware and are only for emulator UI
   iteration. R8 needs the keep rules in `app/proguard-rules.pro` for the reflective surface
   (Retrofit interface, DTOs and their `$$serializers`, media3); after every release build,
   smoke-test the launch and grep logcat for `FATAL`.

@@ -71,6 +71,42 @@ object LyricsStore {
         }
     }
 
+    private fun finishLrc(lines: List<LyricLine>, offsetMs: Long): List<LyricLine> {
+        val paired = mutableListOf<LyricLine>()
+        var previous: LyricLine? = null
+        var runLength = 0
+        for (line in lines) {
+            val lead = previous
+            runLength = if (line.isSynced && lead?.isSynced == true && line.startMs == lead.startMs) runLength + 1 else 1
+            if (runLength == 2 && lead != null && lead.text.isNotBlank() && line.text.isNotBlank() &&
+                (line.voice == null || line.voice == lead.voice)
+            ) {
+                var cursor = 0
+                val segments = line.words.mapIndexed { index, word ->
+                    val pattern = word.text.split(whitespace).joinToString("\\s+", transform = Regex::escape)
+                    val match = Regex(pattern).find(line.text, cursor)
+                    val end = if (index == line.words.lastIndex) line.text.length else match?.range?.last?.plus(1) ?: cursor
+                    AdlibSegment(line.text.substring(cursor, end), word.startMs).also { cursor = end }
+                }.ifEmpty { listOf(AdlibSegment(line.text)) }
+                paired[paired.lastIndex] = lead.copy(translation = LyricAdlib(segments))
+            } else {
+                paired += line
+            }
+            previous = line
+        }
+        return paired.map { line ->
+            line.copy(
+                startMs = if (line.isSynced) shifted(line.startMs, offsetMs) else line.startMs,
+                words = line.words.map { it.copy(startMs = shifted(it.startMs, offsetMs)) },
+                translation = line.translation?.let { subline ->
+                    subline.copy(segments = subline.segments.map { segment ->
+                        segment.copy(startMs = segment.startMs?.let { shifted(it, offsetMs) })
+                    })
+                }
+            )
+        }.filterNot { isHeader(it.text) }.sortedBy { it.startMs }
+    }
+
     suspend fun fetch(api: JellyfinApi, itemId: String): List<LyricLine> {
         val response = try {
             api.getLyrics(itemId)
@@ -94,7 +130,7 @@ object LyricsStore {
             val offsetMs = (metadata?.offset ?: 0L) / 10_000L
             val credits = serverCredits + headerCredits(dtoLines.asSequence().map { it.text }.filter(::isHeader))
             val firstInlineStart = mutableMapOf<String, Long>()
-            return dtoLines.filterNot { isHeader(it.text.trim()) }.map {
+            val parsed = dtoLines.map {
                 val original = it.text.trim()
                 val (content, voice) = LrcVoices.split(original)
                 val prefixLength = it.text.indexOf(original) + original.length - content.length
@@ -115,14 +151,15 @@ object LyricsStore {
                     inlineWords(content).map { word -> word.copy(startMs = word.startMs + offset) }
                 } else emptyList()
                 LyricLine(
-                    startMs = lineStartMs?.let { shifted(it, offsetMs) } ?: 0L,
+                    startMs = lineStartMs ?: 0L,
                     text = if (hasInlineTags) normalize(content.replace(wordTag, "")) else content,
-                    isSynced = lineStartMs != null || !it.cues.isNullOrEmpty() || hasInlineTags,
-                    words = words.map { word -> word.copy(startMs = shifted(word.startMs, offsetMs)) },
+                    isSynced = !isHeader(content) && (lineStartMs != null || !it.cues.isNullOrEmpty() || hasInlineTags),
+                    words = words,
                     voice = voice,
                     credits = credits
                 )
             }
+            return finishLrc(parsed, offsetMs)
         }
 
         // 2) Raw text, possibly LRC-formatted
@@ -151,8 +188,7 @@ object LyricsStore {
     /** Parses "[mm:ss.xx] line" LRC; falls back to one unsynced entry per line. */
     fun parseLrcText(raw: String): List<LyricLine> {
         val stampRegex = Regex("""\[(\d+):(\d+(?:[.:]\d+)?)\]""")
-        val synced = mutableListOf<LyricLine>()
-        val plain = mutableListOf<LyricLine>()
+        val parsed = mutableListOf<LyricLine>()
         val headers = mutableListOf<String>()
         val offsetMs = offsetTag.findAll(raw).mapNotNull { it.groupValues[1].toLongOrNull() }.lastOrNull() ?: 0L
 
@@ -161,27 +197,27 @@ object LyricsStore {
             val (content, voice) = LrcVoices.split(rawLine.replace(stampRegex, "").trim())
             if (isHeader(content)) {
                 headers += content
+                parsed += LyricLine(0L, content, isSynced = false)
                 continue
             }
             val words = inlineWords(content)
             val text = if (wordTag.containsMatchIn(content)) normalize(content.replace(wordTag, "")) else content
             if (stamps.isEmpty()) {
-                if (text.isNotEmpty()) plain.add(LyricLine(0L, text, isSynced = false, voice = voice))
+                parsed.add(LyricLine(0L, text, isSynced = false, voice = voice))
                 continue
             }
             val firstMs = stampMs(stamps.first().groupValues[1], stamps.first().groupValues[2])
             for (m in stamps) {
                 val ms = stampMs(m.groupValues[1], m.groupValues[2])
-                synced.add(LyricLine(startMs = shifted(ms, offsetMs), text = text, isSynced = true,
-                    words = words.map { it.copy(startMs = shifted(it.startMs + ms - firstMs, offsetMs)) }, voice = voice))
+                parsed.add(LyricLine(startMs = ms, text = text, isSynced = true,
+                    words = words.map { it.copy(startMs = it.startMs + ms - firstMs) }, voice = voice))
             }
         }
 
         val credits = headerCredits(headers.asSequence())
-        return when {
-            synced.isNotEmpty() -> synced.sortedBy { it.startMs }
-            plain.isNotEmpty() -> plain
-            else -> emptyList()
+        val hasSynced = parsed.any { it.isSynced }
+        return finishLrc(parsed, offsetMs).filter {
+            if (hasSynced) it.isSynced else it.text.isNotEmpty()
         }.map { it.copy(credits = credits) }
     }
 }

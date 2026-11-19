@@ -10,6 +10,69 @@ import org.junit.Test
 /** LRC parsing: synced stamps, multi-stamp lines, and the plain-text fallback. */
 class LyricsStoreTest {
     @Test
+    fun `raw and structured LRC pair only first adjacent same stamp follower`() = runBlocking {
+        val entries = listOf(
+            12000L to "v1: Across the sky",
+            12000L to "A travers le ciel",
+            12000L to "Third line",
+            12000L to "Fourth line",
+            20000L to "v1: Duet lead",
+            20000L to "v2: Duet reply",
+            30000L to "",
+            30000L to "After blank",
+            40000L to "Before blank",
+            40000L to " ",
+            50000L to "<00:50>Hello <00:51>world",
+            50000L to "<00:50.2>Bon<00:50.5>jour <00:51>monde"
+        )
+        val raw = entries.joinToString("\n") { (time, text) -> "[00:${time / 1000}]$text" }
+        val response = LyricsResponse(lyrics = entries.map { (time, text) -> LyricLineDto(text, time * 10000) })
+        for (lines in listOf(LyricsStore.parseLrcText(raw), LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track"))) {
+            assertEquals(listOf("Across the sky", "Third line", "Fourth line", "Duet lead", "Duet reply", "", "After blank", "Before blank", "", "Hello world"), lines.map { it.text })
+            assertEquals("A travers le ciel", lines.first().translation?.text)
+            assertFalse(requireNotNull(lines.first().translation).isTimed)
+            assertEquals(LyricVoice("v1", LyricVoice.Kind.PRIMARY), lines.first().voice)
+            assertEquals(listOf(AdlibSegment("Bon", 50200), AdlibSegment("jour", 50500), AdlibSegment(" monde", 51000)), lines.last().translation?.segments)
+            assertEquals(listOf(TimedWord(50000, "Hello"), TimedWord(51000, "world")), lines.last().words)
+        }
+    }
+
+    @Test
+    fun `same voice translations keep cue timing and offset while unsynced lines block pairing`() = runBlocking {
+        val response = LyricsResponse(metadata = LyricMetadataDto(offset = 10000000), lyrics = listOf(
+            LyricLineDto("v1: Lead", 50000000),
+            LyricLineDto("v1: Bon jour", 50000000, listOf(LyricCueDto(4, 7, 50000000), LyricCueDto(8, 12, 55000000))),
+            LyricLineDto("Separate", 60000000), LyricLineDto("Plain"), LyricLineDto("Not translation", 60000000)
+        ))
+        val lines = LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track")
+        val lead = lines.single { it.text == "Lead" }
+        assertEquals(listOf(AdlibSegment("Bon", 4000), AdlibSegment(" jour", 4500)), lead.translation?.segments)
+        assertEquals(4000L, lead.startMs)
+        assertEquals(listOf("Plain", "Lead", "Separate", "Not translation"), lines.map { it.text })
+        assertEquals(3, LyricsStore.parseLrcText("[00:01]Lead\nPlain\n[00:01]Reply\n[00:02]Last").size)
+        val headers = LyricsResponse(lyrics = listOf(LyricLineDto("Lead", 10000000), LyricLineDto("[au:Writer]", 10000000)))
+        val headerLead = LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = headers), "track").single()
+        assertEquals(null, headerLead.translation)
+        assertEquals(listOf("Writer"), headerLead.credits.writers)
+    }
+
+    @Test
+    fun `pairing precedes sorting and offset clamping and preserves repeated stamps and credits`() = runBlocking {
+        val raw = "[au:Writer]\n[offset:15000]\n[00:30]Later\n[00:10][00:20]Chorus\n[00:20]Translation\n[00:10]Separate"
+        val dto = LyricsResponse(metadata = LyricMetadataDto(offset = 150000000), lyrics = listOf(
+            LyricLineDto("[au:Writer]"), LyricLineDto("Later", 300000000),
+            LyricLineDto("Chorus", 100000000), LyricLineDto("Chorus", 200000000),
+            LyricLineDto("Translation", 200000000), LyricLineDto("Separate", 100000000)
+        ))
+        for (lines in listOf(LyricsStore.parseLrcText(raw), LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = dto), "track"))) {
+            assertEquals(listOf("Chorus", "Separate", "Chorus", "Later"), lines.map { it.text })
+            assertEquals(listOf(0L, 0L, 5000L, 15000L), lines.map { it.startMs })
+            assertEquals(listOf(null, null, "Translation", null), lines.map { it.translation?.text })
+            assertTrue(lines.all { it.credits.writers == listOf("Writer") })
+        }
+    }
+
+    @Test
     fun `LRC credits are retained separately from lyrics`() {
         val lines = LyricsStore.parseLrcText(
             "[ar:Performer][AU: Ada Lane ][au:Ada Lane][lr:Ren Park]\n[by: Sam Ford ][lr: ]\n" +
@@ -68,7 +131,9 @@ class LyricsStoreTest {
     fun `section labels remain lyrics in raw and structured paths`() = runBlocking {
         val labels = listOf("[Chorus: Drake]", "[Intro:Kendrick]")
         assertEquals(labels, LyricsStore.parseLrcText(labels.joinToString("\n")).map { it.text })
-        assertEquals(labels, LyricsStore.parseLrcText(labels.joinToString("\n") { "[00:01]$it" }).map { it.text })
+        val paired = LyricsStore.parseLrcText(labels.joinToString("\n") { "[00:01]$it" }).single()
+        assertEquals(labels.first(), paired.text)
+        assertEquals(labels.last(), paired.translation?.text)
         val response = LyricsResponse(lyrics = labels.map { LyricLineDto(it) })
         assertEquals(labels, LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track").map { it.text })
     }

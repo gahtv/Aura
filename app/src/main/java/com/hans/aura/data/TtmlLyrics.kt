@@ -25,6 +25,7 @@ internal object TtmlLyrics {
         val parser = Xml.newPullParser()
         parser.setInput(raw.reader())
         val lines = mutableListOf<LyricLine>()
+        val writers = mutableListOf<String>()
         val agentTypes = mutableMapOf<String, String>()
         val agentKinds = mutableMapOf<String, LyricVoice.Kind>()
         fun voice(value: String?): LyricVoice? {
@@ -45,12 +46,26 @@ internal object TtmlLyrics {
         var lineStart: Long? = null
         var wordStart: Long? = null
         var lineAgent: String? = null
+        var itunesMetadataDepth = -1
+        var songwritersDepth = -1
+        var songwriterDepth = -1
+        val songwriterText = StringBuilder()
         val text = StringBuilder()
         val wordText = StringBuilder()
         var words = mutableListOf<TimedWord>()
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
             when (parser.eventType) {
                 XmlPullParser.START_TAG -> {
+                    when {
+                        parser.name == "iTunesMetadata" && lineDepth < 0 ->
+                            itunesMetadataDepth = parser.depth
+                        parser.name == "songwriters" && itunesMetadataDepth == parser.depth - 1 ->
+                            songwritersDepth = parser.depth
+                        parser.name == "songwriter" && songwritersDepth == parser.depth - 1 -> {
+                            songwriterDepth = parser.depth
+                            songwriterText.clear()
+                        }
+                    }
                     if (parser.name == "agent" && parser.namespace == metadataNamespace) {
                         parser.getAttributeValue("http://www.w3.org/XML/1998/namespace", "id")?.let {
                             agentTypes[it] = parser.getAttributeValue(null, "type").orEmpty()
@@ -81,11 +96,20 @@ internal object TtmlLyrics {
                         } else if (parser.name == "br") text.append(' ')
                     }
                 }
-                XmlPullParser.TEXT -> if (lineDepth >= 0 && skipDepth < 0) {
-                    text.append(parser.text)
-                    if (wordDepth >= 0) wordText.append(parser.text)
+                XmlPullParser.TEXT -> {
+                    if (songwriterDepth >= 0) songwriterText.append(parser.text)
+                    if (lineDepth >= 0 && skipDepth < 0) {
+                        text.append(parser.text)
+                        if (wordDepth >= 0) wordText.append(parser.text)
+                    }
                 }
                 XmlPullParser.END_TAG -> {
+                    if (parser.depth == songwriterDepth) {
+                        normalize(songwriterText.toString()).takeIf { it.isNotEmpty() }?.let(writers::add)
+                        songwriterDepth = -1
+                    }
+                    if (parser.depth == songwritersDepth) songwritersDepth = -1
+                    if (parser.depth == itunesMetadataDepth) itunesMetadataDepth = -1
                     if (parser.depth == wordDepth) {
                         normalize(wordText.toString()).takeIf { it.isNotEmpty() }?.let {
                             words += TimedWord(wordStart!!, it)
@@ -107,6 +131,7 @@ internal object TtmlLyrics {
             }
             parser.next()
         }
-        lines.sortedBy { it.startMs }
+        val credits = LyricCredits(writers = writers.distinct())
+        lines.sortedBy { it.startMs }.map { it.copy(credits = credits) }
     }.getOrDefault(emptyList())
 }

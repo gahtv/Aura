@@ -48,11 +48,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Lrclib
+import com.hans.aura.data.LyricCredits
 import com.hans.aura.data.LyricLine
 import com.hans.aura.data.LyricVoice
 import com.hans.aura.data.LyricsStore
@@ -162,7 +165,9 @@ fun LyricsPane(
         webFound = sourceWeb == true
         if (!timed.isNullOrEmpty()) {
             timedLines = timed
-            lines = timed.map { LyricLine(startMs = it.startMs, text = it.text, isSynced = true, words = it.words, voice = it.voice) }
+            lines = timed.map {
+                LyricLine(it.startMs, it.text, isSynced = true, words = it.words, voice = it.voice, credits = it.credits)
+            }
             android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")
             return@LaunchedEffect
         }
@@ -339,9 +344,16 @@ fun LyricsPane(
                         )
                     }
                 }
-                // Enough trailing scroll range that the FINAL line can reach the
-                // top anchor (the bottom-left chip may overlap it — accepted).
-                item { Spacer(Modifier.height(AuraSizes.lyricsTailSpace)) }
+                val credits = loadedLines.first().credits
+                if (credits.writers.isNotEmpty() || credits.transcribers.isNotEmpty()) {
+                    item {
+                        LyricCreditsFooter(credits)
+                        Spacer(Modifier.fillParentMaxHeight(0.55f))
+                    }
+                } else {
+                    // Enough trailing scroll range for the final line to reach the anchor.
+                    item { Spacer(Modifier.height(AuraSizes.lyricsTailSpace)) }
+                }
             }
         }
 
@@ -365,6 +377,35 @@ fun LyricsPane(
                     .clip(shape)
                     .background(highlightColor)
                     .padding(horizontal = AuraSpacing.md, vertical = AuraSpacing.xs)
+            )
+        }
+    }
+}
+
+@Composable
+internal fun LyricCreditsFooter(credits: LyricCredits) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(
+            start = AuraSpacing.screenHorizontal,
+            end = AuraSpacing.screenHorizontal,
+            top = AuraSpacing.lg
+        ),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (credits.writers.isNotEmpty()) {
+            Text(
+                text = "Written by: ${credits.writers.joinToString()}",
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
+        }
+        if (credits.transcribers.isNotEmpty()) {
+            Text(
+                text = "Lyrics transcribed by: ${credits.transcribers.joinToString()}",
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
             )
         }
     }

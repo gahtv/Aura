@@ -395,7 +395,11 @@ fun LibraryScreen(
                             Spacer(Modifier.height(24.dp))
                             androidx.tv.material3.Text(
                                 if (items.size < state.total) "Loading more\u2026"
-                                else "${items.size} ${kind.lowercase()}",
+                                else com.hans.aura.ui.common.countLabel(
+                                    items.size,
+                                    singular = kind.lowercase().removeSuffix("s"),
+                                    plural = kind.lowercase()
+                                ),
                                 color = TextSecondary, fontSize = 12.sp
                             )
                             Spacer(Modifier.height(120.dp))

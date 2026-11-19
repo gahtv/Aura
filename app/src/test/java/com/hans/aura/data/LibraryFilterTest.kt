@@ -1,9 +1,11 @@
 package com.hans.aura.data
 
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -292,16 +294,18 @@ class LibraryFilterTest {
     }
 
     @Test
-    fun `one failing library does not kill the page`() = runTest {
+    fun `one failing library propagates instead of returning a cacheable partial page`() = runTest {
         hide("lib-movies")
         val api = FakeJellyfinApi(
             itemsByParent = mapOf("lib-atmos" to listOf(Fixtures.item("a", sortName = "A"))),
             failingParents = setOf("lib-music")
         )
 
-        val res = LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio"))
-
-        assertEquals(listOf("a"), res.items.map { it.id })
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking {
+                LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio"))
+            }
+        }
     }
 
     // ---- cache suffix -------------------------------------------------------

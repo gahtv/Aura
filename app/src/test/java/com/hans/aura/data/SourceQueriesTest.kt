@@ -1,6 +1,7 @@
 package com.hans.aura.data
 
 import androidx.test.core.app.ApplicationProvider
+import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.home.HomeUiState
 import com.hans.aura.ui.home.HomeViewModel
@@ -9,7 +10,8 @@ import java.util.concurrent.LinkedBlockingQueue
 import kotlin.concurrent.thread
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -23,10 +25,12 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import retrofit2.HttpException
 
 @RunWith(RobolectricTestRunner::class)
 class SourceQueriesTest {
@@ -169,18 +173,85 @@ class SourceQueriesTest {
     }
 
     @Test
-    fun `home artist hydration failure keeps played tracks and empties artists`() {
+    fun `home artist hydration failure keeps played tracks and leaves artists uncached`() {
         historyResponses(listOf(historyTrack("played", "a")), hydrationStatus = 500)
 
         val state = loadHome()
 
         assertEquals(listOf("played"), state.recentlyPlayed!!.map { it.id })
-        assertEquals(emptyList<JellyfinItem>(), state.recentArtists)
-        assertNull(state.error)
+        assertNull(state.recentArtists)
+        assertTrue(state.error != null)
     }
 
     private fun historyTrack(id: String, vararg artists: String) =
         JellyfinItem(id = id, artistItems = artists.map { NameId(id = it) })
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `home retry refetches failed shelves but retains successful empty shelves`() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<AuraApp>()
+        app.jellyfin.auth.save(client.auth.session!!)
+        LibraryCache.clear()
+        AtmosCatalog.clear()
+        Dispatchers.setMain(Dispatchers.Unconfined)
+        try {
+            status = 500
+            val viewModel = HomeViewModel(app)
+            withTimeout(10_000) { viewModel.viewModelScope.coroutineContext[Job]!!.children.toList().joinAll() }
+            val failedRequests = requests.size
+            assertEquals(0, LibraryCache.size)
+            assertEquals(0, AtmosCatalog.size)
+            assertNull(viewModel.state.value.recentlyPlayed)
+            assertNull(viewModel.state.value.recentArtists)
+            assertNull(viewModel.state.value.recentAlbums)
+            assertNull(viewModel.state.value.atmosAlbums)
+            assertNull(viewModel.state.value.artists)
+            assertNull(viewModel.state.value.playlists)
+            status = 200
+            val recovered = Fixtures.track("recovered").copy(
+                albumId = "recovered", artistItems = listOf(NameId(id = "recovered"))
+            )
+            body = Json.encodeToString(ItemsResponse(items = listOf(recovered)))
+            viewModel.retry()
+            withTimeout(10_000) { viewModel.viewModelScope.coroutineContext[Job]!!.children.toList().joinAll() }
+
+            assertTrue("Retry must issue new requests after a failure", requests.size > failedRequests)
+            assertEquals(listOf("recovered"), viewModel.state.value.recentAlbums!!.map { it.id })
+            assertEquals(listOf("recovered"), viewModel.state.value.recentlyPlayed!!.map { it.id })
+            assertEquals(listOf("recovered"), viewModel.state.value.recentArtists!!.map { it.id })
+            assertEquals(listOf("recovered"), viewModel.state.value.atmosAlbums!!.map { it.id })
+            assertTrue(viewModel.state.value.fullyCached)
+            assertNull(viewModel.state.value.error)
+            val recoveredRequests = requests.size
+            viewModel.retry()
+            assertEquals(recoveredRequests, requests.size)
+
+            LibraryCache.clear()
+            AtmosCatalog.clear()
+            respond = { url -> (if (url.queryParameter("IncludeItemTypes") == "MusicAlbum") 500 else 200) to
+                """{"Items":[],"TotalRecordCount":0}""" }
+            val partial = HomeViewModel(app)
+            withTimeout(10_000) { partial.viewModelScope.coroutineContext[Job]!!.children.toList().joinAll() }
+            assertNull(partial.state.value.recentAlbums)
+            assertEquals(5, LibraryCache.size)
+            requests.clear()
+            respond = null
+            body = """{"Items":[],"TotalRecordCount":0}"""
+            partial.retry()
+            withTimeout(10_000) { partial.viewModelScope.coroutineContext[Job]!!.children.toList().joinAll() }
+            assertEquals("MusicAlbum", requests.single().queryParameter("IncludeItemTypes"))
+            assertTrue(partial.state.value.fullyCached)
+            assertNull(partial.state.value.error)
+            requests.clear()
+            partial.retry()
+            assertTrue(requests.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+            LibraryCache.clear()
+            AtmosCatalog.clear()
+            app.jellyfin.auth.clear()
+        }
+    }
 
     private fun historyResponses(tracks: List<JellyfinItem>, hydrationStatus: Int = 200) {
         respond = { url ->
@@ -210,14 +281,14 @@ class SourceQueriesTest {
     }
 
     @Test
-    fun `home history request failures leave both history shelves empty`() {
+    fun `home history request failures leave both history shelves uncached`() {
         respond = { url -> (if (url.queryParameter("SortBy") == "DatePlayed") 500 else 200) to body }
 
         val state = loadHome()
 
-        assertEquals(emptyList<JellyfinItem>(), state.recentlyPlayed)
-        assertEquals(emptyList<JellyfinItem>(), state.recentArtists)
-        assertNull(state.error)
+        assertNull(state.recentlyPlayed)
+        assertNull(state.recentArtists)
+        assertTrue(state.error != null)
     }
 
     @Test
@@ -230,15 +301,15 @@ class SourceQueriesTest {
     }
 
     @Test
-    fun `history seam contains failures from a source`() = runTest {
+    fun `history seam propagates failures from a source`() = runTest {
         val source = MusicSources.current!!
         MusicSources.install(object : MusicSource by source {
             override suspend fun recentlyPlayed(limit: Int): List<JellyfinItem> = error("unavailable")
             override suspend fun recentArtists(limit: Int): List<JellyfinItem> = error("unavailable")
         })
 
-        assertTrue(SourceQueries.recentlyPlayed().isEmpty())
-        assertTrue(SourceQueries.recentArtists().isEmpty())
+        assertThrows(IllegalStateException::class.java) { runBlocking { SourceQueries.recentlyPlayed() } }
+        assertThrows(IllegalStateException::class.java) { runBlocking { SourceQueries.recentArtists() } }
         assertTrue(requests.isEmpty())
     }
 
@@ -317,7 +388,8 @@ class SourceQueriesTest {
         Dispatchers.setMain(Dispatchers.Unconfined)
         try {
             val viewModel = HomeViewModel(app)
-            withTimeout(10_000) { viewModel.state.first { it.fullyCached } }
+            withTimeout(10_000) { viewModel.viewModelScope.coroutineContext[Job]!!.children.toList().joinAll() }
+            viewModel.state.value
         } finally {
             Dispatchers.resetMain()
             LibraryCache.clear()
@@ -603,12 +675,12 @@ class SourceQueriesTest {
     }
 
     @Test
-    fun `unreadable libraries return an empty artists page`() = runTest {
+    fun `unreadable libraries propagate artist request failures`() = runTest {
         Prefs.hiddenLibraries = setOf("lib-music")
         status = 500
 
-        assertTrue(SourceQueries.artists().items.isEmpty())
-        assertEquals(2, requests.size)
+        assertThrows(HttpException::class.java) { runBlocking { SourceQueries.artists() } }
+        assertEquals(1, requests.size)
         assertTrue(requests.all { it.encodedPath == "/Artists/AlbumArtists" })
     }
 }

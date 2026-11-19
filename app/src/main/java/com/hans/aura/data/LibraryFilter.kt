@@ -171,7 +171,7 @@ object LibraryFilter {
             return ItemsResponse()
         }
         val perLibraryLimit = (q.startIndex + q.limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
-        val responses = libs.mapNotNull { lib ->
+        val responses = libs.map { lib ->
             runCatching {
                 api.getItems(
                     userId = userId,
@@ -195,15 +195,14 @@ object LibraryFilter {
                     nameStartsWithOrGreater = q.nameStartsWithOrGreater
                 )
             }.onFailure {
-                // An unreadable library must not kill the whole screen.
                 Log.w(TAG, "library \"${lib.name}\" (${lib.id}) query failed: ${it.message}")
-            }.getOrNull()
+            }.getOrThrow()
         }
         // Mixed-type queries (search) also ask for Playlists, which live in the
         // server's virtual playlists view rather than inside a music library —
         // without this they would vanish from results once anything is hidden.
         val playlists = if (q.includeItemTypes?.contains("Playlist", ignoreCase = true) == true) {
-            listOfNotNull(
+            listOf(
                 runCatching {
                     api.getItems(
                         userId = userId,
@@ -220,7 +219,7 @@ object LibraryFilter {
                         imageTypeLimit = q.imageTypeLimit,
                         nameStartsWithOrGreater = q.nameStartsWithOrGreater
                     )
-                }.getOrNull()
+                }.getOrThrow()
             )
         } else emptyList()
         logStrategy(q.includeItemTypes, libs)
@@ -251,7 +250,7 @@ object LibraryFilter {
             return ItemsResponse()
         }
         val perLibraryLimit = (startIndex + limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
-        val responses = libs.mapNotNull { lib ->
+        val responses = libs.map { lib ->
             runCatching {
                 api.getAlbumArtists(
                     userId = userId, sortBy = sortBy, sortOrder = sortOrder,
@@ -261,7 +260,7 @@ object LibraryFilter {
                 )
             }.onFailure {
                 Log.w(TAG, "library \"${lib.name}\" artist query failed: ${it.message}")
-            }.getOrNull()
+            }.getOrThrow()
         }
         logStrategy("MusicArtist", libs)
         return merge(responses, ItemsQuery(sortBy = sortBy, sortOrder = sortOrder,

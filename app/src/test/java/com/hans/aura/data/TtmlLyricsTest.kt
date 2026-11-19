@@ -10,6 +10,42 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class TtmlLyricsTest {
     @Test
+    fun `Apple song part line and word starts use the track clock`() {
+        val fixture = checkNotNull(javaClass.getResource("/apple-song-parts.ttml")).readText()
+        val lines = LyricsStore.parseLyricsText(fixture)
+
+        assertEquals(listOf(2000L, 12500L, 17000L, 25000L), lines.map { it.startMs })
+        assertEquals(listOf("First light", "Turn around", "Sing again", "Last light"), lines.map { it.text })
+        assertEquals(listOf(
+            listOf(TimedWord(2000, "First"), TimedWord(4500, "light")),
+            listOf(TimedWord(12500, "Turn"), TimedWord(13750, "around")),
+            listOf(TimedWord(17000, "Sing"), TimedWord(18250, "again")),
+            listOf(TimedWord(25000, "Last"), TimedWord(26500, "light"))
+        ), lines.map { it.words })
+    }
+
+    @Test
+    fun `iTunes TTML songwriters are credits but performer agents are not`() {
+        val line = LyricsStore.parseLyricsText("""
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"
+                xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+                <head><metadata>
+                    <ttm:agent xml:id="voice" type="person"><ttm:name>Performer</ttm:name></ttm:agent>
+                    <itunes:iTunesMetadata><itunes:songwriters>
+                        <itunes:songwriter> Ada   Lane </itunes:songwriter>
+                        <itunes:songwriter>Ren Park</itunes:songwriter>
+                        <itunes:songwriter>Ada Lane</itunes:songwriter>
+                        <itunes:songwriter/>
+                    </itunes:songwriters></itunes:iTunesMetadata>
+                </metadata></head>
+                <body><div><p begin="1s" ttm:agent="voice">Hello</p></div></body>
+            </tt>
+        """.trimIndent()).single()
+        assertEquals("Hello", line.text)
+        assertEquals(LyricCredits(writers = listOf("Ada Lane", "Ren Park")), line.credits)
+    }
+
+    @Test
     fun `agents retain ids with first use ordering and group types`() {
         val lines = LyricsStore.parseLyricsText("""<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
             <head><metadata><ttm:agent xml:id="bob" type="character"/><ttm:agent xml:id="choir" type="group"/><ttm:agent xml:id="alice" type="person"/><ttm:agent xml:id="chris" type="person"/></metadata></head>

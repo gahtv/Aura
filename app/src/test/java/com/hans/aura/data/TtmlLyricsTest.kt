@@ -26,6 +26,17 @@ class TtmlLyricsTest {
     }
 
     @Test
+    fun `equal lead lines retain distinct metadata translation keys`() {
+        val lines = LyricsStore.parseLyricsText("""<tt xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+            <head><metadata><iTunesMetadata><translations><translation xml:lang="en">
+            <text for="L1">First translation</text><text for="L2">Second translation</text>
+            </translation></translations></iTunesMetadata></metadata></head>
+            <body><p begin="2s" itunes:key="L1">Same lead</p><p begin="2s" itunes:key="L2">Same lead</p></body></tt>""")
+        assertEquals(listOf("Same lead", "Same lead"), lines.map { it.text })
+        assertEquals(listOf("First translation", "Second translation"), lines.map { it.translation?.text })
+    }
+
+    @Test
     fun `itunes translations choose locale language or first and retain timings`() {
         val previous = java.util.Locale.getDefault()
         try {

@@ -131,7 +131,7 @@ internal object TtmlLyrics {
     fun parse(raw: String): List<LyricLine> = runCatching {
         val parser = Xml.newPullParser()
         parser.setInput(raw.reader())
-        val lines = mutableListOf<LyricLine>()
+        val lines = mutableListOf<Pair<LyricLine, String?>>()
         val writers = mutableListOf<String>()
         val agentTypes = mutableMapOf<String, String>()
         val agentKinds = mutableMapOf<String, LyricVoice.Kind>()
@@ -154,7 +154,6 @@ internal object TtmlLyrics {
         var metadataKey: String? = null
         var metadataText = Background()
         val translations = linkedMapOf<String, MutableMap<String, LyricAdlib>>()
-        val lineKeys = mutableMapOf<LyricLine, String>()
         var lineKey: String? = null
         var wordDepth = -1
         var rates = Rates()
@@ -309,8 +308,7 @@ internal object TtmlLyrics {
                             else timedWords.firstOrNull()?.startMs ?: interval.start.roundToLong().takeIf { interval.timed }
                         if (line.isNotEmpty() && interval.start < interval.end) {
                             val lyric = LyricLine(start ?: 0L, line, start != null, timedWords, voice(lineAgent), background.toAdlib(), translation = translation.toAdlib())
-                            lines += lyric
-                            lineKey?.let { lineKeys[lyric] = it }
+                            lines += lyric to lineKey
                         }
                         lineDepth = -1
                     }
@@ -322,8 +320,8 @@ internal object TtmlLyrics {
         val preferred = translations.entries.firstOrNull {
             Locale.forLanguageTag(it.key).language == Locale.getDefault().language
         }?.value ?: translations.values.firstOrNull()
-        lines.map { line ->
-            line.copy(translation = line.translation ?: preferred?.get(lineKeys[line]), credits = credits)
+        lines.map { (line, key) ->
+            line.copy(translation = line.translation ?: preferred?.get(key), credits = credits)
         }.sortedBy { it.startMs }
     }.getOrDefault(emptyList())
 }

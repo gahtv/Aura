@@ -137,18 +137,12 @@ class LibraryViewModelTest {
     @Test
     fun `creating a playlist refreshes a previously loaded Playlists tab`() = runBlocking {
         MockWebServer().use { server ->
-            val userId = "user"
-            app.jellyfin.auth.installSession(Session(server.url("/").toString(), userId, "Test", "token", "device"))
-            val model = model("Playlists")
+            val userId = server.signIn()
             val existing = JellyfinItem(id = "existing")
-            val first = withTimeout(5000) { requests.receive() }
-            val firstJob = model.viewModelScope.coroutineContext.job.children.first()
-            first.complete(ItemsResponse(items = listOf(existing), totalRecordCount = 1))
-            withTimeout(5000) { firstJob.join() }
-            val loaded = model.state.value
-            assertEquals(listOf(existing), loaded.items)
-            assertEquals(listOf(existing), LibraryCache.get(loaded.cacheKey))
-            assertEquals(listOf(existing), PagedLibrary.get(loaded.cacheKey)?.items)
+            val model = loadPlaylists(existing)
+            val activeKey = model.state.value.cacheKey
+            assertEquals(listOf(existing), LibraryCache.get(activeKey))
+            assertEquals(listOf(existing), PagedLibrary.get(activeKey)?.items)
             val otherSortKey = "lib_playlists:$userId:DateCreated:true"
             val otherUserKey = "lib_playlists:${userId}2:SortName:false"
             val albumsKey = "lib_albums:$userId:SortName:false"
@@ -162,7 +156,7 @@ class LibraryViewModelTest {
             val created = app.container.media.createPlaylist(userId, "New playlist", listOf("track"))
 
             assertNull(LibraryCache.get("home_playlists:$userId"))
-            for (key in listOf(loaded.cacheKey, otherSortKey)) {
+            for (key in listOf(activeKey, otherSortKey)) {
                 assertNull("Stale first page: $key", LibraryCache.get(key))
                 assertNull("Stale accumulated pages: $key", PagedLibrary.get(key))
             }
@@ -176,6 +170,54 @@ class LibraryViewModelTest {
             val refreshed = withTimeout(5000) { model.state.first { it.items.size == 2 } }
             assertEquals(listOf("existing", "new"), refreshed.items.map { it.id })
         }
+    }
+
+    @Test
+    fun `a playlist page requested before creation cannot overwrite the refreshed list`() = runBlocking {
+        MockWebServer().use { server ->
+            val userId = server.signIn()
+            val existing = JellyfinItem(id = "existing")
+            val model = loadPlaylists(existing, total = 2)
+            model.loadNextPage()
+            val stalePage = withTimeout(5000) { requests.receive() }
+            val pageJob = model.viewModelScope.coroutineContext.job.children.last()
+            server.enqueue(MockResponse().setBody("""{"Id":"new"}"""))
+
+            try {
+                val created = app.container.media.createPlaylist(userId, "New playlist", listOf("track"))
+                val expected = listOf(existing, created)
+                val freshPage = withTimeout(5000) { requests.receive() }
+                val refreshJob = model.viewModelScope.coroutineContext.job.children.last()
+                freshPage.complete(ItemsResponse(items = expected, totalRecordCount = 2))
+                withTimeout(5000) { refreshJob.join() }
+                val refreshed = model.state.value
+                assertEquals(expected, refreshed.items)
+
+                // loadNextPage owns a separate job; reloading doesn't cancel it.
+                assertTrue(pageJob.isActive)
+                stalePage.complete(ItemsResponse(items = listOf(JellyfinItem(id = "stale")), totalRecordCount = 2))
+                withTimeout(5000) { pageJob.join() }
+                assertEquals(expected, model.state.value.items)
+                assertEquals(expected, LibraryCache.get(refreshed.cacheKey))
+                assertEquals(expected, PagedLibrary.get(refreshed.cacheKey)?.items)
+            } finally {
+                stalePage.complete(ItemsResponse())
+            }
+        }
+    }
+
+    private fun MockWebServer.signIn(): String = "user".also { userId ->
+        app.jellyfin.auth.installSession(Session(url("/").toString(), userId, "Test", "token", "device"))
+    }
+
+    private suspend fun loadPlaylists(item: JellyfinItem, total: Int = 1): LibraryViewModel {
+        val model = model("Playlists")
+        val response = withTimeout(5000) { requests.receive() }
+        val loadJob = model.viewModelScope.coroutineContext.job.children.first()
+        response.complete(ItemsResponse(items = listOf(item), totalRecordCount = total))
+        withTimeout(5000) { loadJob.join() }
+        assertEquals(listOf(item), model.state.value.items)
+        return model
     }
 
     private fun model(kind: String = "Albums"): LibraryViewModel = ViewModelProvider(

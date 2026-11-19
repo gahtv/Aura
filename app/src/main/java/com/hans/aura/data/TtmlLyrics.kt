@@ -14,7 +14,7 @@ internal object TtmlLyrics {
     private fun normalize(text: String): String = text.replace(whitespace, " ").trim()
 
     private class Background {
-        private data class Timing(val depth: Int, val start: Double?, val end: Double)
+        private data class Timing(val depth: Int, val start: Double?, val end: Double, val segmentEnd: Double?)
 
         private val timings = ArrayDeque<Timing>()
         private val segments = mutableListOf<AdlibSegment>()
@@ -22,15 +22,14 @@ internal object TtmlLyrics {
         private var endMs: Long? = null
         val inside: Boolean get() = timings.isNotEmpty()
 
-        fun enter(depth: Int, begin: Double?, end: Double?, duration: Double?) {
+        fun enter(depth: Int, begin: Double?, end: Double?, duration: Double?, containerEnd: Double = Double.POSITIVE_INFINITY) {
             val parent = timings.lastOrNull()
             val start = begin ?: parent?.start
-            val limit = minOf(
-                parent?.end ?: Double.POSITIVE_INFINITY,
-                end ?: Double.POSITIVE_INFINITY,
-                duration?.let { start?.plus(it) } ?: Double.POSITIVE_INFINITY
-            )
-            timings.addLast(Timing(depth, start, limit))
+            val explicitEnd = listOfNotNull(end, duration?.let { start?.plus(it) }).minOrNull()
+            val limit = minOf(parent?.end ?: Double.POSITIVE_INFINITY,
+                explicitEnd ?: Double.POSITIVE_INFINITY, containerEnd)
+            val segmentEnd = explicitEnd ?: parent?.segmentEnd?.takeIf { begin == null }
+            timings.addLast(Timing(depth, start, limit, segmentEnd?.let { minOf(it, limit) }))
         }
 
         fun leave(depth: Int) {
@@ -49,7 +48,7 @@ internal object TtmlLyrics {
                 val separator = if (segments.isNotEmpty() && (pendingSpace || normalized.startsWith(' '))) " " else ""
                 val timing = timings.last()
                 val start = timing.start?.takeIf { it < timing.end }
-                segments += AdlibSegment(separator + content, start?.roundToLong())
+                segments += AdlibSegment(separator + content, start?.roundToLong(), timing.segmentEnd?.roundToLong())
                 if (start != null && timing.end.isFinite()) {
                     val end = timing.end.roundToLong()
                     endMs = maxOf(end, endMs ?: end)
@@ -212,7 +211,8 @@ internal object TtmlLyrics {
                                 // Apple-style background cues use the track clock and may overlap the lead.
                                 background.enter(parser.depth, begin, end, duration)
                             } else {
-                                background.enter(parser.depth, interval.start.takeIf { begin != null }, interval.end, null)
+                                background.enter(parser.depth, interval.start.takeIf { begin != null },
+                                    end?.let { parent.start + it }, duration, interval.end)
                             }
                         } else if (parser.name == "span") {
                             if (lineAgent == null) {

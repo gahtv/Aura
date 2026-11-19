@@ -380,7 +380,7 @@ fun LyricsPane(
                         }
                         val translation = line.translation
                         if (translation != null && translation.text.isNotBlank()) {
-                            AdlibText(translation, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight)
+                            AdlibText(translation, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
                         }
                     }
                     // After the part's last line, so the current-line anchor stays on the text.

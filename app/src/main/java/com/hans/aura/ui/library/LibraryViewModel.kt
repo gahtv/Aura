@@ -380,10 +380,8 @@ class LibraryViewModel(
  * Page of the Albums/Artists grid that STARTS at [letter]
  * (Jellyfin's `nameStartsWithOrGreater`, compared against SortName).
  *
- * Browse queries must honour the hidden-library selection, and
- * data/LibraryFilter.kt does not pass this parameter through, so the jump
- * re-uses LibraryFilter's public view of the selection and fans out per visible
- * music library itself. With nothing hidden it is a single query.
+ * Routed through LibraryFilter so a jump with hidden libraries pages the same
+ * SortName cursor as the unfiltered grid.
  */
 private suspend fun pageFromLetter(
     api: JellyfinApi,
@@ -392,50 +390,16 @@ private suspend fun pageFromLetter(
     letter: String,
     limit: Int,
     startIndex: Int
-): ItemsResponse {
-    suspend fun onePage(parentId: String?, start: Int, size: Int): ItemsResponse =
-        if (kind == "Artists") {
-            api.getAlbumArtists(
-                userId = userId,
-                sortBy = "SortName",
-                sortOrder = "Ascending",
-                limit = size,
-                startIndex = start,
-                fields = "PrimaryImageAspectRatio",
-                imageTypeLimit = 1,
-                parentId = parentId,
-                nameStartsWithOrGreater = letter
-            )
-        } else {
-            SourceQueries.items(
-                userId = userId,
-                includeItemTypes = "MusicAlbum",
-                recursive = true,
-                sortBy = "SortName",
-                sortOrder = "Ascending",
-                limit = size,
-                startIndex = start,
-                parentId = parentId,
-                nameStartsWithOrGreater = letter
-            )
-        }
-
-    if (!LibraryFilter.isActive()) return onePage(null, startIndex, limit)
-
-    val libs = LibraryFilter.visibleLibraries().filter {
-        it.collectionType == null || it.collectionType.equals("music", ignoreCase = true)
-    }
-    if (libs.isEmpty()) return ItemsResponse()
-    val wanted = startIndex + limit
-    val responses = libs.mapNotNull { lib ->
-        runCatching { onePage(lib.id, 0, wanted) }.getOrNull()
-    }
-    val all = responses.flatMap { it.items }
-        .distinctBy { it.id }
-        .sortedBy { (it.sortName ?: it.name).lowercase() }
-    return ItemsResponse(
-        items = all.drop(startIndex).take(limit),
-        totalRecordCount = responses.sumOf { it.totalRecordCount },
-        startIndex = startIndex
+): ItemsResponse = if (kind == "Artists") {
+    LibraryFilter.queryAlbumArtists(
+        api, userId, limit = limit, startIndex = startIndex, nameStartsWithOrGreater = letter
+    )
+} else {
+    SourceQueries.items(
+        LibraryFilter.ItemsQuery(
+            includeItemTypes = "MusicAlbum", recursive = true,
+            sortBy = "SortName", sortOrder = "Ascending",
+            limit = limit, startIndex = startIndex, nameStartsWithOrGreater = letter
+        )
     )
 }

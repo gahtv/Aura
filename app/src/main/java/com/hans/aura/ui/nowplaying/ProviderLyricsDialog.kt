@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -50,18 +52,20 @@ internal fun ProviderLyricsDialog(
     onSaved: () -> Unit
 ) {
     var search by remember { mutableStateOf<ProviderLyricsResult<List<ProviderLyricMatch>>?>(null) }
-    var selected by remember { mutableStateOf<ProviderLyricMatch?>(null) }
+    var selectedIndex by remember { mutableIntStateOf(0) }
+    var previewOpen by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
 
     LaunchedEffect(source, track.id) { search = source.searchProviderLyrics(track.id) }
 
-    val preview = selected
     val results = (search as? ProviderLyricsResult.Success)?.value.orEmpty()
+    val preview = if (previewOpen) results.getOrNull(selectedIndex) else null
     val back = {
         if (preview == null) onDismiss() else {
-            selected = null
+            previewOpen = false
             saveError = null
         }
     }
@@ -70,12 +74,12 @@ internal fun ProviderLyricsDialog(
         properties = DialogProperties(dismissOnClickOutside = false, usePlatformDefaultWidth = false)
     ) {
         val backFocus = remember { FocusRequester() }
-        val firstMatchFocus = remember { FocusRequester() }
+        val matchFocus = remember { FocusRequester() }
         LaunchedEffect(search, preview, saving) {
             if (!saving) {
                 if (preview == null && results.isNotEmpty()) {
                     withFrameNanos { }
-                    if (runCatching { firstMatchFocus.requestFocus() }.isSuccess) {
+                    if (runCatching { matchFocus.requestFocus() }.isSuccess) {
                         return@LaunchedEffect
                     }
                 }
@@ -126,13 +130,17 @@ internal fun ProviderLyricsDialog(
             } else {
                 LazyColumn(
                     Modifier.heightIn(max = 216.dp),
+                    state = listState,
                     verticalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
                 ) {
                     itemsIndexed(results) { index, match ->
                         Button(
-                            onClick = { selected = match },
+                            onClick = {
+                                selectedIndex = index
+                                previewOpen = true
+                            },
                             modifier = Modifier.fillMaxWidth().then(
-                                if (index == 0) Modifier.focusRequester(firstMatchFocus) else Modifier
+                                if (index == selectedIndex) Modifier.focusRequester(matchFocus) else Modifier
                             )
                         ) {
                             Column {

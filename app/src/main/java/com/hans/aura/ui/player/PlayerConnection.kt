@@ -476,7 +476,7 @@ class PlayerConnection(
         val live = (cur + 1 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
         // Keep the saved order, but only for entries still queued; anything
         // appended since (autoplay) keeps its place at the end.
-        val target = saved.filter { it in live } + live.filter { it !in saved }
+        val target = restoredUpcomingOrder(saved, live)
         val items = target.mapNotNull { registry.get(it) }
         val count = c.mediaItemCount
         c.removeMediaItems(cur + 1, count)

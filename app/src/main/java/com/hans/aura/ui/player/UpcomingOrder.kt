@@ -1,5 +1,11 @@
 package com.hans.aura.ui.player
 
+internal fun restoredUpcomingOrder(saved: List<String>, live: List<String>): List<String> {
+    val liveIds = live.toHashSet()
+    val savedIds = saved.toHashSet()
+    return saved.filter { it in liveIds } + live.filter { it !in savedIds }
+}
+
 internal fun upcomingIndices(count: Int, current: Int, next: (Int) -> Int): List<Int> {
     if (current !in 0 until count) return emptyList()
     val visited = mutableSetOf(current)

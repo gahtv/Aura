@@ -403,13 +403,15 @@ object LibraryFilter {
         limit: Int = 200,
         startIndex: Int = 0,
         fields: String = "PrimaryImageAspectRatio",
-        imageTypeLimit: Int = 1
+        imageTypeLimit: Int = 1,
+        nameStartsWithOrGreater: String? = null
     ): ItemsResponse {
         if (!isActive()) {
             return api.getAlbumArtists(
                 userId = userId, sortBy = sortBy, sortOrder = sortOrder,
                 limit = limit, startIndex = startIndex,
-                fields = fields, imageTypeLimit = imageTypeLimit
+                fields = fields, imageTypeLimit = imageTypeLimit,
+                nameStartsWithOrGreater = nameStartsWithOrGreater
             )
         }
         val libs = librariesFor("MusicArtist")
@@ -420,11 +422,12 @@ object LibraryFilter {
         if (limit > 0 && sortBy in INCREMENTAL_CURSOR_SORTS) {
             logStrategy("MusicArtist", libs)
             return cursorPage(api, userId, ItemsQuery(sortBy = sortBy, sortOrder = sortOrder,
-                limit = limit, startIndex = startIndex, fields = fields, imageTypeLimit = imageTypeLimit),
+                limit = limit, startIndex = startIndex, fields = fields, imageTypeLimit = imageTypeLimit,
+                nameStartsWithOrGreater = nameStartsWithOrGreater),
                 libs, artists = true) { index, offset, count ->
                 api.getAlbumArtists(userId = userId, sortBy = sortBy, sortOrder = sortOrder,
                     limit = count, startIndex = offset, fields = withSortName(fields), imageTypeLimit = imageTypeLimit,
-                    parentId = libs[index].id)
+                    parentId = libs[index].id, nameStartsWithOrGreater = nameStartsWithOrGreater)
             }
         }
         val perLibraryLimit = (startIndex + limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
@@ -435,7 +438,7 @@ object LibraryFilter {
                     userId = userId, sortBy = sortBy, sortOrder = sortOrder,
                     limit = perLibraryLimit, startIndex = 0,
                     fields = mergeFields, imageTypeLimit = imageTypeLimit,
-                    parentId = lib.id
+                    parentId = lib.id, nameStartsWithOrGreater = nameStartsWithOrGreater
                 )
             }.onFailure {
                 if (it is CancellationException) throw it

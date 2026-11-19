@@ -166,7 +166,7 @@ class PlayerConnection(
             scope.launch {
                 runCatching {
                     val session = sessionProvider() ?: return@launch
-                    jellyfin.api.getItem(session.userId, mediaId)
+                    jellyfin.api.getItem(itemId = mediaId, userId = session.userId)
                 }.onSuccess { item ->
                     registry.put(item)
                     // Only publish if this is still the current item.
@@ -198,7 +198,7 @@ class PlayerConnection(
                 runCatching {
                     val session = sessionProvider() ?: return@launch
                     for (id in missing) {
-                        val item = jellyfin.api.getItem(session.userId, id)
+                        val item = jellyfin.api.getItem(itemId = id, userId = session.userId)
                         registry.put(item)
                     }
                     readQueue(c)
@@ -300,7 +300,7 @@ class PlayerConnection(
         scope.launch {
             val full = runCatching {
                 val session = sessionProvider() ?: return@launch
-                jellyfin.api.getItem(session.userId, item.id)
+                jellyfin.api.getItem(itemId = item.id, userId = session.userId)
             }.getOrNull() ?: return@launch
             registry.put(full)
             AuraLog.d(

@@ -132,7 +132,7 @@ object ContextMenus {
                         Log.w(TAG, "view artist skipped: no session")
                     } else {
                         scope.launch {
-                            runCatching { app.jellyfin.api.getItem(userId, artistId) }
+                            runCatching { app.jellyfin.api.getItem(itemId = artistId, userId = userId) }
                                 .onSuccess { onOpenArtist(it) }
                                 .onFailure { Log.w(TAG, "view artist $artistId failed: ${it.message}") }
                         }
@@ -149,7 +149,7 @@ object ContextMenus {
                         Log.w(TAG, "view album skipped: no session")
                     } else {
                         scope.launch {
-                            runCatching { app.jellyfin.api.getItem(userId, albumId) }
+                            runCatching { app.jellyfin.api.getItem(itemId = albumId, userId = userId) }
                                 .onSuccess { onOpenCollection(it) }
                                 .onFailure { Log.w(TAG, "view album $albumId failed: ${it.message}") }
                         }
@@ -205,7 +205,7 @@ object ContextMenus {
                         Log.w(TAG, "view artist skipped: no session")
                     } else {
                         scope.launch {
-                            runCatching { app.jellyfin.api.getItem(userId, artistId) }
+                            runCatching { app.jellyfin.api.getItem(itemId = artistId, userId = userId) }
                                 .onSuccess { onOpenArtist(it) }
                                 .onFailure { Log.w(TAG, "view artist $artistId failed: ${it.message}") }
                         }

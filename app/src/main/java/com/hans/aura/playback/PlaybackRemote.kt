@@ -193,7 +193,7 @@ class PlaybackRemote(
                         // The session can be dropped while the socket lingers
                         // (sign-out) — never assert it into a crash.
                         val userId = jellyfin.auth.session?.userId ?: return@launch
-                        val items = ids.map { jellyfin.api.getItem(userId, it) }
+                        val items = ids.map { jellyfin.api.getItem(itemId = it, userId = userId) }
                         when (command) {
                             "PlayNext" ->
                                 // Enqueue after the current track without interrupting.

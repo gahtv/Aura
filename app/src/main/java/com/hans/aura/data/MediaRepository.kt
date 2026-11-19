@@ -146,7 +146,7 @@ class MediaRepository(
     suspend fun item(itemId: String): JellyfinItem? = withContext(Dispatchers.IO) {
         MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.item(itemId) }
         val uid = userId() ?: return@withContext null
-        runCatching { api().getItem(uid, itemId) }.getOrNull()
+        runCatching { api().getItem(itemId = itemId, userId = uid) }.getOrNull()
     }
 
     // ---- Artist ------------------------------------------------------------

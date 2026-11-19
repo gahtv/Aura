@@ -50,7 +50,7 @@ internal fun MirrorWiring(
             val itemId = route.itemId
             if (NavSpec.routeNeedsItem(route.screen) && itemId != null) {
                 val userId = app.jellyfin.auth.session?.userId ?: return@collect
-                runCatching { app.jellyfin.api.getItem(userId, itemId) }
+                runCatching { app.jellyfin.api.getItem(itemId = itemId, userId = userId) }
                     .onSuccess { item ->
                         NavSpec.fromMirrorRoute(route.screen, itemId, item)?.let {
                             nav.jumpTo(it, bumpFocus = true)

@@ -2,6 +2,7 @@ package com.hans.aura.data
 
 import android.util.Xml
 import org.xmlpull.v1.XmlPullParser
+import java.util.Locale
 import kotlin.math.roundToLong
 
 internal object TtmlLyrics {
@@ -147,7 +148,14 @@ internal object TtmlLyrics {
             return LyricVoice(ids.joinToString(" "), if (ids.size > 1) LyricVoice.Kind.GROUP else kinds.single())
         }
         var lineDepth = -1
-        var skipDepth = -1
+        var translationsDepth = -1
+        var metadataTextDepth = -1
+        var metadataLanguage = ""
+        var metadataKey: String? = null
+        var metadataText = Background()
+        val translations = linkedMapOf<String, MutableMap<String, LyricAdlib>>()
+        val lineKeys = mutableMapOf<LyricLine, String>()
+        var lineKey: String? = null
         var wordDepth = -1
         var rates = Rates()
         val intervals = mutableListOf(Interval())
@@ -160,6 +168,7 @@ internal object TtmlLyrics {
         val songwriterText = StringBuilder()
         val text = StringBuilder()
         var background = Background()
+        var translation = Background()
         val wordText = StringBuilder()
         var words = mutableListOf<Word>()
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
@@ -186,6 +195,20 @@ internal object TtmlLyrics {
                     val duration = if (timedElement) rates.timeMs(parser.getAttributeValue(null, "dur")) else null
                     val interval = if (timedElement) parent.child(begin, end, duration) else parent
                     intervals.add(interval)
+                    if (parser.name == "translations" && lineDepth < 0) translationsDepth = parser.depth
+                    if (translationsDepth >= 0 && parser.name == "translation") {
+                        metadataLanguage = parser.getAttributeValue("http://www.w3.org/XML/1998/namespace", "lang").orEmpty()
+                        translations.getOrPut(metadataLanguage) { mutableMapOf() }
+                    }
+                    if (translationsDepth >= 0 && parser.name == "text") {
+                        metadataTextDepth = parser.depth
+                        metadataKey = parser.getAttributeValue(null, "for")
+                        metadataText = Background()
+                    }
+                    if (metadataTextDepth >= 0) {
+                        if (parser.name == "br") metadataText.space()
+                        metadataText.enter(parser.depth, begin, end, duration)
+                    }
                     if (parser.name == "agent" && parser.namespace == metadataNamespace) {
                         parser.getAttributeValue("http://www.w3.org/XML/1998/namespace", "id")?.let {
                             agentTypes[it] = parser.getAttributeValue(null, "type").orEmpty()
@@ -198,13 +221,21 @@ internal object TtmlLyrics {
                         lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
                         text.clear()
                         background = Background()
+                        translation = Background()
+                        lineKey = (0 until parser.attributeCount).firstOrNull { parser.getAttributeName(it) == "key" }
+                            ?.let { parser.getAttributeValue(it) }
                         words = mutableListOf()
                     }
-                    if (lineDepth >= 0 && skipDepth < 0) {
+                    if (lineDepth >= 0) {
                         val role = (0 until parser.attributeCount).firstOrNull { parser.getAttributeName(it) == "role" }
                             ?.let { parser.getAttributeValue(it) }
-                        if (role == "x-translation") {
-                            skipDepth = parser.depth
+                        if (translation.inside || role == "x-translation") {
+                            if (!translation.inside || parser.name == "br") translation.space()
+                            if (legacyWordTimes) {
+                                translation.enter(parser.depth, begin, end, duration)
+                            } else {
+                                translation.enter(parser.depth, interval.start.takeIf { begin != null }, interval.end, null)
+                            }
                         } else if (background.inside || role == "x-bg") {
                             if (!background.inside || parser.name == "br") background.space()
                             if (legacyWordTimes) {
@@ -226,8 +257,12 @@ internal object TtmlLyrics {
                 }
                 XmlPullParser.TEXT -> {
                     if (songwriterDepth >= 0) songwriterText.append(parser.text)
-                    if (lineDepth >= 0 && skipDepth < 0) {
-                        if (background.inside) {
+                    if (metadataTextDepth >= 0) {
+                        metadataText.append(parser.text)
+                    } else if (lineDepth >= 0) {
+                        if (translation.inside) {
+                            translation.append(parser.text)
+                        } else if (background.inside) {
                             background.append(parser.text)
                         } else {
                             text.append(parser.text)
@@ -249,7 +284,15 @@ internal object TtmlLyrics {
                         }
                         wordDepth = -1
                     }
-                    if (parser.depth == skipDepth) skipDepth = -1
+                    metadataText.leave(parser.depth)
+                    if (parser.depth == metadataTextDepth) {
+                        val key = metadataKey
+                        val value = metadataText.toAdlib()
+                        if (key != null && value != null) translations.getValue(metadataLanguage)[key] = value
+                        metadataTextDepth = -1
+                    }
+                    if (parser.depth == translationsDepth) translationsDepth = -1
+                    translation.leave(parser.depth)
                     background.leave(parser.depth)
                     if (parser.depth == lineDepth) {
                         val line = normalize(text.toString())
@@ -265,7 +308,9 @@ internal object TtmlLyrics {
                         val start = if (begin != null) interval.start.roundToLong()
                             else timedWords.firstOrNull()?.startMs ?: interval.start.roundToLong().takeIf { interval.timed }
                         if (line.isNotEmpty() && interval.start < interval.end) {
-                            lines += LyricLine(start ?: 0L, line, start != null, timedWords, voice(lineAgent), background.toAdlib())
+                            val lyric = LyricLine(start ?: 0L, line, start != null, timedWords, voice(lineAgent), background.toAdlib(), translation = translation.toAdlib())
+                            lines += lyric
+                            lineKey?.let { lineKeys[lyric] = it }
                         }
                         lineDepth = -1
                     }
@@ -274,6 +319,11 @@ internal object TtmlLyrics {
             parser.next()
         }
         val credits = LyricCredits(writers = writers.distinct())
-        lines.sortedBy { it.startMs }.map { it.copy(credits = credits) }
+        val preferred = translations.entries.firstOrNull {
+            Locale.forLanguageTag(it.key).language == Locale.getDefault().language
+        }?.value ?: translations.values.firstOrNull()
+        lines.map { line ->
+            line.copy(translation = line.translation ?: preferred?.get(lineKeys[line]), credits = credits)
+        }.sortedBy { it.startMs }
     }.getOrDefault(emptyList())
 }

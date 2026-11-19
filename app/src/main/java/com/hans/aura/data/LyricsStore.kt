@@ -7,7 +7,8 @@ data class LyricLine(
     val words: List<TimedWord> = emptyList(),
     val voice: LyricVoice? = null,
     val adlib: LyricAdlib? = null,
-    val credits: LyricCredits = LyricCredits()
+    val credits: LyricCredits = LyricCredits(),
+    val translation: LyricAdlib? = null
 )
 
 data class LyricCredits(

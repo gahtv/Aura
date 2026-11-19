@@ -9,6 +9,44 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class TtmlLyricsTest {
+    private fun translation(line: LyricLine): LyricAdlib? = line.translation
+
+    @Test
+    fun `inline translations preserve plain text and timed syllables without changing lead`() {
+        val lines = parse("""<p begin="2s"><span begin="2s">Lead</span><span ttm:role="x-bg">Echo</span><span ttm:role="x-translation">Bonjour monde</span></p>
+            <p begin="4s">Next<span ttm:role="x-translation"><span begin="4.1s" end="4.5s">Bon</span><span begin="4.5s" end="5s">jour</span></span></p>
+            <p begin="6s">Last<span ttm:role="x-translation"> </span></p>""")
+        assertEquals(listOf("Lead", "Next", "Last"), lines.map { it.text })
+        assertEquals("Echo", lines.first().adlib?.text)
+        assertEquals(LyricAdlib(listOf(AdlibSegment("Bonjour monde"))), translation(lines[0]))
+        assertEquals(LyricAdlib(listOf(AdlibSegment("Bon", 4100), AdlibSegment("jour", 4500)), 5000), translation(lines[1]))
+        assertEquals(null, translation(lines[2]))
+        assertEquals(lines[1].translation, lines[1].toTimedLyricLine().translation)
+        assertEquals(listOf(TimedWord(2000, "Lead")), lines.first().words)
+    }
+
+    @Test
+    fun `itunes translations choose locale language or first and retain timings`() {
+        val previous = java.util.Locale.getDefault()
+        try {
+            fun translated() = LyricsStore.parseLyricsText("""<tt xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+                <head><metadata><iTunesMetadata><translations>
+                <translation xml:lang="fr"><text for="L1">Bonjour</text></translation>
+                <translation xml:lang="en-US"><text for="L1"><span begin="2s" end="3s">Hello</span> <span begin="3s" end="4s">world</span></text></translation>
+                </translations></iTunesMetadata></metadata></head>
+                <body><p begin="2s" itunes:key="L1">Lead</p><p begin="4s" itunes:key="L2">Next</p></body></tt>""")
+            java.util.Locale.setDefault(java.util.Locale.UK)
+            val lines = translated()
+            assertEquals(listOf("Lead", "Next"), lines.map { it.text })
+            assertEquals(LyricAdlib(listOf(AdlibSegment("Hello", 2000), AdlibSegment(" world", 3000)), 4000), translation(lines.first()))
+            assertEquals(null, translation(lines.last()))
+            java.util.Locale.setDefault(java.util.Locale.GERMAN)
+            assertEquals("Bonjour", translation(translated().first())?.text)
+        } finally {
+            java.util.Locale.setDefault(previous)
+        }
+    }
+
     @Test
     fun `iTunes TTML songwriters are credits but performer agents are not`() {
         val line = LyricsStore.parseLyricsText("""
@@ -58,7 +96,7 @@ class TtmlLyricsTest {
         """<?xml version="1.0"?><tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>$body</div></body></tt>""")
 
     @Test
-    fun `timed spans keep background separate and omit translation`() {
+    fun `timed spans keep background and translation separate`() {
         val line = parse("""<p begin="00:00:12.000" end="00:15"><span begin="12s">Hello</span> <span begin="00:12.500">world</span><span begin="13s" ttm:role="x-bg">echo</span><span ttm:role="x-translation">bonjour</span></p>""").single()
         assertEquals("Hello world", line.text)
         assertEquals(listOf(AdlibSegment("echo", 13000)), line.adlib?.segments)

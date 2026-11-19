@@ -176,7 +176,7 @@ fun LyricsPane(
             lines = timed.map {
                 LyricLine(
                     it.startMs, it.text, isSynced = true, words = it.words, voice = it.voice,
-                    adlib = it.adlib, credits = it.credits
+                    adlib = it.adlib, credits = it.credits, translation = it.translation
                 )
             }
             android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")
@@ -211,7 +211,7 @@ fun LyricsPane(
     val currentLineIndex = remember(lines, effectivePosition) {
         computeCurrentLine(lines, effectivePosition)
     }
-    val hasTimedAdlibs = remember(lines) { lines.orEmpty().any { it.adlib?.isTimed == true } }
+    val hasTimedAdlibs = remember(lines) { lines.orEmpty().any { it.adlib?.isTimed == true || it.translation?.isTimed == true } }
     val adlibPosition = remember(trackId) { mutableStateOf<Long?>(null) }
     LaunchedEffect(player, adlibPosition, hasTimedAdlibs, isPlaying) {
         adlibPosition.value = null
@@ -369,6 +369,10 @@ fun LyricsPane(
                         val adlib = line.adlib
                         if (adlib != null && adlib.text.isNotBlank()) {
                             AdlibText(adlib, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight)
+                        }
+                        val translation = line.translation
+                        if (translation != null && translation.text.isNotBlank()) {
+                            AdlibText(translation, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight)
                         }
                     }
                 }

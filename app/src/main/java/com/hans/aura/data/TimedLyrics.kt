@@ -25,7 +25,7 @@ data class TimedWord(
 data class TimedLyricLine(
     val startMs: Long,
     val text: String,
-    val translation: String? = null,
+    val translation: LyricAdlib? = null,
     val words: List<TimedWord> = emptyList(),
     val voice: LyricVoice? = null,
     val adlib: LyricAdlib? = null,
@@ -33,7 +33,7 @@ data class TimedLyricLine(
 )
 
 internal fun LyricLine.toTimedLyricLine() =
-    TimedLyricLine(startMs, text, words = words, voice = voice, adlib = adlib, credits = credits)
+    TimedLyricLine(startMs, text, translation = translation, words = words, voice = voice, adlib = adlib, credits = credits)
 
 /** A run of a lyric line, [sung] once the audio clock has passed its first word. */
 data class KaraokeSpan(
@@ -44,6 +44,7 @@ data class KaraokeSpan(
 /** Exact display text (including spacing), optionally timed to the playback clock. */
 data class AdlibSegment(val text: String, val startMs: Long? = null)
 
+/** Any lyric sub-line (adlib or translation), with optional independent timing. */
 data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null) {
     val text: String = segments.joinToString("") { it.text }
     private val startMs = segments.mapNotNull { it.startMs }.minOrNull()

@@ -48,7 +48,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.MaterialTheme
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
@@ -406,7 +405,7 @@ private fun NoLyricsState(
         androidx.tv.material3.Text(
             if (instrumental) "Instrumental" else "No synced lyrics for this track",
             color = TextPrimary,
-            style = MaterialTheme.typography.titleLarge
+            fontSize = AuraTypography.title
         )
         Spacer(Modifier.height(AuraSpacing.xs))
         androidx.tv.material3.Text(
@@ -419,7 +418,7 @@ private fun NoLyricsState(
                 else -> "Looking online\u2026"
             },
             color = TextSecondary,
-            style = MaterialTheme.typography.bodySmall,
+            fontSize = AuraTypography.bodySmall,
             textAlign = TextAlign.Center
         )
     }

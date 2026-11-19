@@ -176,7 +176,7 @@ fun LyricsPane(
             lines = timed.map {
                 LyricLine(
                     it.startMs, it.text, isSynced = true, words = it.words, voice = it.voice,
-                    adlib = it.adlib, credits = it.credits, translation = it.translation, part = it.part
+                    adlib = it.adlib, credits = it.credits, part = it.part, translation = it.translation
                 )
             }
             android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")

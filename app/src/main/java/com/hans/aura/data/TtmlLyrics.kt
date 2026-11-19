@@ -67,8 +67,12 @@ internal object TtmlLyrics {
     ) {
         fun child(begin: Double?, end: Double?, duration: Double?): Interval {
             val childStart = start + (begin ?: 0.0)
-            val childEnd = end?.let { start + it } ?: duration?.let { childStart + it }
-            return Interval(childStart, minOf(this.end, childEnd ?: Double.POSITIVE_INFINITY), timed || begin != null)
+            val childEnd = minOf(
+                this.end,
+                end?.let { start + it } ?: Double.POSITIVE_INFINITY,
+                duration?.let { childStart + it } ?: Double.POSITIVE_INFINITY
+            )
+            return Interval(childStart, childEnd, timed || begin != null)
         }
     }
 

@@ -100,6 +100,16 @@ class TtmlLyricsTest {
     }
 
     @Test
+    fun `the earlier of end and dur bounds a container`() {
+        val lines = parse("""<div begin="10s" end="20s" dur="5s">
+            <p begin="4s">Before duration</p><p begin="6s">After duration</p></div>
+            <div begin="20s" end="25s" dur="10s">
+            <p begin="4s">Before end</p><p begin="6s">After end</p></div>""")
+        assertEquals(listOf("Before duration", "Before end"), lines.map { it.text })
+        assertEquals(listOf(14000L, 24000L), lines.map { it.startMs })
+    }
+
+    @Test
     fun `paragraphs are sorted stably by start time`() {
         val lines = parse("""<p begin="20s">Later</p><p begin="10s">First</p><p begin="10s">Second</p>""")
         assertEquals(listOf(10000L, 10000L, 20000L), lines.map { it.startMs })

@@ -1,5 +1,6 @@
 package com.hans.aura.ui.theme
 
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -11,6 +12,8 @@ import androidx.palette.graphics.Palette
 import coil.imageLoader
 import coil.request.ImageRequest
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Extracts a dominant color from an image URL for dynamic per-album theming.
@@ -64,9 +67,7 @@ fun rememberDynamicColors(imageUrl: String?): DynamicColors? {
             val bitmap = context.imageLoader.execute(request).drawable?.let { d ->
                 if (d is android.graphics.drawable.BitmapDrawable) d.bitmap else null
             } ?: return@LaunchedEffect
-            val palette = Palette.from(bitmap).maximumColorCount(16).generate() ?: return@LaunchedEffect
-            val dominant = palette.getDominantColor(0xFF6B5A45.toInt())
-            dominant to pickSecondary(palette, dominant)
+            withContext(Dispatchers.Default) { extractColors(bitmap) } ?: return@LaunchedEffect
         }.onSuccess { (dom, sec) ->
             // Breadcrumb: palette extraction is silent otherwise, and a null
             // palette looks identical to a very dark image.
@@ -79,6 +80,16 @@ fun rememberDynamicColors(imageUrl: String?): DynamicColors? {
         }
     }
     return pair
+}
+
+/**
+ * Raw (dominant, secondary) ARGB ints for [bitmap]. Palette quantisation costs
+ * a full frame or more on TV hardware, so call this off the main thread.
+ */
+private fun extractColors(bitmap: Bitmap): Pair<Int, Int>? {
+    val palette = Palette.from(bitmap).maximumColorCount(16).generate() ?: return null
+    val dominant = palette.getDominantColor(0xFF6B5A45.toInt())
+    return dominant to pickSecondary(palette, dominant)
 }
 
 /**

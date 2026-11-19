@@ -2,6 +2,8 @@ package com.hans.aura.data
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Library selection enforcement, at the DATA layer.
@@ -26,6 +28,109 @@ object LibraryFilter {
 
     /** Per-library page cap: one library may have to answer a deep page. */
     private const val MAX_FETCH_PER_LIBRARY = 5000
+    private const val MAX_CURSOR_SHAPES = 4
+    private val cursorMutex = Mutex()
+    @Volatile
+    private var cursors = newCursorCache()
+
+    private fun newCursorCache() = LinkedHashMap<CursorKey, CursorState>(MAX_CURSOR_SHAPES, 0.75f, true)
+
+    private class ApiIdentity(val api: JellyfinApi) {
+        override fun equals(other: Any?): Boolean = other is ApiIdentity && api === other.api
+        override fun hashCode(): Int = System.identityHashCode(api)
+    }
+
+    private data class CursorKey(
+        val api: ApiIdentity,
+        val userId: String,
+        val query: ItemsQuery,
+        val libraries: List<LibraryRef>,
+        val suffix: String,
+        val artists: Boolean
+    )
+
+    private class SourceState {
+        val buffer = ArrayDeque<JellyfinItem>()
+        var fetched = 0
+        var total = 0
+        var exhausted = false
+    }
+
+    private class CursorState(sourceCount: Int) {
+        val sources = List(sourceCount) { SourceState() }
+        val merged = mutableListOf<JellyfinItem>()
+        val seen = HashSet<String>()
+    }
+
+    private suspend fun cursorPage(
+        api: JellyfinApi,
+        userId: String,
+        q: ItemsQuery,
+        libs: List<LibraryRef>,
+        artists: Boolean = false,
+        sourceCount: Int = libs.size,
+        fetch: suspend (source: Int, offset: Int, limit: Int) -> ItemsResponse
+    ): ItemsResponse = cursorMutex.withLock {
+        val cache = cursors
+        val key = CursorKey(ApiIdentity(api), userId, q.copy(startIndex = 0, limit = 0),
+            libs.toList(), cacheSuffix(), artists)
+        var state = if (q.startIndex == 0) CursorState(sourceCount) else cache[key] ?: CursorState(sourceCount)
+        val failed = mutableMapOf<Int, Throwable>()
+        val comparator = requireNotNull(comparatorFor(q.sortBy, q.sortOrder))
+        try {
+            if (q.limit <= 0) return@withLock ItemsResponse(startIndex = q.startIndex)
+            while (true) {
+                if (state.merged.size.toLong() >= q.startIndex.toLong() + q.limit) break
+                var restart = false
+                for ((index, source) in state.sources.withIndex()) {
+                    if (index in failed || source.exhausted || source.buffer.isNotEmpty()) continue
+                    val count = q.limit.coerceAtMost(MAX_FETCH_PER_LIBRARY - source.fetched)
+                    try {
+                        val response = fetch(index, source.fetched, count)
+                        val rows = response.items.take(count).sortedWith(comparator)
+                        source.buffer.addAll(rows)
+                        source.fetched += rows.size
+                        source.total = response.totalRecordCount
+                        source.exhausted = rows.isEmpty() || source.fetched >= source.total ||
+                            source.fetched >= MAX_FETCH_PER_LIBRARY
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "paging source $index query failed: ${e.message}")
+                        failed[index] = e
+                        restart = true
+                    }
+                }
+                if (failed.size == sourceCount) throw failed.values.first()
+                if (restart) {
+                    // Rebuild the page without failed sources; never retain a partial cursor.
+                    state = CursorState(sourceCount)
+                    continue
+                }
+                var smallest: Int? = null
+                for ((index, source) in state.sources.withIndex()) {
+                    if (index in failed || source.buffer.isEmpty()) continue
+                    val previous = smallest
+                    if (previous == null || comparator.compare(source.buffer.first(),
+                            state.sources[previous].buffer.first()) < 0) smallest = index
+                }
+                val index = smallest ?: break
+                val item = state.sources[index].buffer.removeFirst()
+                // Duplicate ids refer to the same item and carry identical comparator fields.
+                if (state.seen.add(item.id)) state.merged.add(item)
+            }
+            if (failed.isEmpty()) {
+                cache[key] = state
+                while (cache.size > MAX_CURSOR_SHAPES) cache.remove(cache.keys.first())
+            } else cache.remove(key)
+            ItemsResponse(items = state.merged.drop(q.startIndex).take(q.limit),
+                totalRecordCount = state.sources.filterIndexed { index, _ -> index !in failed }.sumOf { it.total },
+                startIndex = q.startIndex)
+        } catch (e: Throwable) {
+            cache.remove(key)
+            throw e
+        }
+    }
 
     /** Throttle: log the strategy once per distinct request shape, not per page. */
     @Volatile
@@ -171,6 +276,20 @@ object LibraryFilter {
             Log.w(TAG, "all libraries hidden — returning empty result for ${q.includeItemTypes}")
             return ItemsResponse()
         }
+        if (comparatorFor(q.sortBy, q.sortOrder) != null) {
+            val playlists = q.includeItemTypes?.contains("Playlist", ignoreCase = true) == true
+            logStrategy(q.includeItemTypes, libs)
+            return cursorPage(api, userId, q, libs, sourceCount = libs.size + if (playlists) 1 else 0) { index, offset, count ->
+                if (index < libs.size) {
+                    queryItems(api, userId, q.copy(parentId = libs[index].id, startIndex = offset, limit = count))
+                } else {
+                    queryItems(api, userId, ItemsQuery(includeItemTypes = "Playlist", filters = q.filters,
+                        enableUserData = q.enableUserData, searchTerm = q.searchTerm, sortBy = q.sortBy,
+                        sortOrder = q.sortOrder, limit = count, startIndex = offset, fields = q.fields,
+                        imageTypeLimit = q.imageTypeLimit, nameStartsWithOrGreater = q.nameStartsWithOrGreater))
+                }
+            }
+        }
         val perLibraryLimit = (q.startIndex + q.limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
         val responses = libs.map { lib ->
             runCatching {
@@ -250,6 +369,16 @@ object LibraryFilter {
         if (libs.isEmpty()) {
             Log.w(TAG, "all music libraries hidden — returning empty artist result")
             return ItemsResponse()
+        }
+        if (comparatorFor(sortBy, sortOrder) != null) {
+            logStrategy("MusicArtist", libs)
+            return cursorPage(api, userId, ItemsQuery(sortBy = sortBy, sortOrder = sortOrder,
+                limit = limit, startIndex = startIndex, fields = fields, imageTypeLimit = imageTypeLimit),
+                libs, artists = true) { index, offset, count ->
+                api.getAlbumArtists(userId = userId, sortBy = sortBy, sortOrder = sortOrder,
+                    limit = count, startIndex = offset, fields = fields, imageTypeLimit = imageTypeLimit,
+                    parentId = libs[index].id)
+            }
         }
         val perLibraryLimit = (startIndex + limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
         val responses = libs.map { lib ->
@@ -340,6 +469,7 @@ object LibraryFilter {
 
     /** Call after any change of the hidden set / library list. */
     fun clearCaches() {
+        cursors = newCursorCache()
         LibraryCache.clear()
         PagedLibrary.clear()
         AtmosCatalog.clear()

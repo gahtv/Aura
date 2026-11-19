@@ -16,12 +16,33 @@ class FakeJellyfinApi(
     private val views: List<JellyfinItem> = emptyList(),
     /** Parents whose query fails, to prove one bad library cannot kill a screen. */
     private val failingParents: Set<String?> = emptySet(),
-    private val lyricsResponse: LyricsResponse? = null
+    private val lyricsResponse: LyricsResponse? = null,
+    private val pagedBrowse: Boolean = false,
+    private val cancelledParents: Set<String?> = emptySet()
 ) : JellyfinApi {
 
     /** Every (includeItemTypes, parentId) the data layer actually asked for. */
     val itemQueries = mutableListOf<Pair<String?, String?>>()
     val artistQueries = mutableListOf<String?>()
+    data class BrowsePage(val parent: String?, val start: Int, val limit: Int, val rows: Int)
+    val browsePages = mutableListOf<BrowsePage>()
+
+    private fun page(all: List<JellyfinItem>, parent: String?, sortBy: String, sortOrder: String,
+                     start: Int, limit: Int): List<JellyfinItem> {
+        if (!pagedBrowse) return all
+        val comparator = when (sortBy) {
+            "DateCreated" -> compareBy<JellyfinItem> { it.dateCreated }.thenBy { it.name.lowercase() }
+            "Album" -> compareBy<JellyfinItem> { it.album?.lowercase() ?: it.name.lowercase() }.thenBy { it.name.lowercase() }
+            "PlayCount" -> compareBy<JellyfinItem> { it.userData?.playCount }.thenBy { it.name.lowercase() }
+            else -> compareBy<JellyfinItem> { it.sortName?.lowercase() ?: it.name.lowercase() }
+        }
+        val sorted = if (sortBy == "Random") all else all.sortedWith(
+            if (sortOrder == "Descending") comparator.reversed() else comparator
+        )
+        val rows = sorted.drop(start).take(limit)
+        browsePages += BrowsePage(parent, start, limit, rows.size)
+        return rows
+    }
 
     /** Server-side item filter / id hydration seen on each getItems call. */
     val itemFilters = mutableListOf<String?>()
@@ -53,10 +74,11 @@ class FakeJellyfinApi(
         itemQueries += includeItemTypes to parentId
         itemFilters += filters
         itemIds += ids
+        if (parentId in cancelledParents) throw kotlinx.coroutines.CancellationException("cancelled")
         if (parentId in failingParents) throw IllegalStateException("library $parentId is unreadable")
         val all = itemsByParent[parentId] ?: emptyList()
         return ItemsResponse(
-            items = all,
+            items = page(all, parentId, sortBy, sortOrder, startIndex, limit),
             totalRecordCount = all.size,
             startIndex = startIndex
         )
@@ -76,7 +98,8 @@ class FakeJellyfinApi(
         artistQueries += parentId
         if (parentId in failingParents) throw IllegalStateException("library $parentId is unreadable")
         val all = artistsByParent[parentId] ?: emptyList()
-        return ItemsResponse(items = all, totalRecordCount = all.size, startIndex = startIndex)
+        return ItemsResponse(items = page(all, parentId, sortBy, sortOrder, startIndex, limit),
+            totalRecordCount = all.size, startIndex = startIndex)
     }
 
     override suspend fun getUserViews(userId: String): ItemsResponse =

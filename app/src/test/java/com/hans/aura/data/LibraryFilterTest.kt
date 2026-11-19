@@ -28,6 +28,7 @@ class LibraryFilterTest {
         Prefs.hiddenLibraries = emptySet()
         LibraryCache.clear()
         PagedLibrary.clear()
+        LibraryFilter.clearCaches()
     }
 
     private fun hide(vararg ids: String) {
@@ -191,6 +192,169 @@ class LibraryFilterTest {
     }
 
     // ---- merging -----------------------------------------------------------
+
+    @Test
+    fun `successive pages fetch only new rows`() = runTest {
+        hide("lib-movies", "lib-playlists")
+        val rows: Map<String?, List<JellyfinItem>> = listOf("lib-music", "lib-atmos", "lib-mixed").mapIndexed { lib, id ->
+            id to (0 until 30).map { Fixtures.item("${it * 3 + lib}".padStart(3, '0')) }
+        }.toMap()
+        val api = FakeJellyfinApi(itemsByParent = rows, pagedBrowse = true)
+        repeat(6) { page ->
+            LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio",
+                limit = 6, startIndex = page * 6))
+        }
+        assertTrue("must not refetch prefixes: ${api.browsePages}", api.browsePages.all { it.limit == 6 })
+        assertTrue("six pages should transfer at most 54 rows, got ${api.browsePages.sumOf { it.rows }}",
+            api.browsePages.sumOf { it.rows } <= 54)
+        api.browsePages.groupBy { it.parent }.values.forEach { pages ->
+            assertEquals(pages.indices.map { it * 6 }, pages.map { it.start })
+        }
+    }
+
+    @Test
+    fun `paging matches old stable merge for supported sorts`() = runTest {
+        hide("lib-movies", "lib-playlists")
+        val base = (0 until 36).map { i ->
+            Fixtures.item("id-$i", name = "name-${i / 3}", sortName = "sort-${i / 4}",
+                playCount = i % 4).copy(dateCreated = "2025-01-${10 + i % 5}", album = "album-${i % 3}")
+        }
+        val libraries = listOf("lib-music", "lib-atmos", "lib-mixed")
+        val rows: Map<String?, List<JellyfinItem>> = libraries.mapIndexed { index, id ->
+            id to base.filterIndexed { i, _ -> i % 3 == index || i % 7 == 0 }
+        }.toMap()
+        for ((sort, order) in listOf("SortName" to "Ascending", "DateCreated" to "Descending",
+            "Album" to "Ascending", "PlayCount" to "Ascending")) {
+            val comparator = when (sort) {
+                "DateCreated" -> compareBy<JellyfinItem> { it.dateCreated }.thenBy { it.name.lowercase() }
+                "Album" -> compareBy<JellyfinItem> { it.album?.lowercase() }.thenBy { it.name.lowercase() }
+                "PlayCount" -> compareBy<JellyfinItem> { it.userData?.playCount }.thenBy { it.name.lowercase() }
+                else -> compareBy<JellyfinItem> { it.sortName?.lowercase() }
+            }.let { if (order == "Descending") it.reversed() else it }
+            val sorted = rows.mapValues { (_, items) -> items.sortedWith(comparator) }
+            val api = FakeJellyfinApi(itemsByParent = sorted, pagedBrowse = true)
+            for (start in 0..40 step 5) {
+                val expected = libraries.flatMap { sorted.getValue(it).take(start + 5) }
+                    .distinctBy { it.id }.sortedWith(comparator).drop(start).take(5)
+                val actual = LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(
+                    includeItemTypes = "Audio", sortBy = sort, sortOrder = order, limit = 5, startIndex = start))
+                assertEquals("$sort page $start", expected, actual.items)
+                assertEquals(rows.values.sumOf { it.size }, actual.totalRecordCount)
+            }
+        }
+    }
+
+    @Test
+    fun `cold deep page and eviction merge forward correctly`() = runTest {
+        hide("lib-movies", "lib-playlists")
+        val rows: Map<String?, List<JellyfinItem>> = listOf("lib-music", "lib-atmos", "lib-mixed")
+            .mapIndexed { lib, id -> id to (0 until 12).map {
+                Fixtures.item("${it * 3 + lib}".padStart(3, '0'))
+            } }.toMap()
+        val api = FakeJellyfinApi(itemsByParent = rows, pagedBrowse = true)
+        val query = LibraryFilter.ItemsQuery(includeItemTypes = "Audio", startIndex = 17, limit = 4)
+        val expected = (17..20).map { "$it".padStart(3, '0') }
+        assertEquals(expected, LibraryFilter.queryItems(api, "u", query).items.map { it.id })
+        repeat(5) { LibraryFilter.queryItems(api, "u", query.copy(searchTerm = "shape-$it")) }
+        val before = api.browsePages.size
+        assertEquals(expected, LibraryFilter.queryItems(api, "u", query).items.map { it.id })
+        assertTrue(api.browsePages.drop(before).any { it.start == 0 })
+        LibraryFilter.clearCaches()
+        assertEquals(expected, LibraryFilter.queryItems(api, "u", query).items.map { it.id })
+    }
+
+    @Test
+    fun `partial failure is not cached and retry recovers`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val failing = mutableSetOf<String?>("lib-music")
+        val rows = mapOf<String?, List<JellyfinItem>>(
+            "lib-music" to (0..5).map { Fixtures.item("a$it") },
+            "lib-atmos" to (0..5).map { Fixtures.item("b$it") })
+        val api = FakeJellyfinApi(itemsByParent = rows, failingParents = failing, pagedBrowse = true)
+        val query = LibraryFilter.ItemsQuery(includeItemTypes = "Audio", limit = 2, startIndex = 2)
+        assertEquals(listOf("b2", "b3"), LibraryFilter.queryItems(api, "u", query).items.map { it.id })
+        failing.clear()
+        assertEquals(listOf("a2", "a3"), LibraryFilter.queryItems(api, "u", query).items.map { it.id })
+    }
+
+    @Test
+    fun `Random retains prefix fetching and concatenation order`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val rows = mapOf<String?, List<JellyfinItem>>(
+            "lib-music" to listOf(Fixtures.item("z"), Fixtures.item("a"), Fixtures.item("b")),
+            "lib-atmos" to listOf(Fixtures.item("c")))
+        val api = FakeJellyfinApi(itemsByParent = rows, pagedBrowse = true)
+        val page = LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio",
+            sortBy = "Random", startIndex = 2, limit = 2))
+        assertEquals(listOf("b", "c"), page.items.map { it.id })
+        assertTrue(api.browsePages.all { it.start == 0 && it.limit == 4 })
+    }
+
+    @Test
+    fun `artists and mixed playlists use incremental sources`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val rows = mapOf<String?, List<JellyfinItem>>(
+            "lib-music" to listOf(Fixtures.item("a"), Fixtures.item("d"), Fixtures.item("g")),
+            "lib-atmos" to listOf(Fixtures.item("b"), Fixtures.item("e"), Fixtures.item("h")),
+            null to listOf(Fixtures.item("c", type = "Playlist"), Fixtures.item("f", type = "Playlist")))
+        val api = FakeJellyfinApi(itemsByParent = rows, artistsByParent = rows, pagedBrowse = true)
+        val query = LibraryFilter.ItemsQuery(includeItemTypes = "Audio,Playlist", limit = 2)
+        val mixed = (0..6 step 2).flatMap {
+            LibraryFilter.queryItems(api, "u", query.copy(startIndex = it)).items.map { item -> item.id }
+        }
+        assertEquals(listOf("a", "b", "c", "d", "e", "f", "g", "h"), mixed)
+        val artists = (0..4 step 2).flatMap {
+            LibraryFilter.queryAlbumArtists(api, "u", limit = 2, startIndex = it).items.map { item -> item.id }
+        }
+        assertEquals(listOf("a", "b", "d", "e", "g", "h"), artists)
+        assertTrue(api.browsePages.all { it.limit == 2 })
+    }
+
+    @Test
+    fun `cursor isolates users and APIs and resets on first page`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val rows = mapOf<String?, List<JellyfinItem>>("lib-music" to
+            (0..8).map { Fixtures.item("a$it") })
+        val api = FakeJellyfinApi(itemsByParent = rows, pagedBrowse = true)
+        val q = LibraryFilter.ItemsQuery(includeItemTypes = "Audio", limit = 2)
+        LibraryFilter.queryItems(api, "u", q)
+        var before = api.browsePages.size
+        LibraryFilter.queryItems(api, "v", q.copy(startIndex = 2))
+        assertTrue(api.browsePages.drop(before).any { it.parent == "lib-music" && it.start == 0 })
+        before = api.browsePages.size
+        LibraryFilter.queryItems(api, "u", q)
+        assertTrue(api.browsePages.drop(before).any { it.parent == "lib-music" && it.start == 0 })
+        val other = FakeJellyfinApi(itemsByParent = rows, pagedBrowse = true)
+        assertEquals(listOf("a2", "a3"), LibraryFilter.queryItems(other, "u", q.copy(startIndex = 2)).items.map { it.id })
+        assertTrue(other.browsePages.any { it.parent == "lib-music" && it.start == 0 })
+    }
+
+    @Test
+    fun `cancellation propagates and retry starts cleanly`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val cancelled = mutableSetOf<String?>("lib-atmos")
+        val api = FakeJellyfinApi(itemsByParent = mapOf("lib-music" to listOf(Fixtures.item("a"))),
+            pagedBrowse = true, cancelledParents = cancelled)
+        val q = LibraryFilter.ItemsQuery(includeItemTypes = "Audio", limit = 1)
+        assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            runBlocking { LibraryFilter.queryItems(api, "u", q) }
+        }
+        cancelled.clear()
+        assertEquals(listOf("a"), LibraryFilter.queryItems(api, "u", q).items.map { it.id })
+    }
+
+    @Test
+    fun `deep pages retain cumulative per library ceiling`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val api = FakeJellyfinApi(itemsByParent = mapOf("lib-music" to
+            (0 until 5100).map { Fixtures.item("$it".padStart(5, '0')) }), pagedBrowse = true)
+        val result = LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio",
+            startIndex = 4998, limit = 64))
+        assertEquals(listOf("04998", "04999"), result.items.map { it.id })
+        assertEquals(5100, result.totalRecordCount)
+        assertEquals(5000, api.browsePages.filter { it.parent == "lib-music" }.sumOf { it.rows })
+        assertTrue(api.browsePages.all { it.start + it.rows <= 5000 })
+    }
 
     @Test
     fun `merge sorts by SortName across libraries`() = runTest {

@@ -71,7 +71,18 @@ object LyricsStore {
         }
     }
 
-    private fun finishLrc(lines: List<LyricLine>, offsetMs: Long): List<LyricLine> {
+    /** Slices timed words into sub-line segments while keeping the line's exact spacing. */
+    private fun sublineSegments(line: LyricLine): List<AdlibSegment> {
+        var cursor = 0
+        return line.words.mapIndexed { index, word ->
+            val pattern = word.text.split(whitespace).joinToString("\\s+", transform = Regex::escape)
+            val match = Regex(pattern).find(line.text, cursor)
+            val end = if (index == line.words.lastIndex) line.text.length else match?.range?.last?.plus(1) ?: cursor
+            AdlibSegment(line.text.substring(cursor, end), word.startMs).also { cursor = end }
+        }.ifEmpty { listOf(AdlibSegment(line.text)) }
+    }
+
+    private fun pairSameStampTranslations(lines: List<LyricLine>): List<LyricLine> {
         val paired = mutableListOf<LyricLine>()
         var previous: LyricLine? = null
         var runLength = 0
@@ -81,20 +92,17 @@ object LyricsStore {
             if (runLength == 2 && lead != null && lead.text.isNotBlank() && line.text.isNotBlank() &&
                 (line.voice == null || line.voice == lead.voice)
             ) {
-                var cursor = 0
-                val segments = line.words.mapIndexed { index, word ->
-                    val pattern = word.text.split(whitespace).joinToString("\\s+", transform = Regex::escape)
-                    val match = Regex(pattern).find(line.text, cursor)
-                    val end = if (index == line.words.lastIndex) line.text.length else match?.range?.last?.plus(1) ?: cursor
-                    AdlibSegment(line.text.substring(cursor, end), word.startMs).also { cursor = end }
-                }.ifEmpty { listOf(AdlibSegment(line.text)) }
-                paired[paired.lastIndex] = lead.copy(translation = LyricAdlib(segments))
+                paired[paired.lastIndex] = lead.copy(translation = LyricAdlib(sublineSegments(line)))
             } else {
                 paired += line
             }
             previous = line
         }
-        return paired.map { line ->
+        return paired
+    }
+
+    private fun applyLrcOffsetAndSort(lines: List<LyricLine>, offsetMs: Long): List<LyricLine> =
+        lines.map { line ->
             line.copy(
                 startMs = if (line.isSynced) shifted(line.startMs, offsetMs) else line.startMs,
                 words = line.words.map { it.copy(startMs = shifted(it.startMs, offsetMs)) },
@@ -105,7 +113,9 @@ object LyricsStore {
                 }
             )
         }.filterNot { isHeader(it.text) }.sortedBy { it.startMs }
-    }
+
+    private fun finishLrc(lines: List<LyricLine>, offsetMs: Long): List<LyricLine> =
+        applyLrcOffsetAndSort(pairSameStampTranslations(lines), offsetMs)
 
     suspend fun fetch(api: JellyfinApi, itemId: String): List<LyricLine> {
         val response = try {

@@ -14,6 +14,7 @@ import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.PagedLibrary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -125,6 +126,7 @@ class LibraryViewModel(
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
 
     private var loadJob: Job? = null
+    private var loadGeneration = 0L
     // AppRoot's refreshKey starts at 0; the first LaunchedEffect(0) must not
     // double-load what init already fetched.
     private var refreshKeySeen = 0
@@ -148,7 +150,8 @@ class LibraryViewModel(
     fun loadNextPage() {
         val snapshot = _state.value
         if (snapshot.loading || snapshot.items.size >= snapshot.total) return
-        viewModelScope.launch { loadPage(snapshot.cacheKey) }
+        val generation = loadGeneration
+        viewModelScope.launch { loadPage(snapshot.cacheKey, generation) }
     }
 
     /** Clicking the active pill flips its direction (Random has none). */
@@ -213,6 +216,7 @@ class LibraryViewModel(
     // ---- loading -----------------------------------------------------------
 
     private fun reload() {
+        val generation = ++loadGeneration
         loadJob?.cancel()
         val current = _state.value
         val effective = current.atmosCapable && (current.atmosView || AtmosFilter.on)
@@ -222,12 +226,13 @@ class LibraryViewModel(
                 items = emptyList(),
                 total = Int.MAX_VALUE,
                 initialized = false,
+                loading = false,
                 error = null,
                 atmosEffective = effective,
                 cacheKey = key
             )
         }
-        scanAtmos()
+        scanAtmos(generation)
         loadJob = viewModelScope.launch {
             // Session-scoped paged store first: keeps deep-scroll state alive
             // across BACK so focus restoration can find the exact item.
@@ -243,11 +248,12 @@ class LibraryViewModel(
                 return@launch
             }
             _state.update { it.copy(initialized = true) }
-            loadPage(key)
+            loadPage(key, generation)
         }
     }
 
-    private suspend fun loadPage(key: String) {
+    private suspend fun loadPage(key: String, generation: Long) {
+        if (generation != loadGeneration) return
         val snapshot = _state.value
         if (snapshot.loading || snapshot.items.size >= snapshot.total) return
         _state.update { it.copy(loading = true) }
@@ -255,7 +261,7 @@ class LibraryViewModel(
         runCatching {
             withContext(Dispatchers.IO) { fetchPage(snapshot, startIndex) }
         }.onSuccess { result ->
-            if (_state.value.cacheKey != key) return@onSuccess
+            if (generation != loadGeneration) return@onSuccess
             val merged = snapshot.items + result.items
             // A-Z jump skips the count: pagination ends on a short page instead
             // of trusting a total that belongs to the whole (unfiltered) list.
@@ -268,7 +274,8 @@ class LibraryViewModel(
             PagedLibrary.put(key, merged, total)
             LibraryCache.put(key, merged.take(PAGE_SIZE))
         }.onFailure { e ->
-            if (_state.value.cacheKey != key) return@onFailure
+            if (e is CancellationException) throw e
+            if (generation != loadGeneration) return@onFailure
             Log.w(TAG, "page kind=$kind key=$key failed: ${e.message}")
             _state.update {
                 it.copy(loading = false, error = e.message ?: "Couldn't load from server")
@@ -324,14 +331,19 @@ class LibraryViewModel(
     }
 
     /** Whole-library Atmos scan for the badges; cached per session by the catalog. */
-    private fun scanAtmos() {
+    private fun scanAtmos(generation: Long) {
         if (!capable) return
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { SourceQueries.atmosAlbumIds() }
             }.onSuccess { ids ->
+                if (generation != loadGeneration) return@onSuccess
                 _state.update { it.copy(atmosAlbumIds = ids) }
-            }.onFailure { Log.w(TAG, "atmos scan failed: ${it.message}") }
+            }.onFailure {
+                if (it is CancellationException) throw it
+                if (generation != loadGeneration) return@onFailure
+                Log.w(TAG, "atmos scan failed: ${it.message}")
+            }
         }
     }
 

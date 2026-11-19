@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,6 +113,7 @@ fun ArtworkCard(
             .clickable { onClick() }
     ) {
         val bg by animateColorAsState(if (focused) SurfaceHigh else Surface, label = "card")
+        val focusedShape = RoundedCornerShape(AuraShapes.cardRadius - AuraSizes.focusBorder)
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
@@ -120,10 +122,10 @@ fun ArtworkCard(
                 .padding(if (focused) AuraSizes.focusBorder else 0.dp)
                 .then(
                     // Unmistakable focus outline: accent ring on the artwork.
-                    if (focused) Modifier.border(
+                    if (focused) Modifier.clip(focusedShape).border(
                         width = AuraSizes.focusBorderLoud,
                         color = accent,
-                        shape = AuraShapes.card
+                        shape = focusedShape
                     ) else Modifier
                 )
         ) {

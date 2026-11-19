@@ -156,7 +156,8 @@ object AuraTypography {
 
 /** Surface shapes for cards, action sheets, and dialogs in order of prominence. */
 object AuraShapes {
-    val card = RoundedCornerShape(12.dp)
+    val cardRadius = 12.dp
+    val card = RoundedCornerShape(cardRadius)
     val sheet = RoundedCornerShape(16.dp)
     val dialog = RoundedCornerShape(28.dp)
     val control = card

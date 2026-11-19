@@ -89,6 +89,31 @@ class LyricsStoreTest {
     }
 
     @Test
+    fun `file offsets shift trailing ends with repeated word starts`() {
+        for (offset in listOf(1500L, -1500L, 5000L)) {
+            val lines = LyricsStore.parseLrcText("[00:01][00:03]<00:01>One <00:02>two<00:04>\n[offset:$offset]")
+            assertEquals(listOf(2000L, 4000L).map { (it - offset).coerceAtLeast(0L) },
+                lines.map { it.words.last().startMs })
+            assertEquals(listOf(4000L, 6000L).map { (it - offset).coerceAtLeast(0L) },
+                lines.map { it.words.last().endMs })
+        }
+    }
+
+    @Test
+    fun `structured offsets shift cue and inline trailing ends`() = runBlocking {
+        for (offset in listOf(15000000L, -15000000L, 50000000L)) {
+            val response = Json { ignoreUnknownKeys = true }.decodeFromString<LyricsResponse>(
+                """{"Metadata":{"Offset":$offset},"Lyrics":[{"Text":"One","Start":10000000,"Cues":[{"Position":0,"EndPosition":3,"Start":10000000,"End":30000000}]},{"Text":"<00:01>One<00:03>","Start":10000000},{"Text":"<00:01>One<00:03>","Start":40000000}]}"""
+            )
+            val lines = LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track")
+            assertEquals(listOf(1000L, 1000L, 4000L).map { (it - offset / 10000L).coerceAtLeast(0L) },
+                lines.map { it.words.single().startMs })
+            assertEquals(listOf(3000L, 3000L, 6000L).map { (it - offset / 10000L).coerceAtLeast(0L) },
+                lines.map { it.words.single().endMs })
+        }
+    }
+
+    @Test
     fun `LRC credits are retained separately from lyrics`() {
         val lines = LyricsStore.parseLrcText(
             "[ar:Performer][AU: Ada Lane ][au:Ada Lane][lr:Ren Park]\n[by: Sam Ford ][lr: ]\n" +
@@ -206,17 +231,18 @@ class LyricsStoreTest {
     fun `enhanced multistamp lyrics preserve voices and clean words`() {
         val lines = LyricsStore.parseLrcText("[00:10][00:20]v2: <00:10>Hello <00:11>world<00:12>")
         assertTrue(lines.all { it.voice == LyricVoice("v2", LyricVoice.Kind.SECONDARY) && it.text == "Hello world" })
-        assertEquals(listOf(TimedWord(10000, "Hello"), TimedWord(11000, "world")), lines[0].words)
-        assertEquals(listOf(TimedWord(20000, "Hello"), TimedWord(21000, "world")), lines[1].words)
+        assertEquals(listOf(TimedWord(10000, "Hello"), TimedWord(11000, "world", 12000)), lines[0].words)
+        assertEquals(listOf(TimedWord(20000, "Hello"), TimedWord(21000, "world", 22000)), lines[1].words)
     }
 
     @Test
     fun `enhanced lrc strips tags and parses words including millisecond precision`() {
         val line = LyricsStore.parseLrcText("[00:12.00]<00:12>Hello  <00:12.503>world<00:13.10>  ").single()
         assertEquals("Hello world", line.text)
-        assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12503, "world")), line.words)
-        assertEquals(listOf(KaraokeSpan("Hello", true), KaraokeSpan(" world", false)), karaokeSpans(
-            TimedLyricLine(line.startMs, line.text, words = line.words), 12200))
+        assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12503, "world", 13100)), line.words)
+        val fills = karaokeFills(TimedLyricLine(line.startMs, line.text, words = line.words), 12200)
+        assertEquals(200f / 503f, fills.first().fraction, 0.0001f)
+        assertEquals(KaraokeFill(6, 11, 0f), fills.last())
         assertFalse(line.text.contains('<'))
     }
 
@@ -225,6 +251,8 @@ class LyricsStoreTest {
         val lines = LyricsStore.parseLrcText("[00:10][00:20]<00:10.25>Hello <00:11>world<00:12>")
         assertEquals(listOf(10250L, 11000L), lines[0].words.map { it.startMs })
         assertEquals(listOf(20250L, 21000L), lines[1].words.map { it.startMs })
+        assertEquals(12000L, lines[0].words.last().endMs)
+        assertEquals(22000L, lines[1].words.last().endMs)
         assertTrue(lines.all { it.text == "Hello world" })
         assertTrue(LyricsStore.parseLrcText("[00:01]Plain  line").single().words.isEmpty())
         assertEquals("Plain  line", LyricsStore.parseLrcText("[00:01]Plain  line").single().text)

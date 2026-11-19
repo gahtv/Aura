@@ -59,17 +59,96 @@ class TtmlLyricsTest {
     }
 
     @Test
-    fun `Apple song part line and word starts use the track clock`() {
+    fun `Apple song parts keep word and adlib ends on the track clock with duration bounds`() {
+        for (namespace in listOf("http://music.apple.com/lyric-ttml-internal",
+            "http://music.apple.com/lyrics", "http://itunes.apple.com/lyric-ttml-extensions")) {
+            for (container in listOf("", "timeContainer=\"par\"")) {
+                val line = LyricsStore.parseLyricsText("""<tt xmlns:apple="$namespace" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body begin="2s"><div begin="12s" end="30s" apple:song-part="Chorus"><p begin="12.5s" end="20s" $container><span begin="12.5s" end="14.5s" dur="5s">Hold</span> <span begin="14.5s" dur="2s">on</span><span ttm:role="x-bg" begin="13s" end="19s"><span begin="13s" dur="2s">Echo</span> <span begin="16s" end="17s">reply</span> <span begin="18s" dur="5s">tail</span></span></p></div></body></tt>""").single().toTimedLyricLine()
+                assertEquals(12500L, line.startMs)
+                assertEquals(listOf(TimedWord(12500, "Hold", 14500), TimedWord(14500, "on", 16500)), line.words)
+                assertEquals(listOf(KaraokeFill(0, 4, 0.75f), KaraokeFill(5, 7, 0f)), karaokeFills(line, 14000))
+                val adlib = requireNotNull(line.adlib)
+                assertEquals(listOf(AdlibSegment("Echo", 13000, 15000), AdlibSegment(" reply", 16000, 17000),
+                    AdlibSegment(" tail", 18000, 19000)), adlib.segments)
+                assertEquals(19000L, adlib.endMs)
+                assertEquals(listOf(KaraokeFill(0, 4, 0.5f), KaraokeFill(5, 10, 0f), KaraokeFill(11, 15, 0f)), adlib.karaokeFills(14000, true))
+                assertEquals(1f, adlib.karaokeFills(15500, true).first().fraction)
+            }
+        }
+    }
+
+    @Test
+    fun `background ends inherit through untimed children and respect legacy clocks and bounds`() {
+        val legacy = parse("""<p begin="12s" end="18s"><span begin="12s">Lead</span><span ttm:role="x-bg" begin="12.5s" dur="2s"><span>Echo</span></span></p>""").single().adlib!!
+        assertEquals(listOf(AdlibSegment("Echo", 12500, 14500)), legacy.segments)
+        assertEquals(0.5f, legacy.karaokeFills(13500, true).single().fraction)
+        val bounded = parse("""<p begin="5s" end="9s" timeContainer="par">Lead<span ttm:role="x-bg" begin="1s" dur="5s"><span begin="1s" dur="10s"><span>Echo</span></span></span></p>""").single().adlib!!
+        assertEquals(listOf(AdlibSegment("Echo", 7000, 9000)), bounded.segments)
+        assertEquals(0.5f, bounded.karaokeFills(8000, true).single().fraction)
+    }
+
+    @Test
+    fun `explicit background ends and durations control fill before gaps with timing rates`() {
+        val line = LyricsStore.parseLyricsText("""<tt xmlns:ttp="http://www.w3.org/ns/ttml#parameter" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" ttp:frameRate="25" ttp:tickRate="100"><body begin="2s"><div begin="3s"><p begin="1s" timeContainer="par">Lead<span ttm:role="x-bg"><span begin="25f" dur="200t">Holding</span> <span begin="150f" end="200f">on</span> <span begin="250f">again</span></span></p></div></body></tt>""").single()
+        val adlib = requireNotNull(line.adlib)
+        assertEquals(0.5f, adlib.karaokeFills(8000, true)[0].fraction)
+        assertEquals(1f, adlib.karaokeFills(10000, true)[0].fraction)
+        assertEquals(0.5f, adlib.karaokeFills(13000, true)[1].fraction)
+        assertEquals(1f, adlib.karaokeFills(15000, true)[1].fraction)
+        val finalWord = parse("""<p begin="5s" timeContainer="par">Lead<span ttm:role="x-bg" begin="1s" dur="2s">Echo</span></p>""").single().adlib!!
+        assertEquals(0.5f, finalWord.karaokeFills(7000, true).single().fraction)
+    }
+
+    @Test
+    fun `adjacent ttml syllables have independent ranges and fractions`() {
+        val line = parse("""<p begin="1s"><span begin="1s" end="1.4s">Hol</span><span begin="1.4s" end="2s">ding</span> <span begin="2s" end="2.5s">on</span></p>""").single().toTimedLyricLine()
+        assertEquals("Holding on", line.text)
+        assertEquals(listOf(KaraokeFill(0, 3, 0.5f), KaraokeFill(3, 7, 0f), KaraokeFill(8, 10, 0f)), karaokeFills(line, 1200))
+        assertEquals(listOf(KaraokeFill(0, 3, 1f), KaraokeFill(3, 7, 0.5f), KaraokeFill(8, 10, 0f)), karaokeFills(line, 1700))
+        assertEquals(listOf(KaraokeFill(0, 3, 1f), KaraokeFill(3, 7, 1f), KaraokeFill(8, 10, 0.5f)), karaokeFills(line, 2250))
+    }
+
+    @Test
+    fun `word end and duration survive absolute and relative timing`() {
+        val lines = parse("""<p begin="1s"><span begin="1s" end="2s" dur="5s">End</span> <span begin="2s" dur="500ms">Duration</span></p>
+            <p begin="10s"><span begin="0s" end="500ms">Relative</span> <span begin="500ms" dur="250ms">duration</span></p>""")
+        assertEquals(listOf(TimedWord(1000, "End", 2000), TimedWord(2000, "Duration", 2500)), lines[0].words)
+        assertEquals(listOf(TimedWord(10000, "Relative", 10500), TimedWord(10500, "duration", 10750)), lines[1].words)
+    }
+
+    @Test
+    fun `word ends use container timing rates and duration bounds`() {
+        val lines = LyricsStore.parseLyricsText("""<tt xmlns:ttp="http://www.w3.org/ns/ttml#parameter" ttp:frameRate="25" ttp:tickRate="100">
+            <body begin="2s"><div begin="3s"><p begin="1s" end="5s" timeContainer="par">
+            <span begin="25f" end="50f">Frames</span> <span begin="75f" dur="200t">Ticks</span>
+            </p></div></body></tt>""")
+        val line = lines.single()
+        assertEquals(6000L, line.startMs)
+        assertEquals(listOf(TimedWord(7000, "Frames", 8000), TimedWord(9000, "Ticks", 10000)), line.words)
+        assertEquals(listOf(KaraokeFill(0, 6, 0.5f), KaraokeFill(7, 12, 0f)),
+            karaokeFills(TimedLyricLine(line.startMs, line.text, words = line.words), 7500))
+    }
+
+    @Test
+    fun `word ends respect nested spans and legacy track relative paragraph bounds`() {
+        val nested = parse("""<p begin="6s" timeContainer="par"><span end="2500ms"><span begin="1s" dur="5s">Nested</span></span></p>""").single()
+        assertEquals(listOf(TimedWord(7000, "Nested", 8500)), nested.words)
+        val legacy = parse("""<p begin="12s" end="15s"><span begin="12s" end="13s">Hello</span> <span begin="13s" dur="5s">world</span></p>""").single()
+        assertEquals(listOf(TimedWord(12000, "Hello", 13000), TimedWord(13000, "world", 15000)), legacy.words)
+    }
+
+    @Test
+    fun `Apple song part line and word starts and ends use the track clock`() {
         val fixture = checkNotNull(javaClass.getResource("/apple-song-parts.ttml")).readText()
         val lines = LyricsStore.parseLyricsText(fixture)
 
         assertEquals(listOf(2000L, 12500L, 17000L, 25000L), lines.map { it.startMs })
         assertEquals(listOf("First light", "Turn around", "Sing again", "Last light"), lines.map { it.text })
         assertEquals(listOf(
-            listOf(TimedWord(2000, "First"), TimedWord(4500, "light")),
-            listOf(TimedWord(12500, "Turn"), TimedWord(13750, "around")),
-            listOf(TimedWord(17000, "Sing"), TimedWord(18250, "again")),
-            listOf(TimedWord(25000, "Last"), TimedWord(26500, "light"))
+            listOf(TimedWord(2000, "First", 4500), TimedWord(4500, "light", 5000)),
+            listOf(TimedWord(12500, "Turn", 13750), TimedWord(13750, "around", 15000)),
+            listOf(TimedWord(17000, "Sing", 18250), TimedWord(18250, "again", 20000)),
+            listOf(TimedWord(25000, "Last", 26500), TimedWord(26500, "light", 28000))
         ), lines.map { it.words })
     }
 
@@ -144,8 +223,8 @@ class TtmlLyricsTest {
         assertEquals(12000L, line.startMs)
         assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
         assertTrue(line.isSynced)
-        assertEquals(listOf(KaraokeSpan("Hello", true), KaraokeSpan(" world", false)),
-            karaokeSpans(line.toTimedLyricLine(), 12200))
+        assertEquals(listOf(KaraokeFill(0, 5, 0.4f), KaraokeFill(6, 11, 0f)),
+            karaokeFills(line.toTimedLyricLine(), 12200))
     }
 
     @Test
@@ -178,12 +257,14 @@ class TtmlLyricsTest {
         """).first().toTimedLyricLine()
         val adlib = requireNotNull(line.adlib)
         assertEquals("(Lala land)", adlib.text)
-        assertEquals(listOf(false, false, false, false, false), adlib.karaokeSpans(11499, false).map { it.sung })
-        assertEquals(listOf(true, true, false, false, false), adlib.karaokeSpans(11600, false).map { it.sung })
-        assertEquals(listOf(true, true, true, false, false), adlib.karaokeSpans(11800, false).map { it.sung })
-        assertEquals(listOf(true, true, true, true, true), adlib.karaokeSpans(13000, false).map { it.sung })
-        assertEquals(listOf(false, false, false, false, false), adlib.karaokeSpans(13400, false).map { it.sung })
-        assertEquals(listOf(KaraokeSpan("Lead", false)), karaokeSpans(line, 11800))
+        assertEquals(listOf(0f, 0f, 0f, 0f, 0f), adlib.karaokeFills(11499, false).map { it.fraction })
+        assertEquals(listOf(100f / 1900f, 0f, 0f, 0f, 0f), adlib.karaokeFills(11600, false).map { it.fraction })
+        assertEquals(listOf(200f / 1900f, 0.5f, 0f, 0f, 0f), adlib.karaokeFills(11700, false).map { it.fraction })
+        assertEquals(listOf(300f / 1900f, 1f, 0f, 0f, 0f), adlib.karaokeFills(11800, false).map { it.fraction })
+        assertEquals(listOf(1500f / 1900f, 1f, 1f, 0f, 0f), adlib.karaokeFills(13000, false).map { it.fraction })
+        assertEquals(listOf(1700f / 1900f, 1f, 1f, 0.5f, 0.5f), adlib.karaokeFills(13200, false).map { it.fraction })
+        assertEquals(listOf(0f, 0f, 0f, 0f, 0f), adlib.karaokeFills(13400, false).map { it.fraction })
+        assertEquals(listOf(KaraokeFill(0, 4, 0f)), karaokeFills(line, 11800))
     }
 
     @Test
@@ -194,7 +275,7 @@ class TtmlLyricsTest {
             </p></div>
         """).single()
         assertEquals(listOf(TimedWord(12500, "Lead")), line.words)
-        assertEquals(LyricAdlib(listOf(AdlibSegment("Oh", 13000), AdlibSegment(" yeah", 13500)), 14000), line.adlib)
+        assertEquals(LyricAdlib(listOf(AdlibSegment("Oh", 13000, 14000), AdlibSegment(" yeah", 13500)), 14000), line.adlib)
     }
 
     @Test
@@ -271,6 +352,8 @@ class TtmlLyricsTest {
         val line = parse("""<p begin="12s"><span><span begin="0s">Hello</span> <span begin="500ms">world</span></span></p>""").single()
         assertEquals(12000L, line.startMs)
         assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
+        assertEquals(listOf(KaraokeFill(0, 5, 0.5f), KaraokeFill(6, 11, 0f)),
+            karaokeFills(TimedLyricLine(line.startMs, line.text, words = line.words), 12250))
     }
 
     @Test

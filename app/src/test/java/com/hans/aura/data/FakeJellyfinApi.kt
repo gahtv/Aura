@@ -168,6 +168,8 @@ class FakeJellyfinApi(
         nope("unmarkFavorite")
 
     override suspend fun getLyrics(itemId: String): LyricsResponse = lyricsResponse ?: nope("getLyrics")
+    override suspend fun searchRemoteLyrics(itemId: String): List<RemoteLyricDto> = nope("searchRemoteLyrics")
+    override suspend fun downloadRemoteLyrics(itemId: String, lyricId: String): LyricsResponse = nope("downloadRemoteLyrics")
     override suspend fun setCapabilities(body: CapabilitiesDto): retrofit2.Response<Unit> =
         nope("setCapabilities")
 

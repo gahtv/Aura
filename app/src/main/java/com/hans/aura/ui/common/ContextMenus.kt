@@ -29,17 +29,20 @@ object ContextMenus {
      * first row up/ to top, last row down — are omitted rather than shown dead,
      * and the currently playing row is not movable (moving the playing entry
      * makes "what's next" ambiguous against the live player index) but can still
-     * be removed.
+     * be removed. Moves are timeline moves, so they are omitted while shuffle is
+     * on: the screen then lists play order and a timeline neighbour is not the
+     * row above or below.
      */
     fun forQueueRow(
         player: PlayerConnection,
         index: Int,
         size: Int,
         currentIndex: Int,
-        track: JellyfinItem
+        track: JellyfinItem,
+        reorderable: Boolean
     ): ContextMenuSpec {
         val actions = mutableListOf<ContextAction>()
-        if (index != currentIndex) {
+        if (reorderable && index != currentIndex) {
             if (index > 0) {
                 actions.add(ContextAction("Move up", R.drawable.ic_arrow_upward) { player.moveInQueue(index, index - 1) })
                 actions.add(ContextAction("Move to top", R.drawable.ic_vertical_align_top) { player.moveInQueue(index, 0) })

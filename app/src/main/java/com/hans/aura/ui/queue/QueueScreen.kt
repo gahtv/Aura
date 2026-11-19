@@ -62,6 +62,7 @@ import com.hans.aura.ui.theme.TextSecondary
 fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Boolean = false) {
     val queue by player.queue.collectAsState()
     val queueIndex by player.queueIndex.collectAsState()
+    val displayQueue by player.playOrder.collectAsState()
     val shuffle by player.shuffleEnabled.collectAsState()
     val repeatMode by player.repeatMode.collectAsState()
     val smart by player.smartShuffle.collectAsState()
@@ -142,9 +143,10 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
                     .focusRequester(contentFocus)
                     .focusRestorer()
             ) {
-                itemsIndexed(queue) { i, track ->
+                itemsIndexed(displayQueue) { position, entry ->
+                    val (i, track) = entry
                     TrackRow(
-                        index = i + 1,
+                        index = position + 1,
                         track = track,
                         isCurrent = i == queueIndex,
                         onClick = { player.skipToQueue(i) },
@@ -155,7 +157,8 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
                                     index = i,
                                     size = queue.size,
                                     currentIndex = queueIndex,
-                                    track = track
+                                    track = track,
+                                    reorderable = !shuffle
                                 )
                             )
                         }

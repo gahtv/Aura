@@ -80,6 +80,8 @@ class PlayerConnection(
     private val _isPlaying = MutableStateFlow(false)
     private val _queue = MutableStateFlow<List<JellyfinItem>>(emptyList())
     private val _queueIndex = MutableStateFlow(0)
+    private val _upcoming = MutableStateFlow<List<IndexedValue<JellyfinItem>>>(emptyList())
+    private val _playOrder = MutableStateFlow<List<IndexedValue<JellyfinItem>>>(emptyList())
     private val _shuffleEnabled = MutableStateFlow(false)
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
     private val _smartShuffle = MutableStateFlow(false)
@@ -93,6 +95,8 @@ class PlayerConnection(
     val durationMs: StateFlow<Long> = playback.durationMs
     val queue: StateFlow<List<JellyfinItem>> = _queue
     val queueIndex: StateFlow<Int> = _queueIndex
+    val upcoming: StateFlow<List<IndexedValue<JellyfinItem>>> = _upcoming
+    val playOrder: StateFlow<List<IndexedValue<JellyfinItem>>> = _playOrder
     val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled
     val repeatMode: StateFlow<Int> = _repeatMode
 
@@ -109,6 +113,7 @@ class PlayerConnection(
             override fun onMediaItemTransition(c: MediaController, mediaId: String?) {
                 syncItem(c, mediaId)
                 _queueIndex.value = c.currentMediaItemIndex
+                readUpcoming(c)
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -117,10 +122,12 @@ class PlayerConnection(
 
             override fun onShuffleModeEnabledChanged(enabled: Boolean) {
                 _shuffleEnabled.value = enabled
+                controller()?.let { readUpcoming(it) }
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
                 _repeatMode.value = repeatMode
+                controller()?.let { readUpcoming(it) }
             }
 
             override fun onPlaybackStateChanged(c: MediaController, state: Int) {
@@ -178,6 +185,9 @@ class PlayerConnection(
         }
         _queue.value = resolved
         _queueIndex.value = c.currentMediaItemIndex
+        _shuffleEnabled.value = c.shuffleModeEnabled
+        _repeatMode.value = c.repeatMode
+        readUpcoming(c)
         // Fetch any items the UI doesn't know yet (remote cast items).
         if (missing.isNotEmpty()) {
             scope.launch {
@@ -190,6 +200,25 @@ class PlayerConnection(
                     readQueue(c)
                 }
             }
+        }
+    }
+
+    private fun readUpcoming(c: MediaController) {
+        val timeline = c.currentTimeline
+        // Next skips to another item even when the current item repeats.
+        val repeat = if (c.repeatMode == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_OFF else c.repeatMode
+        _upcoming.value = upcomingIndices(timeline.windowCount, c.currentMediaItemIndex) { index ->
+            timeline.getNextWindowIndex(index, repeat, c.shuffleModeEnabled)
+        }.mapNotNull { index ->
+            registry.get(c.getMediaItemAt(index).mediaId)?.let { IndexedValue(index, it) }
+        }
+        _playOrder.value = queueIndices(
+            timeline.windowCount,
+            c.currentMediaItemIndex,
+            previous = { timeline.getPreviousWindowIndex(it, Player.REPEAT_MODE_OFF, c.shuffleModeEnabled) },
+            next = { timeline.getNextWindowIndex(it, repeat, c.shuffleModeEnabled) }
+        ).mapNotNull { index ->
+            registry.get(c.getMediaItemAt(index).mediaId)?.let { IndexedValue(index, it) }
         }
     }
 

@@ -86,6 +86,18 @@ internal fun QueuePeekOverlay(
     DisposableEffect(Unit) { onDispose { OverlayVisibility.dialogOpen = false } }
 
     val firstFocus = remember { FocusRequester() }
+    var focusedRow by remember { mutableStateOf(0) }
+    var pendingRow by remember { mutableStateOf<Int?>(null) }
+    val rowFocus = remember(upcoming.size) {
+        List(upcoming.size) { if (it == 0) firstFocus else FocusRequester() }
+    }
+    LaunchedEffect(upcoming.size, pendingRow) {
+        val row = pendingRow ?: return@LaunchedEffect
+        if (row < upcoming.size) {
+            rowFocus[row].requestFocus()
+            pendingRow = null
+        }
+    }
     // focusToken changes on every OPEN (not on extend), so extending does not
     // yank focus back to the top row.
     LaunchedEffect(focusToken) {
@@ -107,8 +119,14 @@ internal fun QueuePeekOverlay(
                     stillHeld && (e.key == Key.DirectionDown ||
                         e.key == Key.DirectionCenter || e.key == Key.Enter) -> true
                     e.type != KeyEventType.KeyDown -> false
-                    e.key == Key.DirectionDown -> { onExtend(); true }
-                    e.key == Key.DirectionUp -> { onCollapse(); true }
+                    e.key == Key.DirectionDown && focusedRow == upcoming.lastIndex -> {
+                        if (upcoming.size < total) {
+                            pendingRow = focusedRow + 1
+                            onExtend()
+                        }
+                        true
+                    }
+                    e.key == Key.DirectionUp && focusedRow == 0 -> { onCollapse(); true }
                     else -> false
                 }
             }
@@ -153,7 +171,12 @@ internal fun QueuePeekOverlay(
                 PeekRow(
                     track = track,
                     accent = accent,
-                    modifier = if (i == 0) Modifier.focusRequester(firstFocus) else Modifier
+                    modifier = Modifier.focusRequester(rowFocus[i]).focusProperties {
+                        up = rowFocus.getOrNull(i - 1) ?: FocusRequester.Cancel
+                        down = rowFocus.getOrNull(i + 1) ?: FocusRequester.Cancel
+                    }.onFocusChanged {
+                        if (it.isFocused) focusedRow = i
+                    }
                 ) {
                     onJump(i)
                 }

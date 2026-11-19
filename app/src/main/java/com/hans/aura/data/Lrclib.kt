@@ -53,8 +53,8 @@ object Lrclib {
         .callTimeout(8, TimeUnit.SECONDS)
         .build()
 
-    /** Per-track in-process cache. An EMPTY list is a remembered miss (no re-query per recomposition). */
-    private val cache = ConcurrentHashMap<String, List<LyricLine>>()
+    /** Per-track in-process cache, including instrumental matches and authoritative misses. */
+    private val cache = ConcurrentHashMap<String, LyricsResult>()
 
     private val trackListSerializer = ListSerializer(Track.serializer())
 
@@ -71,52 +71,47 @@ object Lrclib {
     )
 
     /** Last known result for [itemId], or null when nothing has been looked up yet. */
-    fun cached(itemId: String): List<LyricLine>? = cache[itemId]
+    fun cached(itemId: String): LyricsResult? = cache[itemId]
 
     /**
-     * Look [item] up. Returns empty on a miss, an error, an instrumental match,
-     * or a result with no usable text. Never throws.
+     * Compatibility view for consumers that only need lyric lines.
      */
-    suspend fun lookup(item: JellyfinItem): List<LyricLine> {
-        cache[item.id]?.let { return logAndReturn(item, it, "cached") }
-        return withContext(Dispatchers.IO) {
+    suspend fun lookup(item: JellyfinItem): List<LyricLine> = lookupResult(item).lines
+
+    /** Look [item] up without losing authoritative instrumental matches. Never throws. */
+    suspend fun lookupResult(item: JellyfinItem): LyricsResult = cachedLookup(item) {
+        withContext(Dispatchers.IO) {
             val targetSec = (item.durationMs / 1000.0).roundToLong()
             val artist = primaryArtist(item)
             val track = item.name.trim()
-            if (track.isBlank()) {
-                cache[item.id] = emptyList()
-                return@withContext logAndReturn(item, emptyList(), "miss")
-            }
-
-            val parsed = try {
-                val exact = fetchGet(
-                    artist = artist,
-                    track = track,
-                    album = item.album.orEmpty(),
-                    durationSec = targetSec
-                )?.let { listOf(it) }
-
-                // /api/get is an exact-match endpoint: a 404 there means "not the
-                // same recording", so widen with a search before giving up.
-                val candidates = exact ?: fetchSearch(artist = artist, track = track)
-                val picked = pick(candidates, targetSec)
-                picked?.let { toLines(it) }.orEmpty()
-            } catch (t: Throwable) {
-                // Never cache an error: a transient network failure should be
-                // retryable the next time this track is opened.
-                Log.w(TAG, "AURA_LRCLIB item=${item.id} result=error dur=${item.durationMs / 1000} ${t.javaClass.simpleName}: ${t.message}")
-                return@withContext emptyList()
-            }
-
-            // Only an authoritative "nothing found" is remembered.
-            cache[item.id] = parsed
-            logAndReturn(item, parsed, if (parsed.isEmpty()) "miss" else "hit")
+            if (track.isBlank()) return@withContext LyricsResult.NotFound
+            fetchGet(artist, track, item.album.orEmpty(), targetSec)
+                ?: toResult(pick(fetchSearch(artist, track), targetSec))
         }
     }
 
-    private fun logAndReturn(item: JellyfinItem, lines: List<LyricLine>, result: String): List<LyricLine> {
-        Log.i(TAG, "AURA_LRCLIB item=${item.id} result=$result dur=${item.durationMs / 1000} lines=${lines.size}")
-        return lines
+    internal suspend fun cachedLookup(item: JellyfinItem, load: suspend () -> LyricsResult): LyricsResult {
+        cache[item.id]?.let { return logAndReturn(item, it, "cached") }
+        val parsed = try {
+            load()
+        } catch (t: Throwable) {
+            // Never cache an error: a transient network failure should be
+            // retryable the next time this track is opened.
+            Log.w(TAG, "AURA_LRCLIB item=${item.id} result=error dur=${item.durationMs / 1000} ${t.javaClass.simpleName}: ${t.message}")
+            return LyricsResult.NotFound
+        }
+
+        cache[item.id] = parsed
+        return logAndReturn(item, parsed, when (parsed) {
+            LyricsResult.Instrumental -> "instrumental"
+            LyricsResult.NotFound -> "miss"
+            is LyricsResult.Lyrics -> "hit"
+        })
+    }
+
+    private fun logAndReturn(item: JellyfinItem, lyrics: LyricsResult, result: String): LyricsResult {
+        Log.i(TAG, "AURA_LRCLIB item=${item.id} result=$result dur=${item.durationMs / 1000} lines=${lyrics.lines.size}")
+        return lyrics
     }
 
     /** LRCLIB matches on ONE artist: prefer the album artist, then the first credited artist. */
@@ -127,7 +122,7 @@ object Lrclib {
     }
 
     /** GET /api/get — one exact recording. Null on 404 / no body. */
-    private fun fetchGet(artist: String, track: String, album: String, durationSec: Long): Track? {
+    private fun fetchGet(artist: String, track: String, album: String, durationSec: Long): LyricsResult? {
         val url = "https://$HOST/api/get".toHttpUrl().newBuilder()
             .addQueryParameter("artist_name", artist)
             .addQueryParameter("track_name", track)
@@ -141,7 +136,7 @@ object Lrclib {
             }
             val body = resp.body?.string().orEmpty()
             if (body.isBlank()) return null
-            return runCatching { json.decodeFromString(Track.serializer(), body) }.getOrNull()
+            return runCatching { parseResponse(body) }.getOrNull()
         }
     }
 
@@ -174,12 +169,11 @@ object Lrclib {
     /**
      * Choose the recording that is most likely the one playing:
      * synced + duration within 2 s  >  synced  >  duration match  >  first.
-     * Instrumental entries and entries with no text at all are skipped.
+     * Entries without lyrics or an instrumental marker are skipped.
      */
     private fun pick(candidates: List<Track>, targetSec: Long): Track? {
         val usable = candidates.filter {
-            !it.instrumental &&
-                (!it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank())
+            it.instrumental || !it.syncedLyrics.isNullOrBlank() || !it.plainLyrics.isNullOrBlank()
         }
         if (usable.isEmpty()) return null
         fun close(t: Track) = t.duration != null && abs(t.duration - targetSec.toDouble()) <= DURATION_TOLERANCE_S
@@ -188,6 +182,16 @@ object Lrclib {
             ?: usable.firstOrNull { synced(it) }
             ?: usable.firstOrNull { close(it) }
             ?: usable.first()
+    }
+
+    internal fun parseResponse(body: String): LyricsResult =
+        toResult(json.decodeFromString(Track.serializer(), body))
+
+    private fun toResult(track: Track?): LyricsResult {
+        if (track == null) return LyricsResult.NotFound
+        if (track.instrumental) return LyricsResult.Instrumental
+        val lines = toLines(track)
+        return if (lines.isEmpty()) LyricsResult.NotFound else LyricsResult.Lyrics(lines)
     }
 
     /** LRC text through the SAME parser the Jellyfin path uses; plain text as untimed lines. */

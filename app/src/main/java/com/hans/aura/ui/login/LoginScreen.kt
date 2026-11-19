@@ -73,7 +73,7 @@ private fun LoginTextField(
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
     val colors = MaterialTheme.colorScheme
-    val shape = AuraShapes.of(AuraShapes.lg)
+    val shape = AuraShapes.control
 
     TextField(
         value = value,

@@ -48,12 +48,12 @@ import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
-import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.FocusOutline
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
+import com.hans.aura.ui.theme.AuraShapes
 import kotlinx.coroutines.launch
 
 /**

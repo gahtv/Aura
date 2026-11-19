@@ -52,9 +52,9 @@ import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
-import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
+import com.hans.aura.ui.theme.AuraShapes
 
 /**
  * Whole-library views: Artists, Albums, Tracks, Playlists.

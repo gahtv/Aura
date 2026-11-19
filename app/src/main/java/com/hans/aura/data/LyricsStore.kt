@@ -10,7 +10,9 @@ data class LyricLine(
     val voice: LyricVoice? = null,
     val adlib: LyricAdlib? = null,
     val credits: LyricCredits = LyricCredits(),
-    val translation: LyricAdlib? = null
+    val translation: LyricAdlib? = null,
+    /** Song part (verse, chorus, …) the line belongs to; neighbours that differ start a new part. */
+    val part: Int = 0
 )
 
 data class LyricCredits(

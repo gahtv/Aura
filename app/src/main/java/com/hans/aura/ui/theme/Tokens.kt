@@ -115,6 +115,9 @@ object AuraSpacing {
     /** Vertical padding of one lyric line; with the 22/26sp text this gives the
      *  ~70dp pitch [AuraSizes.lyricLinePitch] is derived from. */
     val lyricLineVertical: Dp = 10.dp
+
+    /** Extra space between song parts (verse, chorus, …) in the lyrics list. */
+    val lyricPartGap: Dp = xl
 }
 
 /**

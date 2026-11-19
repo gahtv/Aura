@@ -56,6 +56,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.ui.common.AuraTextField
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.FocusKeeper
 import com.hans.aura.ui.common.ItemShelf
@@ -202,11 +203,10 @@ fun SearchScreen(
             Modifier.fillMaxWidth().padding(horizontal = 56.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            androidx.compose.material3.TextField(
+            AuraTextField(
                 value = query,
                 onValueChange = { viewModel.onQueryChange(it) },
-                placeholder = { androidx.compose.material3.Text("Artists, albums, tracks, playlists") },
-                singleLine = true,
+                placeholder = "Artists, albums, tracks, playlists",
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(
                     onSearch = { viewModel.submit() },

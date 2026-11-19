@@ -4,8 +4,6 @@ package com.hans.aura.ui.login
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,15 +29,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
+import com.hans.aura.ui.common.AuraTextField
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -59,51 +54,6 @@ private data class QuickConnectPanel(
     val secret: String?,
     val demo: Boolean
 )
-
-@Composable
-private fun LoginTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    modifier: Modifier = Modifier,
-    visualTransformation: VisualTransformation = VisualTransformation.None,
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    keyboardActions: KeyboardActions = KeyboardActions.Default
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-    val colors = MaterialTheme.colorScheme
-    val shape = AuraShapes.control
-
-    TextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier.border(
-            width = AuraSizes.focusBorder,
-            color = if (focused) AuraColors.CursorRing else Color.Transparent,
-            shape = shape
-        ),
-        textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = AuraTypography.body),
-        placeholder = {
-            Text(placeholder, color = colors.onSurfaceVariant, fontSize = AuraTypography.body)
-        },
-        singleLine = true,
-        shape = shape,
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = AuraColors.FocusedFill,
-            unfocusedContainerColor = AuraColors.PillBackgroundRaised,
-            focusedTextColor = colors.onSurface,
-            unfocusedTextColor = colors.onSurface,
-            cursorColor = colors.primary,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent
-        ),
-        interactionSource = interactionSource,
-        visualTransformation = visualTransformation,
-        keyboardOptions = keyboardOptions,
-        keyboardActions = keyboardActions
-    )
-}
 
 @Composable
 fun LoginScreen(
@@ -286,7 +236,7 @@ fun LoginScreen(
             )
             Spacer(Modifier.height(AuraSpacing.xxl))
 
-            LoginTextField(
+            AuraTextField(
                 value = serverUrl,
                 onValueChange = { serverUrl = it },
                 placeholder = "http://server:8096",
@@ -294,7 +244,7 @@ fun LoginScreen(
                 modifier = Modifier.width(AuraSizes.loginFormWidth)
             )
             Spacer(Modifier.height(AuraSpacing.md))
-            LoginTextField(
+            AuraTextField(
                 value = username,
                 onValueChange = { username = it },
                 placeholder = "Username",
@@ -302,7 +252,7 @@ fun LoginScreen(
                 modifier = Modifier.width(AuraSizes.loginFormWidth).focusRequester(usernameFocus)
             )
             Spacer(Modifier.height(AuraSpacing.md))
-            LoginTextField(
+            AuraTextField(
                 value = password,
                 onValueChange = { password = it },
                 placeholder = "Password",

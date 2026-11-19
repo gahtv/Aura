@@ -100,6 +100,10 @@ class PlayerConnection(
     val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled
     val repeatMode: StateFlow<Int> = _repeatMode
 
+    @androidx.annotation.MainThread
+    internal fun currentPositionMs(): Long =
+        playback.controller.value?.currentPosition?.coerceAtLeast(0L) ?: positionMs.value
+
     /** Milliseconds left on the sleep timer, null when no timer is running. */
     val sleepRemaining: StateFlow<Long?> = sleep.remaining
 

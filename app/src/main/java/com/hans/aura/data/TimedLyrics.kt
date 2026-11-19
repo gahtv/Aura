@@ -20,8 +20,7 @@ data class TimedWord(
  * source that cannot time words simply never produces one (see
  * [MusicSource.lyricsTimed]).
  *
- * [adlib] is optional background-vocal text belonging to this line, separate from
- * the lead [text] and its karaoke [words].
+ * [adlib] is optional background-vocal text with independent timing.
  */
 data class TimedLyricLine(
     val startMs: Long,
@@ -29,7 +28,7 @@ data class TimedLyricLine(
     val translation: String? = null,
     val words: List<TimedWord> = emptyList(),
     val voice: LyricVoice? = null,
-    val adlib: String? = null
+    val adlib: LyricAdlib? = null
 )
 
 internal fun LyricLine.toTimedLyricLine() =
@@ -40,6 +39,23 @@ data class KaraokeSpan(
     val text: String,
     val sung: Boolean
 )
+
+/** Exact display text (including spacing), optionally timed to the playback clock. */
+data class AdlibSegment(val text: String, val startMs: Long? = null)
+
+data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null) {
+    val text: String = segments.joinToString("") { it.text }
+    private val startMs = segments.mapNotNull { it.startMs }.minOrNull()
+    val isTimed: Boolean get() = startMs != null
+
+    internal fun karaokeSpans(positionMs: Long, leadIsCurrent: Boolean): List<KaraokeSpan> {
+        val overlapping = endMs != null && startMs != null && positionMs in startMs until endMs
+        val active = leadIsCurrent || overlapping
+        return segments.map { segment ->
+            KaraokeSpan(segment.text, active && segment.startMs?.let { positionMs >= it } == true)
+        }
+    }
+}
 
 /**
  * Splits [line] into runs that share a highlight state at [positionMs].

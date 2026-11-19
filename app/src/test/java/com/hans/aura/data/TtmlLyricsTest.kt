@@ -40,7 +40,7 @@ class TtmlLyricsTest {
     fun `timed spans keep background separate and omit translation`() {
         val line = parse("""<p begin="00:00:12.000" end="00:15"><span begin="12s">Hello</span> <span begin="00:12.500">world</span><span begin="13s" ttm:role="x-bg">echo</span><span ttm:role="x-translation">bonjour</span></p>""").single()
         assertEquals("Hello world", line.text)
-        assertEquals("echo", line.adlib)
+        assertEquals(listOf(AdlibSegment("echo", 13000)), line.adlib?.segments)
         assertEquals(12000L, line.startMs)
         assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
         assertTrue(line.isSynced)
@@ -60,8 +60,30 @@ class TtmlLyricsTest {
             <p begin="5s">Last</p>
         """)
         assertEquals(listOf("Lead", "Next", "Last"), lines.map { it.text })
-        assertEquals(listOf("(Oh yeah) (again)", null, null), lines.map { it.adlib })
+        assertEquals(listOf("(Oh yeah) (again)", null, null), lines.map { it.adlib?.text })
+        assertEquals(
+            listOf(AdlibSegment("(Oh", 2100), AdlibSegment(" yeah)", 2200), AdlibSegment(" (again)")),
+            lines.first().adlib?.segments
+        )
         assertEquals(listOf(TimedWord(2000, "Lead")), lines.first().words)
+    }
+
+    @Test
+    fun `adlib syllables retain punctuation and highlight before and beyond their lead line`() {
+        val line = parse("""
+            <p begin="12s"><span begin="12s">Lead</span>
+                <span ttm:role="x-bg" begin="11.5s" end="13.4s">(<span begin="11.6s">La</span><span begin="11.8s">la</span> <span begin="13s"><span>land</span>)</span></span>
+            </p>
+            <p begin="12.9s">Next lead</p>
+        """).first().toTimedLyricLine()
+        val adlib = requireNotNull(line.adlib)
+        assertEquals("(Lala land)", adlib.text)
+        assertEquals(listOf(false, false, false, false, false), adlib.karaokeSpans(11499, false).map { it.sung })
+        assertEquals(listOf(true, true, false, false, false), adlib.karaokeSpans(11600, false).map { it.sung })
+        assertEquals(listOf(true, true, true, false, false), adlib.karaokeSpans(11800, false).map { it.sung })
+        assertEquals(listOf(true, true, true, true, true), adlib.karaokeSpans(13000, false).map { it.sung })
+        assertEquals(listOf(false, false, false, false, false), adlib.karaokeSpans(13400, false).map { it.sung })
+        assertEquals(listOf(KaraokeSpan("Lead", false)), karaokeSpans(line, 11800))
     }
 
     @Test

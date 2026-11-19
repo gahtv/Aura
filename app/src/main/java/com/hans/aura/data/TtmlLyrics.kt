@@ -10,6 +10,44 @@ internal object TtmlLyrics {
 
     private fun normalize(text: String): String = text.replace(whitespace, " ").trim()
 
+    private class Background {
+        private data class Timing(val depth: Int, val startMs: Long?)
+
+        private val timings = ArrayDeque<Timing>()
+        private val segments = mutableListOf<AdlibSegment>()
+        private var pendingSpace = false
+        private var endMs: Long? = null
+        val inside: Boolean get() = timings.isNotEmpty()
+
+        fun enter(depth: Int, begin: Long?, end: Long?) {
+            // Apple-style background spans can begin before their lead paragraph.
+            timings.addLast(Timing(depth, begin ?: timings.lastOrNull()?.startMs))
+            if (end != null) endMs = maxOf(end, endMs ?: end)
+        }
+
+        fun leave(depth: Int) {
+            if (timings.lastOrNull()?.depth == depth) timings.removeLast()
+        }
+
+        fun space() {
+            pendingSpace = true
+        }
+
+        fun append(text: String) {
+            if (text.isEmpty()) return
+            val normalized = text.replace(whitespace, " ")
+            val content = normalized.trim()
+            if (content.isNotEmpty()) {
+                val separator = if (segments.isNotEmpty() && (pendingSpace || normalized.startsWith(' '))) " " else ""
+                segments += AdlibSegment(separator + content, timings.lastOrNull()?.startMs)
+            }
+            pendingSpace = normalized.endsWith(' ')
+        }
+
+        fun toAdlib(): LyricAdlib? =
+            segments.takeIf { it.isNotEmpty() }?.let { LyricAdlib(it.toList(), endMs) }
+    }
+
     private fun timeMs(value: String?): Long? {
         val text = value?.trim() ?: return null
         if (text.endsWith("ms")) return text.dropLast(2).toDoubleOrNull()?.roundToLong()
@@ -41,13 +79,12 @@ internal object TtmlLyrics {
         }
         var lineDepth = -1
         var skipDepth = -1
-        var backgroundDepth = -1
         var wordDepth = -1
         var lineStart: Long? = null
         var wordStart: Long? = null
         var lineAgent: String? = null
         val text = StringBuilder()
-        val backgroundText = StringBuilder()
+        var background = Background()
         val wordText = StringBuilder()
         var words = mutableListOf<TimedWord>()
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
@@ -63,7 +100,7 @@ internal object TtmlLyrics {
                         lineStart = timeMs(parser.getAttributeValue(null, "begin"))
                         lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
                         text.clear()
-                        backgroundText.clear()
+                        background = Background()
                         words = mutableListOf()
                     }
                     if (lineDepth >= 0 && skipDepth < 0) {
@@ -71,11 +108,13 @@ internal object TtmlLyrics {
                             ?.let { parser.getAttributeValue(it) }
                         if (role == "x-translation") {
                             skipDepth = parser.depth
-                        } else if (backgroundDepth >= 0) {
-                            if (parser.name == "br") backgroundText.append(' ')
-                        } else if (role == "x-bg") {
-                            backgroundDepth = parser.depth
-                            if (backgroundText.isNotEmpty()) backgroundText.append(' ')
+                        } else if (background.inside || role == "x-bg") {
+                            if (!background.inside || parser.name == "br") background.space()
+                            background.enter(
+                                parser.depth,
+                                timeMs(parser.getAttributeValue(null, "begin")),
+                                timeMs(parser.getAttributeValue(null, "end"))
+                            )
                         } else if (parser.name == "span") {
                             if (lineAgent == null) {
                                 lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
@@ -91,8 +130,8 @@ internal object TtmlLyrics {
                     }
                 }
                 XmlPullParser.TEXT -> if (lineDepth >= 0 && skipDepth < 0) {
-                    if (backgroundDepth >= 0) {
-                        backgroundText.append(parser.text)
+                    if (background.inside) {
+                        background.append(parser.text)
                     } else {
                         text.append(parser.text)
                         if (wordDepth >= 0) wordText.append(parser.text)
@@ -106,7 +145,7 @@ internal object TtmlLyrics {
                         wordDepth = -1
                     }
                     if (parser.depth == skipDepth) skipDepth = -1
-                    if (parser.depth == backgroundDepth) backgroundDepth = -1
+                    background.leave(parser.depth)
                     if (parser.depth == lineDepth) {
                         val line = normalize(text.toString())
                         val start = lineStart ?: words.firstOrNull()?.startMs
@@ -115,8 +154,7 @@ internal object TtmlLyrics {
                             words = words.map { it.copy(startMs = it.startMs + paragraphStart) }.toMutableList()
                         }
                         if (line.isNotEmpty()) {
-                            val adlib = normalize(backgroundText.toString()).takeIf { it.isNotEmpty() }
-                            lines += LyricLine(start ?: 0L, line, start != null, words, voice(lineAgent), adlib)
+                            lines += LyricLine(start ?: 0L, line, start != null, words, voice(lineAgent), background.toAdlib())
                         }
                         lineDepth = -1
                     }

@@ -486,7 +486,9 @@ class SourceQueriesTest {
     fun `jellyfin raw ttml carries the adlib independently of lead word timing`() = runTest {
         body = """{"LyricText":"<tt xmlns='http://www.w3.org/ns/ttml' xmlns:ttm='http://www.w3.org/ns/ttml#metadata'><body><div><p begin='12s'><span begin='12s'>Hello</span> <span begin='12.5s'>world</span><span ttm:role='x-bg' begin='12.2s'>echo</span></p></div></body></tt>"}"""
         val line = MusicSources.current!!.lyricsTimed("ttml-adlib")!!.single()
-        assertEquals("echo", line.adlib)
+        assertEquals(listOf(AdlibSegment("echo", 12200)), line.adlib?.segments)
+        assertEquals(listOf(KaraokeSpan("echo", false)), line.adlib?.karaokeSpans(12199, true))
+        assertEquals(listOf(KaraokeSpan("echo", true)), line.adlib?.karaokeSpans(12200, true))
         assertEquals(listOf(KaraokeSpan("Hello", true), KaraokeSpan(" world", false)), karaokeSpans(line, 12300))
     }
 

@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,7 +53,9 @@ import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.KaraokeSpan
 import com.hans.aura.data.Lrclib
+import com.hans.aura.data.LyricAdlib
 import com.hans.aura.data.LyricLine
 import com.hans.aura.data.LyricVoice
 import com.hans.aura.data.LyricsStore
@@ -123,7 +126,8 @@ fun LyricsPane(
     onUserInteraction: () -> Unit = {}
 ) {
     val item by player.current.collectAsState()
-    val position by player.positionMs.collectAsState()
+    val position = player.positionMs.collectAsState()
+    val isPlaying by player.isPlaying.collectAsState()
     val trackId = item?.id.orEmpty()
 
     var lines by remember(item?.id) { mutableStateOf<List<LyricLine>?>(null) }
@@ -192,9 +196,21 @@ fun LyricsPane(
     }
 
     // +offset = the highlighted line is one step EARLIER than the audio clock.
-    val effectivePosition = (position + offsetMs).coerceAtLeast(0L)
+    val effectivePosition = (position.value + offsetMs).coerceAtLeast(0L)
     val currentLineIndex = remember(lines, effectivePosition) {
         computeCurrentLine(lines, effectivePosition)
+    }
+    val hasTimedAdlibs = remember(lines) { lines.orEmpty().any { it.adlib?.isTimed == true } }
+    val adlibPosition = remember(trackId) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(player, adlibPosition, hasTimedAdlibs, isPlaying) {
+        adlibPosition.value = null
+        if (hasTimedAdlibs && isPlaying) {
+            // The regular progress ticker can skip several short syllables.
+            while (true) {
+                adlibPosition.value = player.currentPositionMs()
+                delay(50L)
+            }
+        }
     }
 
     // Anchor about three standard line heights from the top; wrapped lyrics
@@ -312,7 +328,7 @@ fun LyricsPane(
                     // Line-only timestamps do not carry karaoke word timing.
                     val timed = timedLines?.getOrNull(i)?.takeIf { isCurrent && it.words.isNotEmpty() }
                     val text = if (timed != null) {
-                        karaokeLine(timed, effectivePosition, lineHighlight)
+                        karaokeText(karaokeSpans(timed, effectivePosition), lineHighlight)
                     } else {
                         AnnotatedString(line.text.ifBlank { "\u00A0" })
                     }
@@ -339,14 +355,8 @@ fun LyricsPane(
                             modifier = Modifier.fillMaxWidth()
                         )
                         val adlib = line.adlib
-                        if (!adlib.isNullOrBlank()) {
-                            androidx.tv.material3.Text(
-                                adlib,
-                                color = TextSecondary,
-                                fontSize = AuraTypography.body,
-                                textAlign = alignment,
-                                modifier = Modifier.fillMaxWidth().padding(top = AuraSpacing.xxs)
-                            )
+                        if (adlib != null && adlib.text.isNotBlank()) {
+                            AdlibText(adlib, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight)
                         }
                     }
                 }
@@ -493,16 +503,34 @@ fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
     return idx
 }
 
-/**
- * One word-timed line with the sung part in [accent] and the rest muted.
- *
- * The split is [karaokeSpans]' job (pure, JVM-tested); this only turns the runs
- * into spans, so the highlight follows the same 500 ms position ticker the line
- * jump uses — no extra clock and no per-word animation.
- */
-private fun karaokeLine(line: TimedLyricLine, positionMs: Long, accent: Color): AnnotatedString =
+@Composable
+private fun AdlibText(
+    adlib: LyricAdlib,
+    adlibPosition: State<Long?>,
+    playbackPosition: State<Long>,
+    offsetMs: Long,
+    leadIsCurrent: Boolean,
+    alignment: TextAlign,
+    accent: Color
+) {
+    val text = if (adlib.isTimed) {
+        val positionMs = ((adlibPosition.value ?: playbackPosition.value) + offsetMs).coerceAtLeast(0L)
+        karaokeText(adlib.karaokeSpans(positionMs, leadIsCurrent), accent)
+    } else {
+        AnnotatedString(adlib.text)
+    }
+    androidx.tv.material3.Text(
+        text,
+        color = TextSecondary,
+        fontSize = AuraTypography.body,
+        textAlign = alignment,
+        modifier = Modifier.fillMaxWidth().padding(top = AuraSpacing.xxs)
+    )
+}
+
+private fun karaokeText(spans: List<KaraokeSpan>, accent: Color): AnnotatedString =
     buildAnnotatedString {
-        karaokeSpans(line, positionMs).forEach { span ->
+        spans.forEach { span ->
             withStyle(SpanStyle(color = if (span.sung) accent else TextSecondary)) {
                 append(span.text)
             }

@@ -64,6 +64,20 @@ class PausedAudioOutputLifecycleTest {
     }
 
     @Test
+    fun `skipping tracks while released keeps paused state`() {
+        val output = PausedAudioOutput(player)
+        update(output)
+        advance(3)
+        assertTrue(output.released)
+        output.onEvents(
+            player,
+            Player.Events(FlagSet.Builder().add(Player.EVENT_MEDIA_ITEM_TRANSITION).build())
+        )
+        assertTrue(output.released)
+        output.close()
+    }
+
+    @Test
     fun `quick resume cancels release`() {
         val output = PausedAudioOutput(player)
         update(output)

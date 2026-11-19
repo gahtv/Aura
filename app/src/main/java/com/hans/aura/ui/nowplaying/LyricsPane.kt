@@ -406,6 +406,8 @@ fun LyricsPane(
                             AdlibText(adlib, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight)
                         }
                     }
+                    // After the part's last line, so the current-line anchor stays on the text.
+                    if (endsSongPart(loadedLines, i)) Spacer(Modifier.height(AuraSpacing.lyricPartGap))
                 }
                 val credits = loadedLines.first().credits
                 if (credits.writers.isNotEmpty() || credits.transcribers.isNotEmpty()) {
@@ -646,6 +648,9 @@ private fun LyricBreakDots(
 
 private const val BREAK_DOTS = 3
 private const val POSITION_TICK_MS = 500
+
+internal fun endsSongPart(lines: List<LyricLine>, index: Int): Boolean =
+    index < lines.lastIndex && lines[index].part != lines[index + 1].part
 
 fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
     if (lines.isNullOrEmpty()) return -1

@@ -145,6 +145,13 @@ data class LyricMetadataDto(
 )
 
 @Serializable
+data class RemoteLyricDto(
+    @SerialName("Id") val id: String,
+    @SerialName("ProviderName") val providerName: String,
+    @SerialName("Lyrics") val lyrics: LyricsResponse
+)
+
+@Serializable
 data class LyricLineDto(
     @SerialName("Text") val text: String = "",
     @SerialName("Start") val start: Long? = null,

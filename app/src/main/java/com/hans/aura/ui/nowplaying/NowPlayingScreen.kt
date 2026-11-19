@@ -23,6 +23,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,6 +42,7 @@ import com.hans.aura.data.AuthStore
 import com.hans.aura.data.Favorites
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Mixes
+import com.hans.aura.data.MusicSources
 import com.hans.aura.ui.MirrorLink
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.common.InitialFocusOnPush
@@ -93,6 +96,9 @@ fun NowPlayingScreen(
 
     // One stable local for the current track so nothing below has to force-unwrap.
     val currentItem = item
+    val providerSource = MusicSources.current?.takeIf { it.supportsProviderLyrics }
+    var findLyricsOpen by remember(currentItem?.id) { mutableStateOf(false) }
+    var lyricsRevision by remember(currentItem?.id) { mutableIntStateOf(0) }
 
     // Jump targets: stub items (id + name + type) are enough — the album and
     // artist screens refetch the full item by id on entry.
@@ -211,8 +217,8 @@ fun NowPlayingScreen(
             // Top controls auto-hide after a pause on the lyrics view; any key press
             // brings them back for another cycle.
             var controlsVisible by remember { mutableStateOf(true) }
-            LaunchedEffect(showLyrics, controlsVisible) {
-                if (showLyrics && controlsVisible) {
+            LaunchedEffect(showLyrics, controlsVisible, findLyricsOpen) {
+                if (showLyrics && controlsVisible && !findLyricsOpen) {
                     delay(6000)
                     controlsVisible = false
                 }
@@ -227,17 +233,22 @@ fun NowPlayingScreen(
                 accent = dynAccent,
                 onBack = onBack,
                 onOpenQueue = onOpenQueue,
+                onFindLyrics = if (providerSource != null && currentItem != null) {
+                    { findLyricsOpen = true }
+                } else null,
                 onToggleLyrics = { showLyrics = !showLyrics }
             )
 
             if (showLyrics) {
                 Box(Modifier.fillMaxSize()) {
-                    LyricsPane(
-                        app,
-                        player,
-                        highlightColor = dynAccent,
-                        onUserInteraction = { controlsVisible = true }
-                    )
+                    key(lyricsRevision) {
+                        LyricsPane(
+                            app,
+                            player,
+                            highlightColor = dynAccent,
+                            onUserInteraction = { controlsVisible = true }
+                        )
+                    }
                     // Album art + song details, bottom-left, ALWAYS visible —
                     // draws over the lyric lines once the controls hide.
                     NowPlayingChip(app, player)
@@ -350,6 +361,18 @@ fun NowPlayingScreen(
                     android.util.Log.d("AURA_PEEK", "jump index=$qIndex")
                     closePeek(log = false)
                     player.skipToQueue(qIndex)
+                }
+            )
+        }
+        if (findLyricsOpen && providerSource != null && currentItem != null) {
+            ProviderLyricsDialog(
+                source = providerSource,
+                track = currentItem,
+                onDismiss = { findLyricsOpen = false },
+                onSaved = {
+                    findLyricsOpen = false
+                    lyricsRevision++
+                    showLyrics = true
                 }
             )
         }

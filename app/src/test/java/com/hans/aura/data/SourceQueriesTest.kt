@@ -436,6 +436,12 @@ class SourceQueriesTest {
     }
 
     @Test
+    fun `jellyfin timed lyrics keep ttml song parts`() = runTest {
+        body = """{"LyricText":"<tt xmlns=\"http://www.w3.org/ns/ttml\"><body><div><p begin=\"1s\">Verse</p></div><div><p begin=\"2s\">Chorus</p></div></body></tt>"}"""
+        assertEquals(listOf(1, 2), MusicSources.current!!.lyricsTimed("song")!!.map { it.part })
+    }
+
+    @Test
     fun `jellyfin timed lyrics use ticks and line karaoke`() = runTest {
         body = """{"Lyrics":[{"Text":"First","Start":123400000},{"Text":"Second","Start":150000000}]}"""
         val lines = MusicSources.current!!.lyricsTimed("song")!!

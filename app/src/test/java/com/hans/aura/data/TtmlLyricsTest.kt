@@ -10,6 +10,21 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class TtmlLyricsTest {
     @Test
+    fun `Apple song part line and word starts use the track clock`() {
+        val fixture = checkNotNull(javaClass.getResource("/apple-song-parts.ttml")).readText()
+        val lines = LyricsStore.parseLyricsText(fixture)
+
+        assertEquals(listOf(2000L, 12500L, 17000L, 25000L), lines.map { it.startMs })
+        assertEquals(listOf("First light", "Turn around", "Sing again", "Last light"), lines.map { it.text })
+        assertEquals(listOf(
+            listOf(TimedWord(2000, "First"), TimedWord(4500, "light")),
+            listOf(TimedWord(12500, "Turn"), TimedWord(13750, "around")),
+            listOf(TimedWord(17000, "Sing"), TimedWord(18250, "again")),
+            listOf(TimedWord(25000, "Last"), TimedWord(26500, "light"))
+        ), lines.map { it.words })
+    }
+
+    @Test
     fun `iTunes TTML songwriters are credits but performer agents are not`() {
         val line = LyricsStore.parseLyricsText("""
             <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"
@@ -52,6 +67,21 @@ class TtmlLyricsTest {
         assertEquals(listOf(LyricVoice("first", LyricVoice.Kind.PRIMARY),
             LyricVoice("second", LyricVoice.Kind.SECONDARY), LyricVoice("third", LyricVoice.Kind.PRIMARY)), lines.map { it.voice })
         assertEquals(listOf("Hello", "world"), lines[1].words.map { it.text })
+    }
+
+    @Test
+    fun `each div is its own song part`() {
+        val lines = LyricsStore.parseLyricsText("""<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"><body>
+            <div begin="1s" itunes:song-part="Verse"><p begin="1s">Verse one</p><p begin="2s">Verse two</p></div>
+            <div begin="3s" itunes:song-part="Chorus"><p begin="3s">Chorus one</p></div>
+            <div begin="4s" itunes:song-part="Verse"><p begin="4s">Verse three</p></div></body></tt>""")
+        assertEquals(listOf("Verse one", "Verse two", "Chorus one", "Verse three"), lines.map { it.text })
+        assertEquals(listOf(1, 1, 2, 3), lines.map { it.part })
+    }
+
+    @Test
+    fun `lines in a single div share one part`() {
+        assertEquals(setOf(1), parse("""<p begin="1s">One</p><p begin="2s">Two</p>""").map { it.part }.toSet())
     }
 
     private fun parse(body: String) = LyricsStore.parseLyricsText(

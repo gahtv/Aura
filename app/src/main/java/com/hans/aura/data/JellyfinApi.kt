@@ -226,6 +226,17 @@ interface JellyfinApi {
         @retrofit2.http.Path("itemId") itemId: String
     ): LyricsResponse
 
+    @GET("Audio/{itemId}/RemoteSearch/Lyrics")
+    suspend fun searchRemoteLyrics(
+        @retrofit2.http.Path("itemId") itemId: String
+    ): List<RemoteLyricDto>
+
+    @POST("Audio/{itemId}/RemoteSearch/Lyrics/{lyricId}")
+    suspend fun downloadRemoteLyrics(
+        @retrofit2.http.Path("itemId") itemId: String,
+        @retrofit2.http.Path("lyricId") lyricId: String
+    ): LyricsResponse
+
     // ---- Playback reporting ----
 
     @POST("Sessions/Capabilities/Full")

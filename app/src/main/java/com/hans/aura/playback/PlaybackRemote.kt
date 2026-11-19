@@ -7,14 +7,18 @@ import com.hans.aura.data.APP_VERSION
 import com.hans.aura.data.CapabilitiesDto
 import com.hans.aura.data.JellyfinClient
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.player.controller.QUEUE_ITEM_PARALLELISM
+import com.hans.aura.player.controller.fetchQueueItems
 import com.hans.aura.util.AuraLog
 import com.hans.aura.util.AuraTag
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -46,6 +50,7 @@ class PlaybackRemote(
         (items: List<JellyfinItem>, mode: Int, startMs: Long, startIndex: Int) -> Unit
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val queueItemPermits = Semaphore(QUEUE_ITEM_PARALLELISM)
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
     private val main = Handler(Looper.getMainLooper())
     private var ws: WebSocket? = null
@@ -189,11 +194,13 @@ class PlaybackRemote(
                     ?.toIntOrNull() ?: 0
                 AuraLog.i(AuraTag.REMOTE, "remote play: $command startIndex=$startIndex $ids")
                 scope.launch {
-                    runCatching {
+                    try {
                         // The session can be dropped while the socket lingers
                         // (sign-out) — never assert it into a crash.
                         val userId = jellyfin.auth.session?.userId ?: return@launch
-                        val items = ids.map { jellyfin.api.getItem(itemId = it, userId = userId) }
+                        val items = fetchQueueItems(ids, queueItemPermits) { id ->
+                            jellyfin.api.getItem(itemId = id, userId = userId)
+                        }
                         when (command) {
                             "PlayNext" ->
                                 // Enqueue after the current track without interrupting.
@@ -203,7 +210,11 @@ class PlaybackRemote(
                                 onPlayItems(items, MODE_APPEND_END, startMs, 0)
                             else -> onPlayItems(items, MODE_REPLACE, startMs, startIndex)
                         }
-                    }.onFailure { AuraLog.w(AuraTag.REMOTE, "remote play failed", it) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        AuraLog.w(AuraTag.REMOTE, "remote play failed", e)
+                    }
                 }
             }
 

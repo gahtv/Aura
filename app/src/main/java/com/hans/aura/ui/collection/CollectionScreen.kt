@@ -54,6 +54,8 @@ import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSizes
+import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
@@ -327,12 +329,18 @@ fun CollectionScreen(
                     .focusRequester(contentFocus)
                     .focusRestorer()
             ) {
-                itemsIndexed(shownTracks) { i, track ->
+                val rows = tracklistRows(shownTracks, isAlbum = collection.type == "MusicAlbum")
+                itemsIndexed(rows) { rowIndex, row ->
+                    if (row is TracklistRow.Disc) {
+                        DiscHeader(row.number, first = rowIndex == 0)
+                        return@itemsIndexed
+                    }
+                    val (i, number, track) = row as TracklistRow.Track
                     val removeFromPlaylist: (() -> Unit)? = if (collection.type == "Playlist") {
                         { viewModel.removeFromPlaylist(track.id) }
                     } else null
                     TrackRow(
-                        index = i + 1,
+                        index = number,
                         track = track,
                         isCurrent = track.id == currentId?.id,
                         atmos = track.albumId?.let { it in atmosAlbumIds } == true,
@@ -380,6 +388,35 @@ fun CollectionScreen(
                 onDismiss = { showBio = false }
             )
         }
+    }
+}
+
+/** "Disc N" label with a hairline rule, inset to line up with the track numbers. */
+@Composable
+private fun DiscHeader(number: Int, first: Boolean) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(
+                start = AuraSpacing.lg,
+                end = AuraSpacing.lg,
+                top = if (first) AuraSpacing.xs else AuraSpacing.lg,
+                bottom = AuraSpacing.xs
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        androidx.tv.material3.Text(
+            "Disc $number",
+            style = MaterialTheme.typography.titleSmall,
+            color = TextSecondary
+        )
+        Spacer(Modifier.width(AuraSpacing.sm))
+        Box(
+            Modifier
+                .weight(1f)
+                .height(AuraSizes.hairline)
+                .background(TextSecondary.copy(alpha = 0.24f))
+        )
     }
 }
 

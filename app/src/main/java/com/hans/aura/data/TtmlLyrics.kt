@@ -327,7 +327,7 @@ internal object TtmlLyrics {
                         }
                         val start = if (begin != null) interval.start.roundToLong()
                             else timedWords.firstOrNull()?.startMs ?: interval.start.roundToLong().takeIf { interval.timed }
-                        val end = interval.end.takeIf { it.isFinite() }?.roundToLong() ?: timedWords.mapNotNull { it.endMs }.maxOrNull()
+                        val end = interval.end.takeIf { it.isFinite() }?.roundToLong() ?: timedWords.lastOrNull()?.endMs
                         if (line.isNotEmpty() && interval.start < interval.end) {
                             val lyric = LyricLine(
                                 start ?: 0L, line, start != null, timedWords, voice(lineAgent), background.toAdlib(),

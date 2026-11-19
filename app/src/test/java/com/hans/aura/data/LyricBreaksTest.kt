@@ -74,11 +74,12 @@ class LyricBreaksTest {
             LyricLineDto("Hold this", 20_000_000, listOf(LyricCueDto(0, 5, 20_000_000, 30_000_000), LyricCueDto(5, 9, 30_000_000, 60_000_000))),
             LyricLineDto("Sung", 100_000_000),
             LyricLineDto("", 140_000_000),
-            LyricLineDto("Back", 340_000_000)
+            LyricLineDto("Back", 340_000_000),
+            LyricLineDto("Open end", 400_000_000, listOf(LyricCueDto(0, 4, 400_000_000, 410_000_000), LyricCueDto(5, 8, 410_000_000)))
         )))
         val lines = LyricsStore.fetch(api, "item")
-        assertEquals(listOf("Hold this", "Sung", "Back"), lines.map { it.text })
-        assertEquals(listOf(6_000L, 14_000L, null), lines.map { it.endMs })
+        assertEquals(listOf("Hold this", "Sung", "Back", "Open end"), lines.map { it.text })
+        assertEquals(listOf(6_000L, 14_000L, null, null), lines.map { it.endMs })
         assertEquals(listOf(LyricBreak(0, 6_000, 10_000), LyricBreak(1, 14_000, 34_000)), lyricBreaks(lines))
     }
 }

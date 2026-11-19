@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -78,7 +77,7 @@ internal fun TransportBar(
             Modifier
                 .fillMaxWidth()
                 .height(AuraSizes.seekBarHeight)
-                .clip(RoundedCornerShape(AuraShapes.xs))
+                .clip(AuraShapes.pill)
                 .background(Border)
         ) {
             val frac = if (duration > 0) position.toFloat() / duration else 0f

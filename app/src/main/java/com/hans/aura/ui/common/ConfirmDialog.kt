@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -85,9 +84,9 @@ fun ConfirmDialog(
         Column(
             Modifier
                 .widthIn(max = AuraSizes.dialogWidth)
-                .clip(RoundedCornerShape(AuraShapes.md))
+                .clip(AuraShapes.dialog)
                 .background(Surface)
-                .border(AuraSizes.hairline, Border, RoundedCornerShape(AuraShapes.md))
+                .border(AuraSizes.hairline, Border, AuraShapes.dialog)
                 // Trap the cursor: without this DOWN escapes to the content
                 // behind the scrim and the user ends up in the settings list.
                 .focusProperties { exit = { FocusRequester.Cancel } }

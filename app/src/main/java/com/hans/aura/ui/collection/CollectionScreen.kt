@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,6 +52,7 @@ import kotlinx.coroutines.launch
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
@@ -192,7 +192,7 @@ fun CollectionScreen(
                         Modifier
                             .width(160.dp)
                             .height(160.dp)
-                            .clip(RoundedCornerShape(6.dp))
+                            .clip(AuraShapes.card)
                             .background(SurfaceHigh)
                     ) {
                         // The loop plays on the cover tile — card-sized, square, where it reads.

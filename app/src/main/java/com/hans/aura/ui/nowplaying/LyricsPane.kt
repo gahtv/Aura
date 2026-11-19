@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -326,7 +325,7 @@ fun LyricsPane(
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            val shape = RoundedCornerShape(AuraShapes.sm)
+            val shape = AuraShapes.control
             androidx.tv.material3.Text(
                 text = offsetChip.orEmpty(),
                 color = AuraColors.OnAccentText,
@@ -391,7 +390,7 @@ private fun NoLyricsState(
 @Composable
 private fun LyricsTrackCard(app: AuraApp, item: JellyfinItem, accent: Color) {
     val session = app.jellyfin.auth.session
-    val shape = RoundedCornerShape(AuraShapes.lg)
+    val shape = AuraShapes.card
     Row(
         Modifier
             .widthIn(max = AuraSizes.lyricCardWidth)
@@ -408,7 +407,7 @@ private fun LyricsTrackCard(app: AuraApp, item: JellyfinItem, accent: Color) {
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(AuraSizes.artworkChipLarge)
-                        .clip(RoundedCornerShape(AuraShapes.sm))
+                        .clip(AuraShapes.card)
                         .background(SurfaceHigh)
                 )
                 Spacer(Modifier.width(AuraSpacing.md))

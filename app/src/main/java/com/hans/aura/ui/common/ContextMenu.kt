@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -177,7 +176,7 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
             Modifier
                 .align(Alignment.Center)
                 .widthIn(max = AuraSizes.contextMenuWidth)
-                .clip(RoundedCornerShape(AuraShapes.md))
+                .clip(AuraShapes.sheet)
                 .background(Surface)
                 .focusProperties { exit = { FocusRequester.Cancel } }
                 .padding(AuraSpacing.lg)
@@ -247,7 +246,7 @@ private fun MenuAction(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(AuraShapes.card)
+    val shape = AuraShapes.control
     Row(
         modifier
             .fillMaxWidth()
@@ -268,7 +267,7 @@ private fun MenuAction(
                 .height(AuraSpacing.lg)
                 .background(
                     if (focused) Accent else Color.Transparent,
-                    RoundedCornerShape(AuraShapes.xs)
+                    AuraShapes.pill
                 )
         )
         Spacer(Modifier.width(AuraSpacing.sm))

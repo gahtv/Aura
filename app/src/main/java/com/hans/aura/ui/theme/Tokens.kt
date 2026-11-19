@@ -133,18 +133,14 @@ object AuraTypography {
     val lyricCardFit = listOf(title, titleSmall, subtitle)
 }
 
-/** Corner radii. [pill] is the 50% capsule. */
+/** Surface shapes for cards, action sheets, and dialogs in order of prominence. */
 object AuraShapes {
-    val xs: Dp = 4.dp
-    val card: Dp = 6.dp
-    val sm: Dp = 8.dp
-    val md: Dp = 10.dp
-    val lg: Dp = 14.dp
-
-    /** 50% — a true capsule. */
+    val card = RoundedCornerShape(12.dp)
+    val sheet = RoundedCornerShape(16.dp)
+    val dialog = RoundedCornerShape(28.dp)
+    val control = card
+    val badge = RoundedCornerShape(4.dp)
     val pill = RoundedCornerShape(50)
-
-    fun of(radius: Dp) = RoundedCornerShape(radius)
 }
 
 /** Fixed component sizes and layout budgets. */

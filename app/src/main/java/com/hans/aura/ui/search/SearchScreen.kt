@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -63,6 +62,7 @@ import com.hans.aura.ui.common.contextMenuKeys
 import com.hans.aura.ui.common.rememberAtmosAlbumIds
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
@@ -381,7 +381,7 @@ private fun RecentQueryChip(
     onRemove: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(50)
+    val shape = AuraShapes.pill
     Row(
         modifier = Modifier
             .then(if (firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
@@ -402,7 +402,7 @@ private fun RecentQueryChip(
 @Composable
 private fun VoiceSearchButton(onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(50)
+    val shape = AuraShapes.pill
     Box(
         modifier = Modifier
             .clip(shape)

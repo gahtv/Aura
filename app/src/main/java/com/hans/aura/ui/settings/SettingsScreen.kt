@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
@@ -36,6 +35,7 @@ import com.hans.aura.data.LibraryRef
 import com.hans.aura.data.Prefs
 import com.hans.aura.ui.common.ConfirmDialog
 import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.FocusOutline
 import com.hans.aura.ui.theme.SurfaceHigh
@@ -345,7 +345,7 @@ private fun SettingsToggleRow(
     onToggle: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
+    val shape = AuraShapes.control
     Row(
         Modifier
             .fillMaxWidth()
@@ -419,7 +419,7 @@ private fun LibraryToggleRow(
     onToggle: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
+    val shape = AuraShapes.control
     Row(
         Modifier
             .fillMaxWidth()

@@ -1,8 +1,11 @@
 package com.hans.aura.data
 
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -192,6 +195,34 @@ class LibraryFilterTest {
     }
 
     // ---- merging -----------------------------------------------------------
+
+    @Test
+    fun `different cursor shapes fetch concurrently`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val api = FakeJellyfinApi(
+            itemsByParent = mapOf("lib-music" to listOf(Fixtures.item("a"))),
+            pagedBrowse = true,
+            beforeItems = { filters ->
+                if (filters == "IsFavorite") {
+                    started.complete(Unit)
+                    release.await()
+                }
+            }
+        )
+        val q = LibraryFilter.ItemsQuery(includeItemTypes = "Audio", limit = 1)
+        val blocked = async { LibraryFilter.queryItems(api, "u", q.copy(filters = "IsFavorite")) }
+        started.await()
+        try {
+            val independent = async { LibraryFilter.queryItems(api, "u", q.copy(filters = "IsPlayed")) }
+            assertEquals(listOf("a"), withTimeout(1000) { independent.await() }.items.map { it.id })
+            assertFalse(blocked.isCompleted)
+        } finally {
+            release.complete(Unit)
+        }
+        assertEquals(listOf("a"), blocked.await().items.map { it.id })
+    }
 
     @Test
     fun `successive pages fetch only new rows`() = runTest {

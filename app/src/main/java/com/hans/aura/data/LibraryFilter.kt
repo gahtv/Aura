@@ -29,8 +29,7 @@ object LibraryFilter {
     /** Per-library page cap: one library may have to answer a deep page. */
     private const val MAX_FETCH_PER_LIBRARY = 5000
     private const val MAX_CURSOR_SHAPES = 4
-    private val cursorMutex = Mutex()
-    @Volatile
+    private val cursorCacheLock = Any()
     private var cursors = newCursorCache()
 
     private fun newCursorCache() = LinkedHashMap<CursorKey, CursorState>(MAX_CURSOR_SHAPES, 0.75f, true)
@@ -57,9 +56,34 @@ object LibraryFilter {
     }
 
     private class CursorState(sourceCount: Int) {
-        val sources = List(sourceCount) { SourceState() }
+        val mutex = Mutex()
+        var sources = List(sourceCount) { SourceState() }
+            private set
         val merged = mutableListOf<JellyfinItem>()
         val seen = HashSet<String>()
+
+        fun reset() {
+            sources = List(sources.size) { SourceState() }
+            merged.clear()
+            seen.clear()
+        }
+
+        fun response(q: ItemsQuery, failed: Set<Int>): ItemsResponse = ItemsResponse(
+            items = merged.drop(q.startIndex).take(q.limit),
+            totalRecordCount = sources.filterIndexed { index, _ -> index !in failed }.sumOf { it.total },
+            startIndex = q.startIndex
+        )
+
+        fun nextItem(comparator: Comparator<JellyfinItem>, failed: Set<Int>): JellyfinItem? {
+            var smallest: Int? = null
+            for ((index, source) in sources.withIndex()) {
+                if (index in failed || source.buffer.isEmpty()) continue
+                val previous = smallest
+                if (previous == null || comparator.compare(source.buffer.first(),
+                        sources[previous].buffer.first()) < 0) smallest = index
+            }
+            return smallest?.let { sources[it].buffer.removeFirst() }
+        }
     }
 
     private suspend fun cursorPage(
@@ -70,66 +94,86 @@ object LibraryFilter {
         artists: Boolean = false,
         sourceCount: Int = libs.size,
         fetch: suspend (source: Int, offset: Int, limit: Int) -> ItemsResponse
-    ): ItemsResponse = cursorMutex.withLock {
-        val cache = cursors
+    ): ItemsResponse {
         val key = CursorKey(ApiIdentity(api), userId, q.copy(startIndex = 0, limit = 0),
             libs.toList(), cacheSuffix(), artists)
-        var state = if (q.startIndex == 0) CursorState(sourceCount) else cache[key] ?: CursorState(sourceCount)
-        val failed = mutableMapOf<Int, Throwable>()
-        val comparator = requireNotNull(comparatorFor(q.sortBy, q.sortOrder))
-        try {
-            if (q.limit <= 0) return@withLock ItemsResponse(startIndex = q.startIndex)
-            while (true) {
-                if (state.merged.size.toLong() >= q.startIndex.toLong() + q.limit) break
-                var restart = false
-                for ((index, source) in state.sources.withIndex()) {
-                    if (index in failed || source.exhausted || source.buffer.isNotEmpty()) continue
-                    val count = q.limit.coerceAtMost(MAX_FETCH_PER_LIBRARY - source.fetched)
-                    try {
-                        val response = fetch(index, source.fetched, count)
-                        val rows = response.items.take(count).sortedWith(comparator)
-                        source.buffer.addAll(rows)
-                        source.fetched += rows.size
-                        source.total = response.totalRecordCount
-                        source.exhausted = rows.isEmpty() || source.fetched >= source.total ||
-                            source.fetched >= MAX_FETCH_PER_LIBRARY
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        Log.w(TAG, "paging source $index query failed: ${e.message}")
-                        failed[index] = e
-                        restart = true
-                    }
-                }
-                if (failed.size == sourceCount) throw failed.values.first()
-                if (restart) {
-                    // Rebuild the page without failed sources; never retain a partial cursor.
-                    state = CursorState(sourceCount)
-                    continue
-                }
-                var smallest: Int? = null
-                for ((index, source) in state.sources.withIndex()) {
-                    if (index in failed || source.buffer.isEmpty()) continue
-                    val previous = smallest
-                    if (previous == null || comparator.compare(source.buffer.first(),
-                            state.sources[previous].buffer.first()) < 0) smallest = index
-                }
-                val index = smallest ?: break
-                val item = state.sources[index].buffer.removeFirst()
-                // Duplicate ids refer to the same item and carry identical comparator fields.
-                if (state.seen.add(item.id)) state.merged.add(item)
+        val state = synchronized(cursorCacheLock) {
+            cursors.getOrPut(key) { CursorState(sourceCount) }.also {
+                while (cursors.size > MAX_CURSOR_SHAPES) cursors.remove(cursors.keys.first())
             }
-            if (failed.isEmpty()) {
-                cache[key] = state
-                while (cache.size > MAX_CURSOR_SHAPES) cache.remove(cache.keys.first())
-            } else cache.remove(key)
-            ItemsResponse(items = state.merged.drop(q.startIndex).take(q.limit),
-                totalRecordCount = state.sources.filterIndexed { index, _ -> index !in failed }.sumOf { it.total },
-                startIndex = q.startIndex)
-        } catch (e: Throwable) {
-            cache.remove(key)
-            throw e
         }
+        return state.mutex.withLock {
+            try {
+                if (q.limit <= 0) return@withLock ItemsResponse(startIndex = q.startIndex)
+                if (q.startIndex == 0) state.reset()
+                val failed = mutableMapOf<Int, Throwable>()
+                mergeForward(state, q, failed, fetch)
+                state.response(q, failed.keys).also {
+                    if (failed.isNotEmpty()) discardCursor(key, state)
+                }
+            } catch (e: Throwable) {
+                discardCursor(key, state)
+                throw e
+            }
+        }
+    }
+
+    private fun discardCursor(key: CursorKey, state: CursorState) {
+        synchronized(cursorCacheLock) {
+            if (cursors[key] === state) cursors.remove(key)
+        }
+        state.reset()
+    }
+
+    private suspend fun mergeForward(
+        state: CursorState,
+        q: ItemsQuery,
+        failed: MutableMap<Int, Throwable>,
+        fetch: suspend (source: Int, offset: Int, limit: Int) -> ItemsResponse
+    ) {
+        val comparator = requireNotNull(comparatorFor(q.sortBy, q.sortOrder))
+        while (state.merged.size.toLong() < q.startIndex.toLong() + q.limit) {
+            val restart = fillSources(state, q.limit, comparator, failed, fetch)
+            if (failed.size == state.sources.size) throw failed.values.first()
+            if (restart) {
+                // Rebuild the page without failed sources; never retain a partial cursor.
+                state.reset()
+                continue
+            }
+            val item = state.nextItem(comparator, failed.keys) ?: break
+            // Duplicate ids refer to the same item and carry identical comparator fields.
+            if (state.seen.add(item.id)) state.merged.add(item)
+        }
+    }
+
+    private suspend fun fillSources(
+        state: CursorState,
+        limit: Int,
+        comparator: Comparator<JellyfinItem>,
+        failed: MutableMap<Int, Throwable>,
+        fetch: suspend (source: Int, offset: Int, limit: Int) -> ItemsResponse
+    ): Boolean {
+        var restart = false
+        for ((index, source) in state.sources.withIndex()) {
+            if (index in failed || source.exhausted || source.buffer.isNotEmpty()) continue
+            val count = limit.coerceAtMost(MAX_FETCH_PER_LIBRARY - source.fetched)
+            try {
+                val response = fetch(index, source.fetched, count)
+                val rows = response.items.take(count).sortedWith(comparator)
+                source.buffer.addAll(rows)
+                source.fetched += rows.size
+                source.total = response.totalRecordCount
+                source.exhausted = rows.isEmpty() || source.fetched >= source.total ||
+                    source.fetched >= MAX_FETCH_PER_LIBRARY
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "paging source $index query failed: ${e.message}")
+                failed[index] = e
+                restart = true
+            }
+        }
+        return restart
     }
 
     /** Throttle: log the strategy once per distinct request shape, not per page. */
@@ -469,7 +513,7 @@ object LibraryFilter {
 
     /** Call after any change of the hidden set / library list. */
     fun clearCaches() {
-        cursors = newCursorCache()
+        synchronized(cursorCacheLock) { cursors = newCursorCache() }
         LibraryCache.clear()
         PagedLibrary.clear()
         AtmosCatalog.clear()

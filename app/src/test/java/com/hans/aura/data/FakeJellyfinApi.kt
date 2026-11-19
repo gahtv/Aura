@@ -18,7 +18,8 @@ class FakeJellyfinApi(
     private val failingParents: Set<String?> = emptySet(),
     private val lyricsResponse: LyricsResponse? = null,
     private val pagedBrowse: Boolean = false,
-    private val cancelledParents: Set<String?> = emptySet()
+    private val cancelledParents: Set<String?> = emptySet(),
+    private val beforeItems: suspend (filters: String?) -> Unit = {}
 ) : JellyfinApi {
 
     /** Every (includeItemTypes, parentId) the data layer actually asked for. */
@@ -71,6 +72,7 @@ class FakeJellyfinApi(
         imageTypeLimit: Int,
         nameStartsWithOrGreater: String?
     ): ItemsResponse {
+        beforeItems(filters)
         itemQueries += includeItemTypes to parentId
         itemFilters += filters
         itemIds += ids

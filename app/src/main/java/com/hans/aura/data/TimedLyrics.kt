@@ -18,14 +18,45 @@ data class TimedWord(
  * [LyricLine] — an implementation maps its own payload onto this shape, and a
  * source that cannot time words simply never produces one (see
  * [MusicSource.lyricsTimed]).
+ *
+ * [adlib] is optional background-vocal text with independent timing.
  */
 data class TimedLyricLine(
     val startMs: Long,
     val text: String,
     val translation: String? = null,
     val words: List<TimedWord> = emptyList(),
-    val voice: LyricVoice? = null
+    val voice: LyricVoice? = null,
+    val adlib: LyricAdlib? = null
 )
+
+internal fun LyricLine.toTimedLyricLine() =
+    TimedLyricLine(startMs, text, words = words, voice = voice, adlib = adlib)
+
+/** Exact display text (including spacing), optionally timed to the playback clock. */
+data class AdlibSegment(val text: String, val startMs: Long? = null)
+
+data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null) {
+    val text: String = segments.joinToString("") { it.text }
+    private val startMs = segments.mapNotNull { it.startMs }.minOrNull()
+    val isTimed: Boolean get() = startMs != null
+
+    internal fun karaokeFills(positionMs: Long, leadIsCurrent: Boolean): List<KaraokeFill> {
+        val overlapping = endMs != null && startMs != null && positionMs in startMs until endMs
+        val active = leadIsCurrent || overlapping
+        var offset = 0
+        return segments.flatMap { segment ->
+            val start = segment.startMs
+            val fills = if (active && start != null) {
+                val next = segments.mapNotNull { it.startMs }.filter { it > start }.minOrNull()
+                karaokeFills(TimedLyricLine(start, segment.text,
+                    words = listOf(TimedWord(start, segment.text, next))), positionMs, endMs)
+            } else listOf(KaraokeFill(0, segment.text.length, 0f))
+            fills.map { it.copy(start = it.start + offset, end = it.end + offset) }
+                .also { offset += segment.text.length }
+        }
+    }
+}
 
 data class KaraokeFill(val start: Int, val end: Int, val fraction: Float)
 

@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -54,19 +55,23 @@ import androidx.compose.ui.text.style.ResolvedTextDirection
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.TextUnit
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.KaraokeFill
 import com.hans.aura.data.Lrclib
+import com.hans.aura.data.LyricAdlib
 import com.hans.aura.data.LyricLine
 import com.hans.aura.data.LyricVoice
-import com.hans.aura.data.LyricsStore
 import com.hans.aura.data.LyricsResult
+import com.hans.aura.data.LyricsStore
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
 import com.hans.aura.data.TimedLyricLine
 import com.hans.aura.data.karaokeFills
+import com.hans.aura.data.toTimedLyricLine
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
@@ -129,9 +134,9 @@ fun LyricsPane(
     onUserInteraction: () -> Unit = {}
 ) {
     val item by player.current.collectAsState()
-    val position by player.positionMs.collectAsState()
-    val playing by player.isPlaying.collectAsState()
-    val positionAnchor = remember(position, playing) { SystemClock.uptimeMillis() }
+    val position = player.positionMs.collectAsState()
+    val isPlaying by player.isPlaying.collectAsState()
+    val positionAnchor = remember(position.value, isPlaying) { SystemClock.uptimeMillis() }
     val trackId = item?.id.orEmpty()
 
     var lines by remember(item?.id) { mutableStateOf<List<LyricLine>?>(null) }
@@ -173,7 +178,9 @@ fun LyricsPane(
         webFound = sourceWeb == true
         if (!timed.isNullOrEmpty()) {
             timedLines = timed
-            lines = timed.map { LyricLine(startMs = it.startMs, text = it.text, isSynced = true, words = it.words, voice = it.voice) }
+            lines = timed.map {
+                LyricLine(it.startMs, it.text, isSynced = true, words = it.words, voice = it.voice, adlib = it.adlib)
+            }
             android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")
             return@LaunchedEffect
         }
@@ -181,7 +188,7 @@ fun LyricsPane(
         if (local.isNotEmpty()) {
             lines = local
             if (local.any { it.words.isNotEmpty() }) {
-                timedLines = local.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice) }
+                timedLines = local.map { it.toTimedLyricLine() }
             }
             return@LaunchedEffect
         }
@@ -197,20 +204,30 @@ fun LyricsPane(
         webFound = remote.isNotEmpty()
         lines = remote
         if (remote.any { it.words.isNotEmpty() }) {
-            timedLines = remote.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice) }
+            timedLines = remote.map { it.toTimedLyricLine() }
         }
     }
 
     // +offset = the highlighted line is one step EARLIER than the audio clock.
-    val effectivePosition = (position + offsetMs).coerceAtLeast(0L)
+    val effectivePosition = (position.value + offsetMs).coerceAtLeast(0L)
     val currentLineIndex = remember(lines, effectivePosition) {
         computeCurrentLine(lines, effectivePosition)
     }
+    val hasTimedAdlibs = remember(lines) { lines.orEmpty().any { it.adlib?.isTimed == true } }
+    val adlibPosition = remember(trackId) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(player, adlibPosition, hasTimedAdlibs, isPlaying) {
+        adlibPosition.value = null
+        if (hasTimedAdlibs && isPlaying) {
+            // The regular progress ticker can skip several short syllables.
+            while (true) {
+                adlibPosition.value = player.currentPositionMs()
+                delay(50L)
+            }
+        }
+    }
 
-    // Anchor offset: the current line lands ~3 line-heights below the top, so
-    // exactly the previous three lines stay visible above it.
-    // Line box (26/22sp text + 20dp vertical padding) measures ~69dp pitch on
-    // TV; 3*70 leaves a small margin so the third previous line never clips.
+    // Anchor about three standard line heights from the top; wrapped lyrics
+    // and adlibs can take up more of the space above the current line.
     val anchorOffsetPx = with(LocalDensity.current) { (3 * AuraSizes.lyricLinePitch.value).dp.roundToPx() }
 
     fun pauseFollow() {
@@ -324,7 +341,7 @@ fun LyricsPane(
                     val isCurrent = i == currentLineIndex
                     // Line-only timestamps do not carry karaoke word timing.
                     val timed = timedLines?.getOrNull(i)?.takeIf { isCurrent && it.words.isNotEmpty() }
-                    Box(
+                    Column(
                         Modifier
                             .fillMaxWidth()
                             .then(if (multipleVoices && isCurrent) {
@@ -340,7 +357,7 @@ fun LyricsPane(
                     ) {
                         if (timed != null) {
                             KaraokeLine(timed, effectivePosition, loadedLines.getOrNull(i + 1)?.startMs,
-                                playing, positionAnchor, lineHighlight, alignment)
+                                isPlaying, positionAnchor, lineHighlight, alignment)
                         } else {
                             androidx.tv.material3.Text(
                                 AnnotatedString(line.text.ifBlank { "\u00A0" }),
@@ -350,6 +367,10 @@ fun LyricsPane(
                                 textAlign = alignment,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                        }
+                        val adlib = line.adlib
+                        if (adlib != null && adlib.text.isNotBlank()) {
+                            AdlibText(adlib, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
                         }
                     }
                 }
@@ -506,7 +527,11 @@ private fun KaraokeLine(
     playing: Boolean,
     anchorMs: Long,
     accent: Color,
-    alignment: TextAlign
+    alignment: TextAlign,
+    fontSize: TextUnit = AuraTypography.headline,
+    fontWeight: FontWeight? = FontWeight.SemiBold,
+    modifier: Modifier = Modifier,
+    fills: (Long) -> List<KaraokeFill> = { karaokeFills(line, it, nextLineStartMs) }
 ) {
     val elapsed = remember(line, positionMs, playing) { mutableLongStateOf(0L) }
     var layout by remember(line) { mutableStateOf<TextLayoutResult?>(null) }
@@ -519,15 +544,15 @@ private fun KaraokeLine(
     androidx.tv.material3.Text(
         line.text,
         color = TextSecondary,
-        fontSize = AuraTypography.headline,
-        fontWeight = FontWeight.SemiBold,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
         textAlign = alignment,
         onTextLayout = { layout = it },
-        modifier = Modifier.fillMaxWidth().drawWithContent {
+        modifier = modifier.fillMaxWidth().drawWithContent {
             drawContent()
             val result = layout ?: return@drawWithContent
             val path = Path()
-            karaokeFills(line, positionMs + elapsed.longValue, nextLineStartMs).forEach { fill ->
+            fills(positionMs + elapsed.longValue).forEach { fill ->
                 val glyphs = (fill.start until fill.end).map { offset ->
                     result.getBoundingBox(offset) to result.getBidiRunDirection(offset)
                 }.distinct()
@@ -544,4 +569,33 @@ private fun KaraokeLine(
             clipPath(path) { drawText(result, color = accent) }
         }
     )
+}
+
+@Composable
+private fun AdlibText(
+    adlib: LyricAdlib,
+    adlibPosition: State<Long?>,
+    playbackPosition: State<Long>,
+    offsetMs: Long,
+    leadIsCurrent: Boolean,
+    alignment: TextAlign,
+    accent: Color,
+    playing: Boolean
+) {
+    val modifier = Modifier.fillMaxWidth().padding(top = AuraSpacing.xxs)
+    if (adlib.isTimed) {
+        val positionMs = ((adlibPosition.value ?: playbackPosition.value) + offsetMs).coerceAtLeast(0L)
+        val anchorMs = remember(positionMs, playing) { SystemClock.uptimeMillis() }
+        KaraokeLine(TimedLyricLine(0L, adlib.text), positionMs, null, playing, anchorMs, accent, alignment,
+            fontSize = AuraTypography.body, fontWeight = null, modifier = modifier,
+            fills = { adlib.karaokeFills(it, leadIsCurrent) })
+    } else {
+        androidx.tv.material3.Text(
+            adlib.text,
+            color = TextSecondary,
+            fontSize = AuraTypography.body,
+            textAlign = alignment,
+            modifier = modifier
+        )
+    }
 }

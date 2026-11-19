@@ -486,6 +486,16 @@ class SourceQueriesTest {
     }
 
     @Test
+    fun `jellyfin raw ttml carries the adlib independently of lead word timing`() = runTest {
+        body = """{"LyricText":"<tt xmlns='http://www.w3.org/ns/ttml' xmlns:ttm='http://www.w3.org/ns/ttml#metadata'><body><div><p begin='12s'><span begin='12s'>Hello</span> <span begin='12.5s'>world</span><span ttm:role='x-bg' begin='12.2s'>echo</span></p></div></body></tt>"}"""
+        val line = MusicSources.current!!.lyricsTimed("ttml-adlib")!!.single()
+        assertEquals(listOf(AdlibSegment("echo", 12200)), line.adlib?.segments)
+        assertEquals(listOf(KaraokeFill(0, 4, 0f)), line.adlib?.karaokeFills(12199, true))
+        assertEquals(listOf(KaraokeFill(0, 4, 0.5f)), line.adlib?.karaokeFills(12700, true))
+        assertEquals(listOf(KaraokeFill(0, 5, 0.6f), KaraokeFill(6, 11, 0f)), karaokeFills(line, 12300))
+    }
+
+    @Test
     fun `jellyfin structured voices reach timed lines without leaking into words`() = runTest {
         body = """{"Lyrics":[{"Text":"v2: <00:12>Hello <00:12.50>world<00:13>","Start":120000000}]}"""
         val line = MusicSources.current!!.lyricsTimed("voice-inline")!!.single()

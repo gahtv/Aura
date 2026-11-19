@@ -5,6 +5,24 @@ import org.junit.Test
 
 class TimedLyricsTest {
     @Test
+    fun `intra word lrc stamps have independent syllable ranges and fractions`() {
+        val line = LyricsStore.parseLrcText("[00:01]<00:01.00>Hol<00:01.40>ding <00:02.00>on <00:02.50>").single().toTimedLyricLine()
+        assertEquals("Holding on", line.text)
+        assertEquals(listOf(KaraokeFill(0, 3, 0.5f), KaraokeFill(3, 7, 0f), KaraokeFill(8, 10, 0f)), karaokeFills(line, 1200))
+        assertEquals(listOf(KaraokeFill(0, 3, 1f), KaraokeFill(3, 7, 0.5f), KaraokeFill(8, 10, 0f)), karaokeFills(line, 1700))
+        assertEquals(listOf(KaraokeFill(0, 3, 1f), KaraokeFill(3, 7, 1f), KaraokeFill(8, 10, 0.5f)), karaokeFills(line, 2250))
+    }
+
+    @Test
+    fun `adlibs preserve untimed text and empty input while timed segments fill independently`() {
+        assertEquals(emptyList<KaraokeFill>(), LyricAdlib(emptyList()).karaokeFills(1500, true))
+        val adlib = LyricAdlib(listOf(AdlibSegment("(again) "), AdlibSegment("Hol", 1000), AdlibSegment("ding", 2000)), 3000)
+        assertEquals(listOf(KaraokeFill(0, 8, 0f), KaraokeFill(8, 11, 0.5f), KaraokeFill(11, 15, 0f)), adlib.karaokeFills(1500, false))
+        assertEquals(listOf(KaraokeFill(0, 8, 0f), KaraokeFill(8, 11, 0f), KaraokeFill(11, 15, 0f)), adlib.karaokeFills(3000, false))
+        assertEquals(listOf(KaraokeFill(0, 8, 0f), KaraokeFill(8, 11, 1f), KaraokeFill(11, 15, 1f)), adlib.karaokeFills(3000, true))
+    }
+
+    @Test
     fun `fraction clamps and zero or reversed durations snap`() {
         val word = TimedWord(1000, "Hello")
         assertEquals(0f, wordFillFraction(word, 2000, 999))

@@ -10,6 +10,15 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class TtmlLyricsTest {
     @Test
+    fun `adjacent ttml syllables have independent ranges and fractions`() {
+        val line = parse("""<p begin="1s"><span begin="1s" end="1.4s">Hol</span><span begin="1.4s" end="2s">ding</span> <span begin="2s" end="2.5s">on</span></p>""").single().toTimedLyricLine()
+        assertEquals("Holding on", line.text)
+        assertEquals(listOf(KaraokeFill(0, 3, 0.5f), KaraokeFill(3, 7, 0f), KaraokeFill(8, 10, 0f)), karaokeFills(line, 1200))
+        assertEquals(listOf(KaraokeFill(0, 3, 1f), KaraokeFill(3, 7, 0.5f), KaraokeFill(8, 10, 0f)), karaokeFills(line, 1700))
+        assertEquals(listOf(KaraokeFill(0, 3, 1f), KaraokeFill(3, 7, 1f), KaraokeFill(8, 10, 0.5f)), karaokeFills(line, 2250))
+    }
+
+    @Test
     fun `word end and duration survive absolute and relative timing`() {
         val lines = parse("""<p begin="1s"><span begin="1s" end="2s" dur="5s">End</span> <span begin="2s" dur="500ms">Duration</span></p>
             <p begin="10s"><span begin="0s" end="500ms">Relative</span> <span begin="500ms" dur="250ms">duration</span></p>""")
@@ -66,14 +75,66 @@ class TtmlLyricsTest {
         """<?xml version="1.0"?><tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>$body</div></body></tt>""")
 
     @Test
-    fun `timed spans preserve separation and omit background and translation`() {
+    fun `timed spans keep background separate and omit translation`() {
         val line = parse("""<p begin="00:00:12.000" end="00:15"><span begin="12s">Hello</span> <span begin="00:12.500">world</span><span begin="13s" ttm:role="x-bg">echo</span><span ttm:role="x-translation">bonjour</span></p>""").single()
         assertEquals("Hello world", line.text)
+        assertEquals(listOf(AdlibSegment("echo", 13000)), line.adlib?.segments)
         assertEquals(12000L, line.startMs)
         assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
         assertTrue(line.isSynced)
         assertEquals(listOf(KaraokeFill(0, 5, 0.4f), KaraokeFill(6, 11, 0f)),
-            karaokeFills(TimedLyricLine(line.startMs, line.text, words = line.words), 12200))
+            karaokeFills(line.toTimedLyricLine(), 12200))
+    }
+
+    @Test
+    fun `nested background spans stay on their own line without leaking across paragraphs`() {
+        val lines = parse("""
+            <p begin="2s"><span begin="2s">Lead</span>
+                <span ttm:role="x-bg"><span begin="2.1s">(Oh</span><br/><span begin="2.2s">yeah)</span>
+                    <span ttm:role="x-translation">Ignored</span></span>
+                <span ttm:role="x-bg">(again)</span>
+            </p>
+            <p begin="4s">Next<span ttm:role="x-bg"> </span></p>
+            <p begin="5s">Last</p>
+        """)
+        assertEquals(listOf("Lead", "Next", "Last"), lines.map { it.text })
+        assertEquals(listOf("(Oh yeah) (again)", null, null), lines.map { it.adlib?.text })
+        assertEquals(
+            listOf(AdlibSegment("(Oh", 2100), AdlibSegment(" yeah)", 2200), AdlibSegment(" (again)")),
+            lines.first().adlib?.segments
+        )
+        assertEquals(listOf(TimedWord(2000, "Lead")), lines.first().words)
+    }
+
+    @Test
+    fun `adlib syllables retain punctuation and highlight before and beyond their lead line`() {
+        val line = parse("""
+            <p begin="12s"><span begin="12s">Lead</span>
+                <span ttm:role="x-bg" begin="11.5s" end="13.4s">(<span begin="11.6s">La</span><span begin="11.8s">la</span> <span begin="13s"><span>land</span>)</span></span>
+            </p>
+            <p begin="12.9s">Next lead</p>
+        """).first().toTimedLyricLine()
+        val adlib = requireNotNull(line.adlib)
+        assertEquals("(Lala land)", adlib.text)
+        assertEquals(listOf(0f, 0f, 0f, 0f, 0f), adlib.karaokeFills(11499, false).map { it.fraction })
+        assertEquals(listOf(1f, 0f, 0f, 0f, 0f), adlib.karaokeFills(11600, false).map { it.fraction })
+        assertEquals(listOf(1f, 0.5f, 0f, 0f, 0f), adlib.karaokeFills(11700, false).map { it.fraction })
+        assertEquals(listOf(1f, 1f, 0f, 0f, 0f), adlib.karaokeFills(11800, false).map { it.fraction })
+        assertEquals(listOf(1f, 1f, 1f, 0f, 0f), adlib.karaokeFills(13000, false).map { it.fraction })
+        assertEquals(listOf(1f, 1f, 1f, 0.5f, 0.5f), adlib.karaokeFills(13200, false).map { it.fraction })
+        assertEquals(listOf(0f, 0f, 0f, 0f, 0f), adlib.karaokeFills(13400, false).map { it.fraction })
+        assertEquals(listOf(KaraokeFill(0, 4, 0f)), karaokeFills(line, 11800))
+    }
+
+    @Test
+    fun `explicit parallel timing resolves adlib offsets and duration like lead offsets`() {
+        val line = parse("""
+            <div begin="2s"><p begin="10s" timeContainer="par"><span begin="500ms">Lead</span>
+                <span ttm:role="x-bg" begin="30f" dur="1s"><span>Oh</span> <span begin="500ms">yeah</span></span>
+            </p></div>
+        """).single()
+        assertEquals(listOf(TimedWord(12500, "Lead")), line.words)
+        assertEquals(LyricAdlib(listOf(AdlibSegment("Oh", 13000), AdlibSegment(" yeah", 13500)), 14000), line.adlib)
     }
 
     @Test

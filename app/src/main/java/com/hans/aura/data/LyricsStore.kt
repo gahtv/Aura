@@ -1,6 +1,8 @@
 package com.hans.aura.data
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 
 data class LyricLine(
@@ -185,8 +187,11 @@ object LyricsStore {
         } catch (_: Exception) {
             return null
         }
-        return parseResponse(response)
+        return parseResponseOffMain(response)
     }
+
+    internal suspend fun parseResponseOffMain(response: LyricsResponse): List<LyricLine> =
+        withContext(Dispatchers.Default) { parseResponse(response) }
 
     internal fun parseResponse(resp: LyricsResponse): List<LyricLine> {
         val metadata = resp.metadata
@@ -258,7 +263,7 @@ object LyricsStore {
         (MusicSources.current as? JellyfinSource)?.let { return it.jellyfinLyrics(itemId) }
         val fromSource = runCatching { MusicSources.current?.lyrics(itemId) }.getOrNull()
         if (!fromSource.isNullOrBlank()) {
-            val parsed = parseLyricsText(fromSource)
+            val parsed = withContext(Dispatchers.Default) { parseLyricsText(fromSource) }
             android.util.Log.i("AURA_LYRICS", "source item=$itemId chars=${fromSource.length} lines=${parsed.size}")
             if (parsed.isNotEmpty()) return parsed
         } else {

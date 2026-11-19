@@ -115,7 +115,7 @@ class ProviderLyricsTest {
         }
         assertEquals(2, lookups)
         assertRequest("GET", "/Audio/song/lyrics")
-        repeat(2) { assertRequest("GET", "/Users/user/Items/song") }
+        repeat(2) { assertRequest("GET", "/Items/song?userId=user") }
         assertEquals(3, server.requestCount)
     }
 

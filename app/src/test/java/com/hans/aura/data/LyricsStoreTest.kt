@@ -1,14 +1,75 @@
 package com.hans.aura.data
 
+import android.os.Looper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.CopyOnWriteArrayList
 
 /** LRC parsing: synced stamps, multi-stamp lines, and the plain-text fallback. */
+@RunWith(RobolectricTestRunner::class)
 class LyricsStoreTest {
+    @Test
+    fun `fetch preserves raw LRC and TTML parsing`() = runBlocking {
+        for (raw in listOf(
+            "[00:01]<00:01>Hello <00:02>world<00:03>",
+            """<tt><body><div><p begin="1s" end="3s"><span begin="1s">Hello</span> <span begin="2s">world</span></p></div></body></tt>"""
+        )) {
+            val api = FakeJellyfinApi(lyricsResponse = LyricsResponse(lyricText = raw))
+            val lines = LyricsStore.fetch(api, "track")
+            assertEquals(LyricsStore.parseLyricsText(raw), lines)
+            assertEquals("Hello world", lines.single().text)
+            assertEquals(listOf(1000L, 2000L), lines.single().words.map { it.startMs })
+        }
+    }
+
+    @Test
+    fun `fetch handles empty responses and network errors without swallowing cancellation`() = runBlocking {
+        assertTrue(LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = LyricsResponse()), "track").isEmpty())
+        fun failingApi(error: Exception) = object : JellyfinApi by FakeJellyfinApi() {
+            override suspend fun getLyrics(itemId: String): LyricsResponse = throw error
+        }
+        assertTrue(LyricsStore.fetch(failingApi(IllegalStateException("offline")), "track").isEmpty())
+        val cancelled = CancellationException("cancelled")
+        try {
+            LyricsStore.fetch(failingApi(cancelled), "track")
+            fail("Cancellation was swallowed")
+        } catch (e: CancellationException) {
+            assertSame(cancelled, e)
+        }
+    }
+
+    @Test
+    fun `fetch parses response off the caller thread`() = runBlocking {
+        val caller = Thread.currentThread()
+        assertSame(Looper.getMainLooper().thread, caller)
+        val parseThreads = CopyOnWriteArrayList<Thread>()
+        val dtoLines = object : AbstractList<LyricLineDto>() {
+            override val size = 1
+            override fun get(index: Int): LyricLineDto {
+                parseThreads += Thread.currentThread()
+                return LyricLineDto("<00:01>Hello <00:02>world<00:03>", 10000000L)
+            }
+        }
+        val response = LyricsResponse(lyrics = dtoLines)
+
+        val lines = LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track")
+
+        assertEquals("Hello world", lines.single().text)
+        assertEquals(listOf(1000L, 2000L), lines.single().words.map { it.startMs })
+        assertEquals(3000L, lines.single().endMs)
+        assertTrue(parseThreads.isNotEmpty())
+        assertTrue("Parsing ran on the caller thread", parseThreads.none { it === caller })
+    }
+
     @Test
     fun `cue-only and inline-only DTO lines without line stamps stay separate`() = runBlocking {
         for (response in listOf(

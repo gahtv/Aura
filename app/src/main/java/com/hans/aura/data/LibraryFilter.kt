@@ -172,6 +172,7 @@ object LibraryFilter {
             return ItemsResponse()
         }
         val perLibraryLimit = (q.startIndex + q.limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
+        val fields = fieldsForSort(q.fields, q.sortBy)
         val responses = libs.map { lib ->
             runCatching {
                 api.getItems(
@@ -191,7 +192,7 @@ object LibraryFilter {
                     sortOrder = q.sortOrder,
                     limit = perLibraryLimit,
                     startIndex = 0,
-                    fields = q.fields,
+                    fields = fields,
                     imageTypeLimit = q.imageTypeLimit,
                     nameStartsWithOrGreater = q.nameStartsWithOrGreater
                 )
@@ -217,7 +218,7 @@ object LibraryFilter {
                         sortOrder = q.sortOrder,
                         limit = perLibraryLimit,
                         startIndex = 0,
-                        fields = q.fields,
+                        fields = fields,
                         imageTypeLimit = q.imageTypeLimit,
                         nameStartsWithOrGreater = q.nameStartsWithOrGreater
                     )
@@ -252,12 +253,13 @@ object LibraryFilter {
             return ItemsResponse()
         }
         val perLibraryLimit = (startIndex + limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
+        val mergeFields = fieldsForSort(fields, sortBy)
         val responses = libs.map { lib ->
             runCatching {
                 api.getAlbumArtists(
                     userId = userId, sortBy = sortBy, sortOrder = sortOrder,
                     limit = perLibraryLimit, startIndex = 0,
-                    fields = fields, imageTypeLimit = imageTypeLimit,
+                    fields = mergeFields, imageTypeLimit = imageTypeLimit,
                     parentId = lib.id
                 )
             }.onFailure {
@@ -276,6 +278,15 @@ object LibraryFilter {
         val responses = results.mapNotNull { it.getOrNull() }
         if (responses.isEmpty()) results.firstOrNull()?.getOrThrow()
         return responses
+    }
+
+    private fun fieldsForSort(fields: String, sortBy: String): String {
+        val requested = fields.split(',').map { it.trim() }
+        val missing = listOf("DateCreated", "SortName").filter { field ->
+            sortBy.contains(field, ignoreCase = true) &&
+                requested.none { it.equals(field, ignoreCase = true) }
+        }
+        return (listOf(fields).filter { it.isNotBlank() } + missing).joinToString(",")
     }
 
     /** Merge per-library pages: honour the requested sort, then the page window. */

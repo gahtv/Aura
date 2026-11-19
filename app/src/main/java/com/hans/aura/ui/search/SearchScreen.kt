@@ -53,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.tv.material3.Button
+import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
@@ -168,7 +169,7 @@ fun SearchScreen(
 
     Column(Modifier.fillMaxSize().padding(vertical = 32.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Search", fontSize = 32.sp, color = TextPrimary)
+            Text("Search", style = MaterialTheme.typography.headlineLarge, color = TextPrimary)
             Spacer(Modifier.weight(1f))
             Button(onClick = onBack) { Text("Back") }
         }
@@ -249,7 +250,7 @@ fun SearchScreen(
         // compete with live results. OK re-runs, long-press removes.
         if (showRecent) {
             Text(
-                "Recent searches", fontSize = 13.sp, color = TextSecondary,
+                "Recent searches", style = MaterialTheme.typography.labelLarge, color = TextSecondary,
                 modifier = Modifier.padding(horizontal = 56.dp)
             )
             Spacer(Modifier.height(8.dp))

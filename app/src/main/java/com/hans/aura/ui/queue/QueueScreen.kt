@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.ui.common.ContextMenuHost
 import com.hans.aura.ui.common.ContextMenus
 import com.hans.aura.ui.common.InitialFocusOnPush
@@ -84,7 +85,7 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
         Row(verticalAlignment = Alignment.CenterVertically) {
             androidx.tv.material3.Text(
                 "Queue \u00B7 ${queue.size}",
-                fontSize = AuraTypography.title, color = TextPrimary
+                style = MaterialTheme.typography.headlineSmall, color = TextPrimary
             )
             Spacer(Modifier.weight(1f))
             HeaderActionButton(

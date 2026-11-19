@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
@@ -371,7 +372,7 @@ fun ItemShelf(
         shown.isNullOrEmpty() -> {}
         else -> {
             androidx.tv.material3.Text(
-                title, fontSize = AuraTypography.titleSmall, color = TextPrimary,
+                title, style = MaterialTheme.typography.headlineSmall, color = TextPrimary,
                 modifier = Modifier.padding(horizontal = AuraSpacing.screenHorizontal)
             )
             Spacer(Modifier.height(AuraSpacing.sm))

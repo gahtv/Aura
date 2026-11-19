@@ -345,9 +345,7 @@ fun CollectionScreen(
                     }
                     val (i, number, track) = row as TracklistRow.Track
                     val removeFromPlaylist: (() -> Unit)? = if (collection.type == "Playlist") {
-                        track.playlistItemId?.takeIf { it.isNotBlank() }?.let { entryId ->
-                            { viewModel.removeFromPlaylist(entryId) }
-                        }
+                        { viewModel.removeFromPlaylist(track.id, shownTracks.take(i).count { it.id == track.id }) }
                     } else null
                     TrackRow(
                         index = number,

@@ -118,8 +118,8 @@ class JellyfinSource(
     override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse =
         media.browse(query, cachePrefix)
 
-    override suspend fun removeFromPlaylist(playlistId: String, entryId: String) =
-        media.removeFromPlaylist(playlistId, entryId)
+    override suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) =
+        media.removeFromPlaylist(playlistId, itemId, occurrence)
 
     override suspend fun recentlyPlayed(limit: Int): List<JellyfinItem> = media.recentlyPlayed(limit)
 

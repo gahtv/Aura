@@ -169,6 +169,12 @@ interface JellyfinApi {
         @Body body: PlaylistRequest
     ): JellyfinItem
 
+    @POST("Playlists/{playlistId}")
+    suspend fun updatePlaylist(
+        @retrofit2.http.Path("playlistId") playlistId: String,
+        @Body body: PlaylistItemsUpdate
+    ): retrofit2.Response<Unit>
+
     @POST("Playlists/{playlistId}/Items")
     suspend fun addToPlaylist(
         @retrofit2.http.Path("playlistId") playlistId: String,

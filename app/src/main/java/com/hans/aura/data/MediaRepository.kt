@@ -29,9 +29,22 @@ class MediaRepository(
 
     private fun api(): JellyfinApi = jellyfin.api
 
-    suspend fun removeFromPlaylist(playlistId: String, entryId: String) = withContext(Dispatchers.IO) {
-        require(entryId.isNotBlank()) { "Missing playlist entry id" }
-        val response = api().removeFromPlaylist(playlistId, entryId)
+    suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) = withContext(Dispatchers.IO) {
+        require(itemId.isNotBlank()) { "Missing playlist item id" }
+        require(occurrence >= 0) { "Invalid playlist occurrence" }
+        val items = api().getPlaylistItems(playlistId, checkNotNull(userId()) { "Not signed in" }).items
+        val matches = items.indices.filter { items[it].id == itemId }
+        val index = checkNotNull(matches.getOrNull(occurrence)) { "Playlist entry no longer exists" }
+        val response = if (matches.size == 1) {
+            val entryId = checkNotNull(items[index].playlistItemId?.takeIf { it.isNotBlank() }) {
+                "Missing playlist entry id"
+            }
+            api().removeFromPlaylist(playlistId, entryId)
+        } else {
+            api().updatePlaylist(playlistId, PlaylistItemsUpdate(
+                ids = items.filterIndexed { i, _ -> i != index }.map { it.id }
+            ))
+        }
         if (!response.isSuccessful) throw HttpException(response)
     }
 

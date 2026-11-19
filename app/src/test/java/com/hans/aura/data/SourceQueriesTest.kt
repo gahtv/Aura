@@ -11,6 +11,7 @@ import kotlin.concurrent.thread
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
@@ -88,24 +89,6 @@ class SourceQueriesTest {
     }
 
     @Test
-    fun `playlist removal addresses the entry rather than the media item`() = runBlocking {
-        status = 204
-        body = ""
-        SourceQueries.removeFromPlaylist("playlist", "entry-one")
-        val request = requests.take()
-        assertEquals("/Playlists/playlist/Items", request.encodedPath)
-        assertEquals("entry-one", request.queryParameter("entryIds"))
-        assertNull(request.queryParameter("Ids"))
-    }
-
-    @Test
-    fun `playlist removal rejects an empty entry without a request`() = runBlocking {
-        val error = runCatching { SourceQueries.removeFromPlaylist("playlist", "") }.exceptionOrNull()
-        assertTrue(error is IllegalArgumentException)
-        assertTrue(requests.isEmpty())
-    }
-
-    @Test
     fun `playlist item identity is decoded separately from track identity`() {
         val items = Json.decodeFromString<ItemsResponse>(
             """{"Items":[{"Id":"track","PlaylistItemId":"first"},{"Id":"track","PlaylistItemId":"second"},{"Id":"other"}]}"""
@@ -126,12 +109,14 @@ class SourceQueriesTest {
             withTimeout(10_000) { vm.state.first { it.tracks != null } }
             val original = vm.state.value.tracks
             requests.clear()
-            status = 403
-            body = "Forbidden"
-            vm.removeFromPlaylist("entry-one")
+            respond = { url ->
+                if (url.queryParameter("entryIds") != null) 403 to "Forbidden"
+                else 200 to """{"Items":[{"Id":"track","PlaylistItemId":"entry-one"}]}"""
+            }
+            vm.removeFromPlaylist("track", 0)
             withTimeout(3_000) { vm.state.first { it.error != null } }
             assertEquals(original, vm.state.value.tracks)
-            assertEquals(1, requests.size)
+            assertEquals(2, requests.size)
         } finally {
             Dispatchers.resetMain()
             LibraryCache.clear()

@@ -175,6 +175,11 @@ data class PlaylistRequest(
     @SerialName("UserId") val userId: String? = null
 )
 
+@Serializable
+data class PlaylistItemsUpdate(
+    @SerialName("Ids") val ids: List<String>
+)
+
 /** Announced to the server so Jellyfin web's "Play On" can target this client. */
 @Serializable
 data class CapabilitiesDto(

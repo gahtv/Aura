@@ -63,15 +63,15 @@ class CollectionViewModel(
     /** A playlist mutation landed (remove / reorder): refetch the list. */
     fun refresh() = load(force = true)
 
-    fun removeFromPlaylist(entryId: String) {
+    fun removeFromPlaylist(trackId: String, occurrence: Int) {
         viewModelScope.launch {
             runCatching {
-                SourceQueries.removeFromPlaylist(itemId, entryId)
+                SourceQueries.removeFromPlaylist(itemId, trackId, occurrence)
             }.onSuccess {
                 LibraryCache.evict(DetailPresenter.collectionCacheKey(itemId))
                 load(force = true)
             }.onFailure {
-                Log.w(TAG, "remove entry=$entryId from playlist=$itemId failed: ${it.message}")
+                Log.w(TAG, "remove item=$trackId occurrence=$occurrence from playlist=$itemId failed: ${it.message}")
                 _state.update { state -> state.copy(error = "Couldn't remove from playlist: ${it.message}") }
             }
         }

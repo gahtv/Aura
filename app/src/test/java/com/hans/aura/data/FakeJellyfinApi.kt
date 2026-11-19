@@ -156,6 +156,9 @@ class FakeJellyfinApi(
         newIndex: Int
     ): retrofit2.Response<Unit> = nope("movePlaylistItem")
 
+    override suspend fun updatePlaylist(playlistId: String, body: PlaylistItemsUpdate): retrofit2.Response<Unit> =
+        nope("updatePlaylist")
+
     override suspend fun removeFromPlaylist(playlistId: String, ids: String): retrofit2.Response<Unit> =
         nope("removeFromPlaylist")
 

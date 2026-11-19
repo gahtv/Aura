@@ -4,7 +4,8 @@ data class LyricLine(
     val startMs: Long,
     val text: String,
     val isSynced: Boolean,
-    val words: List<TimedWord> = emptyList()
+    val words: List<TimedWord> = emptyList(),
+    val voice: LyricVoice? = null
 )
 
 /**
@@ -46,19 +47,23 @@ object LyricsStore {
             val hasTicks = (dtoLines.size > 1 && dtoLines.any { it.start > 0 }) ||
                 dtoLines.any { !it.cues.isNullOrEmpty() || wordTag.containsMatchIn(it.text) }
             return dtoLines.map {
+                val original = it.text.trim()
+                val (content, voice) = LrcVoices.split(original)
+                val prefixLength = it.text.indexOf(original) + original.length - content.length
                 val words = it.cues?.mapNotNull { cue ->
-                    val start = cue.position
+                    val start = maxOf(cue.position, prefixLength)
                     val end = cue.endPosition
-                    if (start < 0 || end <= start || end > it.text.length) null else {
+                    if (cue.position < 0 || end <= start || end > it.text.length) null else {
                         normalize(it.text.substring(start, end)).takeIf { word -> word.isNotEmpty() }
                             ?.let { word -> TimedWord(cue.start / 10_000L, word) }
                     }
-                }?.takeIf { words -> words.isNotEmpty() } ?: inlineWords(it.text)
+                }?.takeIf { words -> words.isNotEmpty() } ?: inlineWords(content)
                 LyricLine(
                     startMs = if (hasTicks) it.start / 10_000L else 0L,
-                    text = if (wordTag.containsMatchIn(it.text)) normalize(it.text.replace(wordTag, "")) else it.text.trim(),
+                    text = if (wordTag.containsMatchIn(content)) normalize(content.replace(wordTag, "")) else content,
                     isSynced = hasTicks,
-                    words = words
+                    words = words,
+                    voice = voice
                 )
             }
         }
@@ -90,28 +95,28 @@ object LyricsStore {
     fun parseLrcText(raw: String): List<LyricLine> {
         val stampRegex = Regex("""\[(\d+):(\d+(?:[.:]\d+)?)\]""")
         val synced = mutableListOf<LyricLine>()
-        val plain = mutableListOf<String>()
+        val plain = mutableListOf<LyricLine>()
 
         for (rawLine in raw.lines()) {
             val stamps = stampRegex.findAll(rawLine).toList()
-            val content = rawLine.replace(stampRegex, "").trim()
+            val (content, voice) = LrcVoices.split(rawLine.replace(stampRegex, "").trim())
             val words = inlineWords(content)
             val text = if (wordTag.containsMatchIn(content)) normalize(content.replace(wordTag, "")) else content
             if (stamps.isEmpty()) {
-                if (text.isNotEmpty()) plain.add(text)
+                if (text.isNotEmpty()) plain.add(LyricLine(0L, text, isSynced = false, voice = voice))
                 continue
             }
             val firstMs = stampMs(stamps.first().groupValues[1], stamps.first().groupValues[2])
             for (m in stamps) {
                 val ms = stampMs(m.groupValues[1], m.groupValues[2])
                 synced.add(LyricLine(startMs = ms, text = text, isSynced = true,
-                    words = words.map { it.copy(startMs = it.startMs + ms - firstMs) }))
+                    words = words.map { it.copy(startMs = it.startMs + ms - firstMs) }, voice = voice))
             }
         }
 
         return when {
             synced.isNotEmpty() -> synced.sortedBy { it.startMs }
-            plain.isNotEmpty() -> plain.map { LyricLine(0L, it, isSynced = false) }
+            plain.isNotEmpty() -> plain
             else -> emptyList()
         }
     }

@@ -8,6 +8,45 @@ import org.junit.Test
 /** LRC parsing: synced stamps, multi-stamp lines, and the plain-text fallback. */
 class LyricsStoreTest {
     @Test
+    fun `speaker tags are stripped and classified without inheritance`() {
+        val tags = mapOf(
+            "v1:" to LyricVoice("v1", LyricVoice.Kind.PRIMARY),
+            "V2： " to LyricVoice("v2", LyricVoice.Kind.SECONDARY),
+            "v3:" to LyricVoice("v3", LyricVoice.Kind.PRIMARY),
+            "v4:" to LyricVoice("v4", LyricVoice.Kind.SECONDARY),
+            "v1000:" to LyricVoice("v1000", LyricVoice.Kind.GROUP),
+            "F:" to LyricVoice("f", LyricVoice.Kind.PRIMARY),
+            "m:" to LyricVoice("m", LyricVoice.Kind.SECONDARY),
+            "D:" to LyricVoice("d", LyricVoice.Kind.GROUP),
+            "BG:" to LyricVoice("bg", LyricVoice.Kind.GROUP),
+            "v1,v2:" to LyricVoice("v1,v2", LyricVoice.Kind.GROUP),
+            "v1+v2:" to LyricVoice("v1,v2", LyricVoice.Kind.GROUP),
+            "v1&v2:" to LyricVoice("v1,v2", LyricVoice.Kind.GROUP),
+            "M/F:" to LyricVoice("m,f", LyricVoice.Kind.GROUP)
+        )
+        tags.forEach { (tag, voice) ->
+            val lines = LyricsStore.parseLrcText("[00:01]${tag}Hello\n[00:02]No tag")
+            assertEquals(tag, voice, lines[0].voice)
+            assertEquals("Hello", lines[0].text)
+            assertEquals(null, lines[1].voice)
+        }
+        listOf("Me: hello", "Note: x", "v0: hello", "Hello v1: world", "v1 Hello").forEach {
+            val line = LyricsStore.parseLrcText("[00:01]$it").single()
+            assertEquals(it, line.text)
+            assertEquals(null, line.voice)
+        }
+        assertEquals(LyricVoice("f", LyricVoice.Kind.PRIMARY), LyricsStore.parseLyricsText("F: Plain").single().voice)
+    }
+
+    @Test
+    fun `enhanced multistamp lyrics preserve voices and clean words`() {
+        val lines = LyricsStore.parseLrcText("[00:10][00:20]v2: <00:10>Hello <00:11>world<00:12>")
+        assertTrue(lines.all { it.voice == LyricVoice("v2", LyricVoice.Kind.SECONDARY) && it.text == "Hello world" })
+        assertEquals(listOf(TimedWord(10000, "Hello"), TimedWord(11000, "world")), lines[0].words)
+        assertEquals(listOf(TimedWord(20000, "Hello"), TimedWord(21000, "world")), lines[1].words)
+    }
+
+    @Test
     fun `enhanced lrc strips tags and parses words including millisecond precision`() {
         val line = LyricsStore.parseLrcText("[00:12.00]<00:12>Hello  <00:12.503>world<00:13.10>  ").single()
         assertEquals("Hello world", line.text)

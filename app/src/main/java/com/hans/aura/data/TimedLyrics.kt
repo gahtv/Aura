@@ -24,7 +24,8 @@ data class TimedLyricLine(
     val startMs: Long,
     val text: String,
     val translation: String? = null,
-    val words: List<TimedWord> = emptyList()
+    val words: List<TimedWord> = emptyList(),
+    val voice: LyricVoice? = null
 )
 
 /** A run of a lyric line, [sung] once the audio clock has passed its first word. */

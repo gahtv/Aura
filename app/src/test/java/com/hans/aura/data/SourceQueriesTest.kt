@@ -202,6 +202,17 @@ class SourceQueriesTest {
     }
 
     @Test
+    fun `jellyfin structured voices reach timed lines without leaking into words`() = runTest {
+        body = """{"Lyrics":[{"Text":"v2: <00:12>Hello <00:12.50>world<00:13>","Start":120000000}]}"""
+        val line = MusicSources.current!!.lyricsTimed("voice-inline")!!.single()
+        assertEquals("Hello world", line.text)
+        assertEquals(LyricVoice("v2", LyricVoice.Kind.SECONDARY), line.voice)
+        assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
+        body = """{"Lyrics":[{"Text":"v2: Hello world","Start":120000000,"Cues":[{"Position":0,"EndPosition":9,"Start":120000000},{"Position":10,"EndPosition":15,"Start":125000000}]}]}"""
+        assertEquals(line, MusicSources.current!!.lyricsTimed("voice-cues")!!.single())
+    }
+
+    @Test
     fun `unsynced lyrics stay plain and do not query web`() = runTest {
         Prefs.lyricsWebFallback = true
         body = """{"LyricText":"First line\nSecond line"}"""

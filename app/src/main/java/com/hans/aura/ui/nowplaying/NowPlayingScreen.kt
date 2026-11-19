@@ -146,7 +146,7 @@ fun NowPlayingScreen(
     var peekOrigin by remember { mutableStateOf<FocusRequester?>(null) }
     // Everything queued after the playing track, in real play order (the
     // player's order, not the order the user tapped — shuffle included).
-    val upcoming = queueState.drop((queueIndexState + 1).coerceAtLeast(0))
+    val upcoming = queueState.drop(peekQueueIndex(queueIndexState, row = 0))
 
     fun closePeek(log: Boolean = true) {
         if (peekSize == 0) return
@@ -344,7 +344,8 @@ fun NowPlayingScreen(
                         closePeek()
                     }
                 },
-                onJump = { qIndex ->
+                onJump = { row ->
+                    val qIndex = peekQueueIndex(queueIndexState, row)
                     android.util.Log.d("AURA_PEEK", "jump index=$qIndex")
                     closePeek(log = false)
                     player.skipToQueue(qIndex)

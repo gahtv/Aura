@@ -53,6 +53,13 @@ import com.hans.aura.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 
 /**
+ * Queue index of peek [row], given the playing track's [queueIndex]: the peek
+ * lists the tracks after the playing one, so row 0 is the next track.
+ */
+internal fun peekQueueIndex(queueIndex: Int, row: Int): Int =
+    (queueIndex + 1).coerceAtLeast(0) + row
+
+/**
  * Inline queue peek (B14): the next few tracks as a compact list over the
  * lower part of Now Playing.
  *

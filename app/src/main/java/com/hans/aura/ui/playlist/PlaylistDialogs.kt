@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
+import com.hans.aura.ui.common.countLabel
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.Border
@@ -323,12 +324,13 @@ fun PlaylistPickerDialog(
                                         fontWeight = if (rowFocused) FontWeight.SemiBold
                                         else FontWeight.Normal
                                     )
-                                    Spacer(Modifier.width(12.dp))
-                                    androidx.tv.material3.Text(
-                                        "${tracksToAdd.size} track" +
-                                            if (tracksToAdd.size == 1) "" else "s",
-                                        color = TextSecondary, fontSize = 12.sp
-                                    )
+                                    playlistCountLabel(pl.childCount)?.let { label ->
+                                        Spacer(Modifier.width(12.dp))
+                                        androidx.tv.material3.Text(
+                                            label,
+                                            color = TextSecondary, fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -343,3 +345,6 @@ fun PlaylistPickerDialog(
         }
     }
 }
+
+internal fun playlistCountLabel(childCount: Int?): String? =
+    childCount?.let { countLabel(it, "track") }

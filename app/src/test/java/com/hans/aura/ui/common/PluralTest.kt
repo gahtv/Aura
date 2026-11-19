@@ -21,7 +21,9 @@ class PluralTest {
 
     @Test
     fun `count is always printed`() {
+        assertEquals("0 tracks", countLabel(0, "track"))
         assertEquals("1 track", countLabel(1, "track"))
+        assertEquals("5 tracks", countLabel(5, "track"))
         assertEquals("7 tracks", countLabel(7, "track"))
     }
 

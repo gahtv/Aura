@@ -304,7 +304,8 @@ fun CollectionScreen(
         if (state.error != null && tracks != null) {
             androidx.tv.material3.Text(
                 state.error.orEmpty(), color = TextSecondary,
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = AuraSpacing.screenHorizontal, vertical = AuraSpacing.xs)
             )
         }
 

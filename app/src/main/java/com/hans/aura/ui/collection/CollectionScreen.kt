@@ -30,7 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import com.hans.aura.ui.theme.AuraShapes
+import androidx.compose.ui.graphics.luminance
 import com.hans.aura.ui.theme.darken
 import com.hans.aura.ui.theme.rememberDynamicColors
 import androidx.compose.ui.layout.ContentScale
@@ -51,6 +51,8 @@ import com.hans.aura.ui.nowplaying.AtmosBadge
 import kotlinx.coroutines.launch
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Surface
+import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
@@ -256,9 +258,18 @@ fun CollectionScreen(
                     // Fixed-height buttons: keep them whole no matter how long
                     // the title/bio above grows.
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        androidx.tv.material3.Button(onClick = {
-                            tracks?.let { player.playQueue(it, 0, resume = false) }
-                        }) { androidx.tv.material3.Text("Play") }
+                        androidx.tv.material3.Button(
+                            modifier = Modifier.focusRequester(playButtonFocus),
+                            colors = androidx.tv.material3.ButtonDefaults.colors(
+                                containerColor = accent,
+                                contentColor = collectionPlayContentColor(accent),
+                                focusedContainerColor = androidx.tv.material3.MaterialTheme.colorScheme.onSurface,
+                                focusedContentColor = androidx.tv.material3.MaterialTheme.colorScheme.inverseOnSurface
+                            ),
+                            onClick = {
+                                tracks?.let { player.playQueue(it, 0, resume = false) }
+                            }
+                        ) { androidx.tv.material3.Text("Play") }
                         androidx.tv.material3.Button(onClick = {
                             tracks?.let { list ->
                                 player.playQueue(list.shuffled(), 0, resume = false)
@@ -368,6 +379,16 @@ fun CollectionScreen(
                 onDismiss = { showBio = false }
             )
         }
+    }
+}
+
+internal fun collectionPlayContentColor(accent: Color): Color {
+    val luminance = accent.luminance()
+    val inkContrast = (luminance + 0.05f) / (AuraColors.OnAccent.luminance() + 0.05f)
+    return when {
+        inkContrast >= 4.5f -> AuraColors.OnAccent
+        luminance < 0.179f -> Color.White
+        else -> Color.Black
     }
 }
 

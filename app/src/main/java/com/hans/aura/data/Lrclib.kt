@@ -193,14 +193,11 @@ object Lrclib {
     /** LRC text through the SAME parser the Jellyfin path uses; plain text as untimed lines. */
     private fun toLines(t: Track): List<LyricLine> {
         t.syncedLyrics?.takeIf { it.isNotBlank() }?.let { raw ->
-            val parsed = LyricsStore.parseLrcText(raw)
+            val parsed = LyricsStore.parseLyricsText(raw)
             if (parsed.any { it.isSynced }) return parsed
         }
         t.plainLyrics?.takeIf { it.isNotBlank() }?.let { raw ->
-            return raw.lines()
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .map { LyricLine(startMs = 0L, text = it, isSynced = false) }
+            return LyricsStore.parseLyricsText(raw)
         }
         return emptyList()
     }

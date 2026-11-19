@@ -1,7 +1,6 @@
 package com.hans.aura.ui.nowplaying
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -146,6 +145,9 @@ fun LyricsPane(
         val local = LyricsStore.fetchPreferred(app.jellyfin.api, cur.id)
         if (local.isNotEmpty()) {
             lines = local
+            if (local.any { it.words.isNotEmpty() }) {
+                timedLines = local.map { TimedLyricLine(it.startMs, it.text, words = it.words) }
+            }
             return@LaunchedEffect
         }
         if (!Prefs.lyricsWebFallback) {
@@ -157,6 +159,9 @@ fun LyricsPane(
         webChecked = true
         webFound = remote.isNotEmpty()
         lines = remote
+        if (remote.any { it.words.isNotEmpty() }) {
+            timedLines = remote.map { TimedLyricLine(it.startMs, it.text, words = it.words) }
+        }
     }
 
     // +offset = the highlighted line is one step EARLIER than the audio clock.
@@ -277,31 +282,16 @@ fun LyricsPane(
                 items(loadedLines.size) { i ->
                     val line = loadedLines[i]
                     val isCurrent = i == currentLineIndex
-                    val color by animateColorAsState(
-                        when {
-                            isCurrent -> highlightColor
-                            currentLineIndex in 0 until i -> TextSecondary
-                            else -> TextPrimary
-                        },
-                        label = "lyricLine"
-                    )
-                    // Karaoke: on the line being sung, the words whose start_ms
-                    // has passed take the accent and the rest of the line stays
-                    // muted. Every other line is drawn exactly as before.
-                    val timed = timedLines?.getOrNull(i)
-                    val karaoke = isCurrent && timed != null
-                    val text = if (karaoke) {
-                        karaokeLine(timed!!, effectivePosition, highlightColor)
+                    // Line-only timestamps do not carry karaoke word timing.
+                    val timed = timedLines?.getOrNull(i)?.takeIf { isCurrent && it.words.isNotEmpty() }
+                    val text = if (timed != null) {
+                        karaokeLine(timed, effectivePosition, highlightColor)
                     } else {
                         AnnotatedString(line.text.ifBlank { "\u00A0" })
                     }
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .background(
-                                if (isCurrent) highlightColor.copy(alpha = 0.13f)
-                                else Color.Transparent
-                            )
                             .clickable(enabled = line.isSynced) {
                                 player.seekTo(line.startMs)
                                 followPaused = false
@@ -311,7 +301,7 @@ fun LyricsPane(
                     ) {
                         androidx.tv.material3.Text(
                             text,
-                            color = if (karaoke) TextSecondary else color,
+                            color = TextPrimary,
                             fontSize = if (isCurrent) AuraTypography.headline else AuraTypography.title,
                             fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
                             textAlign = TextAlign.Center,

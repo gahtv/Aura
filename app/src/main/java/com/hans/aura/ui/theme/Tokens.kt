@@ -73,9 +73,6 @@ object AuraColors {
     /** Selected + focused library tab. */
     val SelectedFocusedAccent = Color(0x66E8A44C)
 
-    /** "Filled" plate of the primary transport button. */
-    val GlassFill = Color(0x22FFFFFF)
-
     /** Disabled button plate. */
     val GlassFillMuted = Color(0x14FFFFFF)
 

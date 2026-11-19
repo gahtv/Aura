@@ -11,6 +11,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.data.Mixes
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.hans.aura.data.AuthStore
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.darken
 import com.hans.aura.ui.theme.rememberDynamicColors
 import androidx.compose.ui.unit.sp
@@ -156,13 +158,15 @@ fun ArtistScreen(
                 .padding(horizontal = 48.dp, vertical = 28.dp)
                 .background(
                     Color(0x990E0C0A),
-                    androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                    AuraShapes.card
                 )
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                androidx.tv.material3.Text(shownArtist.name, fontSize = 36.sp, color = TextPrimary)
+                androidx.tv.material3.Text(
+                    shownArtist.name, style = MaterialTheme.typography.displaySmall, color = TextPrimary
+                )
                 bio?.let { text ->
                     androidx.tv.material3.Text(
                         text,
@@ -345,13 +349,13 @@ fun ArtistScreen(
 @Composable
 private fun SectionHeader(title: String, accent: Color) {
     Column(Modifier.padding(horizontal = 48.dp)) {
-        androidx.tv.material3.Text(title, fontSize = 20.sp, color = TextPrimary)
+        androidx.tv.material3.Text(title, style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
         Spacer(Modifier.height(6.dp))
         Box(
             Modifier
                 .width(56.dp)
                 .height(3.dp)
-                .background(accent, androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+                .background(accent, AuraShapes.pill)
         )
     }
 }
@@ -364,7 +368,7 @@ private fun SectionHeader(title: String, accent: Color) {
 @Composable
 private fun ArtistRadioButton(onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+    val shape = AuraShapes.control
     Box(
         Modifier
             // onFocusChanged BEFORE clickable, or the ring never renders.

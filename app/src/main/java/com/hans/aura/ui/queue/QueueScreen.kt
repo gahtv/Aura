@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.ui.common.ContextMenuHost
 import com.hans.aura.ui.common.ContextMenus
 import com.hans.aura.ui.common.InitialFocusOnPush
@@ -84,7 +84,7 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
         Row(verticalAlignment = Alignment.CenterVertically) {
             androidx.tv.material3.Text(
                 "Queue \u00B7 ${queue.size}",
-                fontSize = AuraTypography.title, color = TextPrimary
+                style = MaterialTheme.typography.headlineSmall, color = TextPrimary
             )
             Spacer(Modifier.weight(1f))
             HeaderActionButton(
@@ -193,7 +193,7 @@ private fun HeaderActionButton(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(AuraShapes.card)
+    val shape = AuraShapes.control
     Box(
         Modifier
             // 38dp tall and 11dp of side padding: seven actions plus the title

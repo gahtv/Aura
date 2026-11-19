@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -104,7 +103,7 @@ internal fun NowPlayingTopRow(
 fun AtmosBadge(color: Color = Accent) {
     Box(
         Modifier
-            .background(color.copy(alpha = 0.20f), AuraShapes.of(AuraShapes.xs))
+            .background(color.copy(alpha = 0.20f), AuraShapes.badge)
             .padding(horizontal = AuraSpacing.sm, vertical = AuraSpacing.xxs)
     ) {
         androidx.tv.material3.Text(
@@ -129,7 +128,7 @@ internal fun NpControlButton(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(AuraShapes.md)
+    val shape = AuraShapes.control
     val bg by animateColorAsState(
         when {
             !enabled -> AuraColors.GlassFillMuted

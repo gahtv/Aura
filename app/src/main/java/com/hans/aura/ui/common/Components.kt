@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
@@ -101,7 +101,7 @@ fun ArtworkCard(
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(if (focused) AuraShapes.card else AuraShapes.xs))
+                .clip(AuraShapes.card)
                 .background(bg)
                 .padding(if (focused) AuraSizes.focusBorder else 0.dp)
                 .then(
@@ -109,7 +109,7 @@ fun ArtworkCard(
                     if (focused) Modifier.border(
                         width = AuraSizes.focusBorderLoud,
                         color = accent,
-                        shape = RoundedCornerShape(AuraShapes.card)
+                        shape = AuraShapes.card
                     ) else Modifier
                 )
         ) {
@@ -149,7 +149,7 @@ fun ArtworkCard(
                                 .padding(AuraSpacing.xxs)
                                 .background(
                                     AuraColors.BadgeScrim,
-                                    RoundedCornerShape(AuraShapes.xs)
+                                    AuraShapes.badge
                                 )
                                 .padding(horizontal = AuraSpacing.xxs, vertical = 2.dp)
                         ) {
@@ -371,7 +371,7 @@ fun ItemShelf(
         shown.isNullOrEmpty() -> {}
         else -> {
             androidx.tv.material3.Text(
-                title, fontSize = AuraTypography.titleSmall, color = TextPrimary,
+                title, style = MaterialTheme.typography.headlineSmall, color = TextPrimary,
                 modifier = Modifier.padding(horizontal = AuraSpacing.screenHorizontal)
             )
             Spacer(Modifier.height(AuraSpacing.sm))

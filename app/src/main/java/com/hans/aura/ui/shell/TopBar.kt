@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,6 +39,7 @@ import com.hans.aura.ui.nav.NavSpec
 import com.hans.aura.ui.nav.Screen
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
@@ -93,7 +93,7 @@ private fun NowPlayingPill(player: PlayerConnection, current: Screen, onOpen: ()
     val playing = item ?: return
 
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
+    val shape = AuraShapes.card
     Row(
         Modifier
             .clip(shape)
@@ -117,7 +117,7 @@ private fun NowPlayingPill(player: PlayerConnection, current: Screen, onOpen: ()
                 modifier = Modifier
                     .width(44.dp)
                     .height(44.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(AuraShapes.card)
                     .background(Surface)
             )
         }
@@ -152,7 +152,7 @@ private fun IconNavButton(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
+    val shape = AuraShapes.control
     Box(
         Modifier
             .clip(shape)
@@ -184,7 +184,7 @@ private fun IconNavButton(
 @Composable
 private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
+    val shape = AuraShapes.control
     // Loud, unambiguous states: selected = filled amber, focused = thick outline.
     // An unfocused-vs-focused unselected tab used to differ only by a warm-brown
     // amber ring on a warm-brown bar, which read as "nothing is focused" — the

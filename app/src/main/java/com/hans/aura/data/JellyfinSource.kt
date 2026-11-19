@@ -58,7 +58,7 @@ class JellyfinSource(
             val track = item(itemId) ?: return null
             lookupLyrics(track).also { webLyricsFound[itemId] = it.isNotEmpty() }
         }
-        return lines.filter { it.isSynced }.map { TimedLyricLine(it.startMs, it.text) }
+        return lines.filter { it.isSynced }.map { TimedLyricLine(it.startMs, it.text, words = it.words) }
             .takeIf { it.isNotEmpty() }
     }
 

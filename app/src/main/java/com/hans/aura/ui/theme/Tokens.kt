@@ -2,10 +2,12 @@ package com.hans.aura.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Typography
 
 /**
  * Aura design tokens — one 10-foot (1080p, D-pad) scale for the whole app.
@@ -73,9 +75,6 @@ object AuraColors {
     /** Selected + focused library tab. */
     val SelectedFocusedAccent = Color(0x66E8A44C)
 
-    /** "Filled" plate of the primary transport button. */
-    val GlassFill = Color(0x22FFFFFF)
-
     /** Disabled button plate. */
     val GlassFillMuted = Color(0x14FFFFFF)
 
@@ -110,11 +109,22 @@ object AuraSpacing {
 }
 
 /**
- * TV type scale. The eight core steps are caption/label/bodySmall/body/
- * subtitle/title/headline/display; [titleSmall] and [displaySmall] exist only
- * as shrink-ladder midpoints, and [hero] is the login / pairing display.
+ * Shared TV typography, plus size tokens for compact UI and text that must
+ * fit or marquee.
  */
 object AuraTypography {
+    private val defaults = Typography()
+    val hero: TextUnit = 64.sp
+
+    val expressive = Typography(
+        displayLarge = defaults.displayLarge.copy(fontSize = hero, lineHeight = 72.sp, fontWeight = FontWeight.Bold),
+        displayMedium = defaults.displayMedium.copy(fontWeight = FontWeight.Bold),
+        displaySmall = defaults.displaySmall.copy(fontWeight = FontWeight.SemiBold),
+        headlineLarge = defaults.headlineLarge.copy(fontWeight = FontWeight.SemiBold),
+        headlineMedium = defaults.headlineMedium.copy(fontWeight = FontWeight.SemiBold),
+        headlineSmall = defaults.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
+    )
+
     val caption: TextUnit = 12.sp
     val label: TextUnit = 13.sp
     val bodySmall: TextUnit = 14.sp
@@ -125,7 +135,6 @@ object AuraTypography {
     val headline: TextUnit = 28.sp
     val displaySmall: TextUnit = 34.sp
     val display: TextUnit = 40.sp
-    val hero: TextUnit = 64.sp
 
     /** Reading line height for bio / long-form body copy. */
     val lineHeight: TextUnit = 24.sp
@@ -136,18 +145,14 @@ object AuraTypography {
     val lyricCardFit = listOf(title, titleSmall, subtitle)
 }
 
-/** Corner radii. [pill] is the 50% capsule. */
+/** Surface shapes for cards, action sheets, and dialogs in order of prominence. */
 object AuraShapes {
-    val xs: Dp = 4.dp
-    val card: Dp = 6.dp
-    val sm: Dp = 8.dp
-    val md: Dp = 10.dp
-    val lg: Dp = 14.dp
-
-    /** 50% — a true capsule. */
+    val card = RoundedCornerShape(12.dp)
+    val sheet = RoundedCornerShape(16.dp)
+    val dialog = RoundedCornerShape(28.dp)
+    val control = card
+    val badge = RoundedCornerShape(4.dp)
     val pill = RoundedCornerShape(50)
-
-    fun of(radius: Dp) = RoundedCornerShape(radius)
 }
 
 /** Fixed component sizes and layout budgets. */

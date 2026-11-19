@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -48,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.TextPrimary
@@ -164,7 +164,7 @@ fun PlaylistPickerDialog(
         Column(
             Modifier
                 .widthIn(max = 720.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(AuraShapes.dialog)
                 .background(Surface)
                 .focusProperties { exit = { FocusRequester.Cancel } }
                 .padding(32.dp)
@@ -259,7 +259,7 @@ fun PlaylistPickerDialog(
                             // Scrollable: the fixed 360dp box silently clipped
                             // everything past the ~6th playlist.
                             .verticalScroll(rememberScrollState())
-                            .background(Border.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                            .background(Border.copy(alpha = 0.3f), AuraShapes.card)
                     ) {
                         loaded.forEach { pl ->
                             var rowFocused by remember(pl.id) { mutableStateOf(false) }
@@ -267,13 +267,14 @@ fun PlaylistPickerDialog(
                                 Modifier
                                     .fillMaxWidth()
                                     .background(
-                                        if (rowFocused) Color(0xFF3E362D) else Color.Transparent
+                                        if (rowFocused) Color(0xFF3E362D) else Color.Transparent,
+                                        AuraShapes.control
                                     )
                                     .border(
                                         width = if (rowFocused) 2.dp else 0.dp,
                                         color = if (rowFocused) Color(0xFFD6CCBE)
                                         else Color.Transparent,
-                                        shape = RoundedCornerShape(4.dp)
+                                        shape = AuraShapes.control
                                     )
                                     // Must precede the focus target.
                                     .onFocusChanged { rowFocused = it.isFocused }

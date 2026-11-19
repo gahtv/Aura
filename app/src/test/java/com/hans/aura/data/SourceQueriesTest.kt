@@ -192,6 +192,16 @@ class SourceQueriesTest {
     }
 
     @Test
+    fun `jellyfin cues and inline tags reach timed words`() = runTest {
+        body = """{"Lyrics":[{"Text":"Hello world","Start":120000000,"Cues":[{"Position":0,"EndPosition":5,"Start":120000000,"End":125000000},{"Position":6,"EndPosition":11,"Start":125000000,"End":130000000},{"Position":-1,"EndPosition":999,"Start":0}]}]}"""
+        val line = MusicSources.current!!.lyricsTimed("cues")!!.single()
+        assertEquals("Hello world", line.text)
+        assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
+        body = """{"Lyrics":[{"Text":"<00:12>Hello <00:12.50>world<00:13>","Start":120000000}]}"""
+        assertEquals(line, MusicSources.current!!.lyricsTimed("inline")!!.single())
+    }
+
+    @Test
     fun `unsynced lyrics stay plain and do not query web`() = runTest {
         Prefs.lyricsWebFallback = true
         body = """{"LyricText":"First line\nSecond line"}"""

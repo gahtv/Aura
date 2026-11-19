@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,7 +47,7 @@ fun BoxScope.NowPlayingChip(app: AuraApp, player: PlayerConnection) {
     Row(
         Modifier
             .align(Alignment.BottomStart)
-            .background(AuraColors.CardScrim, RoundedCornerShape(AuraShapes.lg))
+            .background(AuraColors.CardScrim, AuraShapes.card)
             .padding(AuraSpacing.md),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -60,7 +59,7 @@ fun BoxScope.NowPlayingChip(app: AuraApp, player: PlayerConnection) {
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(AuraSizes.artworkChip)
-                        .clip(RoundedCornerShape(AuraShapes.card))
+                        .clip(AuraShapes.card)
                         .background(SurfaceHigh)
                 )
                 Spacer(Modifier.width(AuraSpacing.md))

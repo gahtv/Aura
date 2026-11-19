@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -119,9 +118,9 @@ internal fun QueuePeekOverlay(
                 .align(Alignment.BottomStart)
                 .padding(start = AuraSpacing.npHorizontal, bottom = AuraSpacing.screenHorizontal)
                 .width(AuraSizes.peekWidth)
-                .clip(RoundedCornerShape(AuraShapes.lg))
+                .clip(AuraShapes.sheet)
                 .background(AuraColors.PeekScrim)
-                .border(AuraSizes.hairline, Border, RoundedCornerShape(AuraShapes.lg))
+                .border(AuraSizes.hairline, Border, AuraShapes.sheet)
                 // Focus can never leave the panel while it is up.
                 .focusProperties { exit = { FocusRequester.Cancel } }
                 .padding(vertical = AuraSpacing.xs)
@@ -176,7 +175,7 @@ private fun PeekRow(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(AuraShapes.card)
+    val shape = AuraShapes.control
     Row(
         modifier
             .fillMaxWidth()
@@ -197,7 +196,7 @@ private fun PeekRow(
                 .height(AuraSpacing.lg)
                 .background(
                     if (focused) accent else Color.Transparent,
-                    RoundedCornerShape(AuraShapes.xs)
+                    AuraShapes.pill
                 )
         )
         Spacer(Modifier.width(AuraSpacing.sm))

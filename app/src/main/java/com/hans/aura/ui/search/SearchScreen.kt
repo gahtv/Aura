@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -53,6 +52,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.tv.material3.Button
+import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
@@ -63,6 +63,7 @@ import com.hans.aura.ui.common.contextMenuKeys
 import com.hans.aura.ui.common.rememberAtmosAlbumIds
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
@@ -168,7 +169,7 @@ fun SearchScreen(
 
     Column(Modifier.fillMaxSize().padding(vertical = 32.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Search", fontSize = 32.sp, color = TextPrimary)
+            Text("Search", style = MaterialTheme.typography.headlineLarge, color = TextPrimary)
             Spacer(Modifier.weight(1f))
             Button(onClick = onBack) { Text("Back") }
         }
@@ -249,7 +250,7 @@ fun SearchScreen(
         // compete with live results. OK re-runs, long-press removes.
         if (showRecent) {
             Text(
-                "Recent searches", fontSize = 13.sp, color = TextSecondary,
+                "Recent searches", style = MaterialTheme.typography.labelLarge, color = TextSecondary,
                 modifier = Modifier.padding(horizontal = 56.dp)
             )
             Spacer(Modifier.height(8.dp))
@@ -381,7 +382,7 @@ private fun RecentQueryChip(
     onRemove: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(50)
+    val shape = AuraShapes.pill
     Row(
         modifier = Modifier
             .then(if (firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
@@ -402,7 +403,7 @@ private fun RecentQueryChip(
 @Composable
 private fun VoiceSearchButton(onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(50)
+    val shape = AuraShapes.pill
     Box(
         modifier = Modifier
             .clip(shape)

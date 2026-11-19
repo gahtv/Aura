@@ -7,6 +7,26 @@ import org.junit.Test
 
 /** LRC parsing: synced stamps, multi-stamp lines, and the plain-text fallback. */
 class LyricsStoreTest {
+    @Test
+    fun `enhanced lrc strips tags and parses words including millisecond precision`() {
+        val line = LyricsStore.parseLrcText("[00:12.00]<00:12>Hello  <00:12.503>world<00:13.10>  ").single()
+        assertEquals("Hello world", line.text)
+        assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12503, "world")), line.words)
+        assertEquals(listOf(KaraokeSpan("Hello", true), KaraokeSpan(" world", false)), karaokeSpans(
+            TimedLyricLine(line.startMs, line.text, words = line.words), 12200))
+        assertFalse(line.text.contains('<'))
+    }
+
+    @Test
+    fun `enhanced multi stamp copies shift word times`() {
+        val lines = LyricsStore.parseLrcText("[00:10][00:20]<00:10.25>Hello <00:11>world<00:12>")
+        assertEquals(listOf(10250L, 11000L), lines[0].words.map { it.startMs })
+        assertEquals(listOf(20250L, 21000L), lines[1].words.map { it.startMs })
+        assertTrue(lines.all { it.text == "Hello world" })
+        assertTrue(LyricsStore.parseLrcText("[00:01]Plain  line").single().words.isEmpty())
+        assertEquals("Plain  line", LyricsStore.parseLrcText("[00:01]Plain  line").single().text)
+        assertTrue(LyricsStore.parseLrcText("[00:01]<00:01> <00:02>").single().words.isEmpty())
+    }
 
     @Test
     fun `plain text without stamps becomes unsynced lines`() {

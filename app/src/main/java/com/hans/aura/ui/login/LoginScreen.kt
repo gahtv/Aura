@@ -4,6 +4,8 @@ package com.hans.aura.ui.login
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,11 +15,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +38,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
@@ -56,6 +59,51 @@ private data class QuickConnectPanel(
     val secret: String?,
     val demo: Boolean
 )
+
+@Composable
+private fun LoginTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val colors = MaterialTheme.colorScheme
+    val shape = AuraShapes.control
+
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.border(
+            width = AuraSizes.focusBorder,
+            color = if (focused) AuraColors.CursorRing else Color.Transparent,
+            shape = shape
+        ),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = AuraTypography.body),
+        placeholder = {
+            Text(placeholder, color = colors.onSurfaceVariant, fontSize = AuraTypography.body)
+        },
+        singleLine = true,
+        shape = shape,
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = AuraColors.FocusedFill,
+            unfocusedContainerColor = AuraColors.PillBackgroundRaised,
+            focusedTextColor = colors.onSurface,
+            unfocusedTextColor = colors.onSurface,
+            cursorColor = colors.primary,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent
+        ),
+        interactionSource = interactionSource,
+        visualTransformation = visualTransformation,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions
+    )
+}
 
 @Composable
 fun LoginScreen(
@@ -226,7 +274,7 @@ fun LoginScreen(
         ) {
             Text(
                 text = "Aura",
-                fontSize = AuraTypography.hero,
+                style = MaterialTheme.typography.displayLarge,
                 letterSpacing = 8.sp,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -238,29 +286,26 @@ fun LoginScreen(
             )
             Spacer(Modifier.height(AuraSpacing.xxl))
 
-            TextField(
+            LoginTextField(
                 value = serverUrl,
                 onValueChange = { serverUrl = it },
-                placeholder = { Text("http://server:8096") },
-                singleLine = true,
+                placeholder = "http://server:8096",
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 modifier = Modifier.width(AuraSizes.loginFormWidth)
             )
             Spacer(Modifier.height(AuraSpacing.md))
-            TextField(
+            LoginTextField(
                 value = username,
                 onValueChange = { username = it },
-                placeholder = { Text("Username") },
-                singleLine = true,
+                placeholder = "Username",
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 modifier = Modifier.width(AuraSizes.loginFormWidth).focusRequester(usernameFocus)
             )
             Spacer(Modifier.height(AuraSpacing.md))
-            TextField(
+            LoginTextField(
                 value = password,
                 onValueChange = { password = it },
-                placeholder = { Text("Password") },
-                singleLine = true,
+                placeholder = "Password",
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { submitPassword() }),
@@ -310,12 +355,12 @@ fun LoginScreen(
                 Column(
                     Modifier
                         .width(AuraSizes.loginPanelWidth)
-                        .clip(RoundedCornerShape(AuraShapes.lg))
+                        .clip(AuraShapes.dialog)
                         .background(MaterialTheme.colorScheme.surface)
                         .border(
                             AuraSizes.hairline,
                             com.hans.aura.ui.theme.Border,
-                            RoundedCornerShape(AuraShapes.lg)
+                            AuraShapes.dialog
                         )
                         // Trap the cursor inside the panel; DOWN must not fall
                         // back into the login form behind the scrim.

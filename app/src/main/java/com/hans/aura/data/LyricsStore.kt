@@ -106,6 +106,70 @@ object LyricsStore {
         return folded
     }
 
+    /** Slices timed words into sub-line segments while keeping the line's exact spacing. */
+    private fun sublineSegments(line: LyricLine): List<AdlibSegment> {
+        var cursor = 0
+        return line.words.mapIndexed { index, word ->
+            val pattern = word.text.split(whitespace).joinToString("\\s+", transform = Regex::escape)
+            val match = Regex(pattern).find(line.text, cursor)
+            val end = if (index == line.words.lastIndex) line.text.length else match?.range?.last?.plus(1) ?: cursor
+            AdlibSegment(line.text.substring(cursor, end), word.startMs, word.endMs).also { cursor = end }
+        }.ifEmpty { listOf(AdlibSegment(line.text)) }
+    }
+
+    /** [row] groups the copies of one source line that a repeated-stamp line expands into. */
+    private data class LrcEntry(val line: LyricLine, val hasLineStamp: Boolean, val row: Int)
+
+    private fun pairSameStampTranslations(entries: List<LrcEntry>): List<LyricLine> {
+        /** [index] is the entry's slot in the output, or null once it became a translation. */
+        class Placed(val entry: LrcEntry, val runLength: Int, val index: Int?)
+        val paired = mutableListOf<LyricLine>()
+        var previousRow = mutableListOf<Placed>()
+        var row = mutableListOf<Placed>()
+        for (entry in entries) {
+            if (row.isNotEmpty() && row.first().entry.row != entry.row) {
+                previousRow = row
+                row = mutableListOf()
+            }
+            val line = entry.line
+            val lead = previousRow.firstOrNull { it.entry.line.startMs == line.startMs }
+                ?.also(previousRow::remove)
+                ?.takeIf { entry.hasLineStamp && it.entry.hasLineStamp }
+            val runLength = (lead?.runLength ?: 0) + 1
+            val target = lead?.index
+            val leadLine = lead?.entry?.line
+            if (runLength == 2 && target != null && leadLine != null && leadLine.text.isNotBlank() &&
+                line.text.isNotBlank() && (line.voice == null || line.voice == leadLine.voice)
+            ) {
+                paired[target] = paired[target].copy(translation = LyricAdlib(sublineSegments(line)))
+                row += Placed(entry, runLength, null)
+            } else {
+                paired += line
+                row += Placed(entry, runLength, paired.lastIndex)
+            }
+        }
+        return paired
+    }
+
+    private fun applyLrcOffsetAndSort(lines: List<LyricLine>, offsetMs: Long): List<LyricLine> =
+        lines.map { line ->
+            line.copy(
+                startMs = if (line.isSynced) shifted(line.startMs, offsetMs) else line.startMs,
+                endMs = line.endMs?.let { shifted(it, offsetMs) },
+                words = line.words.map { it.copy(startMs = shifted(it.startMs, offsetMs),
+                    endMs = it.endMs?.let { end -> shifted(end, offsetMs) }) },
+                translation = line.translation?.let { subline ->
+                    subline.copy(segments = subline.segments.map { segment ->
+                        segment.copy(startMs = segment.startMs?.let { shifted(it, offsetMs) },
+                            endMs = segment.endMs?.let { shifted(it, offsetMs) })
+                    })
+                }
+            )
+        }.filterNot { isHeader(it.text) }.sortedBy { it.startMs }
+
+    private fun finishLrc(entries: List<LrcEntry>, offsetMs: Long): List<LyricLine> =
+        applyLrcOffsetAndSort(pairSameStampTranslations(entries), offsetMs)
+
     suspend fun fetch(api: JellyfinApi, itemId: String): List<LyricLine> {
         val response = try {
             api.getLyrics(itemId)
@@ -129,7 +193,7 @@ object LyricsStore {
             val offsetMs = (metadata?.offset ?: 0L) / 10_000L
             val credits = serverCredits + headerCredits(dtoLines.asSequence().map { it.text }.filter(::isHeader))
             val firstInlineStart = mutableMapOf<String, Long>()
-            return foldBlankLines(dtoLines.filterNot { isHeader(it.text.trim()) }.map {
+            val parsed = dtoLines.map {
                 val original = it.text.trim()
                 val (content, voice) = LrcVoices.split(original)
                 val prefixLength = it.text.indexOf(original) + original.length - content.length
@@ -148,20 +212,29 @@ object LyricsStore {
                     lineStartMs - firstInlineStart.getOrPut(original) { lineStartMs }
                 } else 0L
                 LyricLine(
-                    startMs = lineStartMs?.let { shifted(it, offsetMs) } ?: 0L,
+                    startMs = lineStartMs ?: 0L,
                     text = if (hasInlineTags) normalize(content.replace(wordTag, "")) else content,
-                    isSynced = lineStartMs != null || !it.cues.isNullOrEmpty() || hasInlineTags,
-                    words = (words ?: inlineWords(content).map { word ->
+                    isSynced = !isHeader(content) && (lineStartMs != null || !it.cues.isNullOrEmpty() || hasInlineTags),
+                    words = words ?: inlineWords(content).map { word ->
                         word.copy(startMs = word.startMs + inlineOffset, endMs = word.endMs?.plus(inlineOffset))
-                    }).map { word ->
-                        word.copy(startMs = shifted(word.startMs, offsetMs), endMs = word.endMs?.let { end -> shifted(end, offsetMs) })
                     },
                     voice = voice,
                     credits = credits,
-                    endMs = (words?.sungEnd()
-                        ?: inlineEnd(content)?.plus(inlineOffset))?.let { end -> shifted(end, offsetMs) }
-                )
-            })
+                    endMs = words?.sungEnd() ?: inlineEnd(content)?.plus(inlineOffset)
+                ) to (lineStartMs != null && !isHeader(content))
+            }
+            // Jellyfin expands a repeated-stamp line into consecutive copies with distinct starts.
+            var row = -1
+            val rowStarts = mutableSetOf<Long>()
+            val entries = parsed.mapIndexed { index, (line, hasLineStamp) ->
+                val previous = parsed.getOrNull(index - 1)
+                val expandedCopy = previous != null && hasLineStamp && previous.second &&
+                    dtoLines[index - 1].text == dtoLines[index].text && line.startMs !in rowStarts
+                if (!expandedCopy) { row++; rowStarts.clear() }
+                rowStarts += line.startMs
+                LrcEntry(line, hasLineStamp, row)
+            }
+            return foldBlankLines(finishLrc(entries, offsetMs))
         }
 
         // 2) Raw text, possibly LRC-formatted
@@ -190,40 +263,39 @@ object LyricsStore {
     /** Parses "[mm:ss.xx] line" LRC; falls back to one unsynced entry per line. */
     fun parseLrcText(raw: String): List<LyricLine> {
         val stampRegex = Regex("""\[(\d+):(\d+(?:[.:]\d+)?)\]""")
-        val synced = mutableListOf<LyricLine>()
-        val plain = mutableListOf<LyricLine>()
+        val parsed = mutableListOf<LrcEntry>()
         val headers = mutableListOf<String>()
         val offsetMs = offsetTag.findAll(raw).mapNotNull { it.groupValues[1].toLongOrNull() }.lastOrNull() ?: 0L
 
-        for (rawLine in raw.lines()) {
+        for ((row, rawLine) in raw.lines().withIndex()) {
             val stamps = stampRegex.findAll(rawLine).toList()
             val (content, voice) = LrcVoices.split(rawLine.replace(stampRegex, "").trim())
             if (isHeader(content)) {
                 headers += content
+                parsed += LrcEntry(LyricLine(0L, content, isSynced = false), false, row)
                 continue
             }
             val words = inlineWords(content)
             val text = if (wordTag.containsMatchIn(content)) normalize(content.replace(wordTag, "")) else content
             if (stamps.isEmpty()) {
-                if (text.isNotEmpty()) plain.add(LyricLine(0L, text, isSynced = false, voice = voice))
+                parsed += LrcEntry(LyricLine(0L, text, isSynced = false, voice = voice), false, row)
                 continue
             }
             val firstMs = stampMs(stamps.first().groupValues[1], stamps.first().groupValues[2])
             val endMs = inlineEnd(content)
             for (m in stamps) {
                 val ms = stampMs(m.groupValues[1], m.groupValues[2])
-                synced.add(LyricLine(startMs = shifted(ms, offsetMs), text = text, isSynced = true,
-                    words = words.map { it.copy(startMs = shifted(it.startMs + ms - firstMs, offsetMs),
-                        endMs = it.endMs?.let { end -> shifted(end + ms - firstMs, offsetMs) }) }, voice = voice,
-                    endMs = endMs?.let { shifted(it + ms - firstMs, offsetMs) }))
+                parsed += LrcEntry(LyricLine(startMs = ms, text = text, isSynced = true,
+                    words = words.map { it.copy(startMs = it.startMs + ms - firstMs,
+                        endMs = it.endMs?.let { end -> end + ms - firstMs }) }, voice = voice,
+                    endMs = endMs?.let { it + ms - firstMs }), true, row)
             }
         }
 
         val credits = headerCredits(headers.asSequence())
-        return when {
-            synced.isNotEmpty() -> foldBlankLines(synced.sortedBy { it.startMs })
-            plain.isNotEmpty() -> plain
-            else -> emptyList()
-        }.map { it.copy(credits = credits) }
+        val hasSynced = parsed.any { it.line.isSynced }
+        val lines = finishLrc(parsed, offsetMs)
+        return (if (hasSynced) foldBlankLines(lines.filter { it.isSynced }) else lines.filter { it.text.isNotEmpty() })
+            .map { it.copy(credits = credits) }
     }
 }

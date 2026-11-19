@@ -105,22 +105,12 @@ fun PlaylistPickerDialog(
             creating = true
             scope.launch {
                 runCatching {
-                    app.jellyfin.api.createPlaylist(
-                        name = name,
-                        ids = tracksToAdd.joinToString(",") { it.id },
-                        userId = userId,
-                        body = com.hans.aura.data.PlaylistRequest(
-                            name = name,
-                            ids = tracksToAdd.map { it.id },
-                            userId = userId
-                        )
-                    )
+                    app.container.media.createPlaylist(userId, name, tracksToAdd.map { it.id })
                 }.onSuccess { created ->
                     android.util.Log.d(
                         "AURA_MENU",
                         "picker created playlist \"$name\" (${created.id}) with ${tracksToAdd.size} track(s)"
                     )
-                    LibraryCache.evict("home_playlists:$userId")
                     onDismiss()
                 }.onFailure { e ->
                     // Surface it in the dialog: closing on failure looked like

@@ -53,6 +53,8 @@ object LibraryCache {
 
     fun evict(key: String) { store.remove(k(key)) }
 
+    internal fun tabKeyPrefix(kind: String, userId: String) = "lib_${kind.lowercase()}:$userId:"
+
     /** Drops every cached list whose (full, already suffixed) key matches.
      *  Needed for mutations that touch a whole FAMILY of keys — a favourite
      *  toggle invalidates every sorted/paged Tracks list, and the sort+dir

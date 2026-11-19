@@ -14,6 +14,7 @@ import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.PagedLibrary
+import com.hans.aura.data.Session
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,6 +28,8 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -57,7 +60,8 @@ class LibraryViewModelTest {
             override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
                 val response = CompletableDeferred<ItemsResponse>()
                 requests.send(response)
-                return withContext(NonCancellable) { response.await() }
+                return if (query.includeItemTypes == "Playlist") response.await()
+                else withContext(NonCancellable) { response.await() }
             }
         })
     }
@@ -65,6 +69,7 @@ class LibraryViewModelTest {
     @After
     fun tearDown() {
         store.clear()
+        app.jellyfin.auth.clear()
         MusicSources.reset()
         LibraryCache.clear()
         PagedLibrary.clear()
@@ -129,12 +134,56 @@ class LibraryViewModelTest {
         assertNull(model.state.value.error)
     }
 
-    private fun model(): LibraryViewModel = ViewModelProvider(
+    @Test
+    fun `creating a playlist refreshes a previously loaded Playlists tab`() = runBlocking {
+        MockWebServer().use { server ->
+            val userId = "user"
+            app.jellyfin.auth.installSession(Session(server.url("/").toString(), userId, "Test", "token", "device"))
+            val model = model("Playlists")
+            val existing = JellyfinItem(id = "existing")
+            val first = withTimeout(5000) { requests.receive() }
+            val firstJob = model.viewModelScope.coroutineContext.job.children.first()
+            first.complete(ItemsResponse(items = listOf(existing), totalRecordCount = 1))
+            withTimeout(5000) { firstJob.join() }
+            val loaded = model.state.value
+            assertEquals(listOf(existing), loaded.items)
+            assertEquals(listOf(existing), LibraryCache.get(loaded.cacheKey))
+            assertEquals(listOf(existing), PagedLibrary.get(loaded.cacheKey)?.items)
+            val otherSortKey = "lib_playlists:$userId:DateCreated:true"
+            val otherUserKey = "lib_playlists:${userId}2:SortName:false"
+            val albumsKey = "lib_albums:$userId:SortName:false"
+            for (key in listOf(otherSortKey, otherUserKey, albumsKey)) {
+                LibraryCache.put(key, listOf(existing))
+                PagedLibrary.put(key, listOf(existing), total = 1)
+            }
+            LibraryCache.put("home_playlists:$userId", listOf(existing))
+            server.enqueue(MockResponse().setBody("""{"Id":"new"}"""))
+
+            val created = app.container.media.createPlaylist(userId, "New playlist", listOf("track"))
+
+            assertNull(LibraryCache.get("home_playlists:$userId"))
+            for (key in listOf(loaded.cacheKey, otherSortKey)) {
+                assertNull("Stale first page: $key", LibraryCache.get(key))
+                assertNull("Stale accumulated pages: $key", PagedLibrary.get(key))
+            }
+            for (key in listOf(otherUserKey, albumsKey)) {
+                assertEquals(listOf(existing), LibraryCache.get(key))
+                assertEquals(listOf(existing), PagedLibrary.get(key)?.items)
+            }
+            withTimeout(5000) { requests.receive() }.complete(
+                ItemsResponse(items = listOf(existing, created), totalRecordCount = 2)
+            )
+            val refreshed = withTimeout(5000) { model.state.first { it.items.size == 2 } }
+            assertEquals(listOf("existing", "new"), refreshed.items.map { it.id })
+        }
+    }
+
+    private fun model(kind: String = "Albums"): LibraryViewModel = ViewModelProvider(
         object : ViewModelStoreOwner { override val viewModelStore = store },
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T =
-                LibraryViewModel(app, "Albums") as T
+                LibraryViewModel(app, kind) as T
         }
     )[LibraryViewModel::class.java]
 }

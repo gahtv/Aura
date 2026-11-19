@@ -26,6 +26,8 @@ record of their original releases, including the checks reported at the time.
 - Spring-scaling artwork cards clipped to their rounded outline while focused.
 - Accent-filled collection Play and Now Playing Play/Pause controls with readable text/icon ink.
 - A seek bar that waves while playing and flattens when paused; D-pad seeks use the live position.
+- Now Playing D-pad: DOWN from Play/Pause focuses Shuffle; DOWN from Shuffle or Repeat opens
+  the "up next" peek, and closing it returns focus to the control that opened it.
 - Clearer current-lyric emphasis and aligned Now Playing title/album/artist text.
 
 ## Boundaries

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -384,6 +385,8 @@ private fun JumpText(tag: String, text: String, accent: Color, onClick: () -> Un
     var focused by remember { mutableStateOf(false) }
     Box(
         Modifier
+            // Pill padding hangs into the gutter so text aligns with the title.
+            .offset(x = -AuraSpacing.sm)
             .padding(top = AuraSpacing.xs)
             .clip(RoundedCornerShape(AuraShapes.card))
             .background(if (focused) accent.copy(alpha = 0.25f) else Color.Transparent)

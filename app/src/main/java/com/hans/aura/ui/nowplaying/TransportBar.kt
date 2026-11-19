@@ -191,8 +191,8 @@ internal fun TransportBar(
 }
 
 /**
- * Circular icon transport button: transparent at rest, visible accent ring +
- * tinted plate when focused, solid plate when active (shuffle/repeat on).
+ * Circular icon transport button: primary controls use a solid accent plate;
+ * secondary controls use a tinted plate when focused or active.
  */
 @Composable
 private fun TransportIconButton(
@@ -207,13 +207,17 @@ private fun TransportIconButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val plate = when {
+        filled -> accent
         focused -> accent.copy(alpha = 0.34f)
         active -> accent.copy(alpha = 0.18f)
-        filled -> AuraColors.GlassFill
         else -> Color.Transparent
     }
     val tint by animateColorAsState(
-        if (active || focused || filled) accent else TextPrimary,
+        when {
+            filled -> AuraColors.OnAccent
+            active || focused -> accent
+            else -> TextPrimary
+        },
         label = "transportTint"
     )
     // Focus grows the glyph (~15%) as well as ringing it: on a dark 10-foot

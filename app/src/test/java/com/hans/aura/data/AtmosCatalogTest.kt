@@ -67,6 +67,40 @@ class AtmosCatalogTest {
     }
 
     @Test
+    fun `cached lookup does not wait for another user scan`() = runTest {
+        val cached = AtmosCatalog.catalog(FakeJellyfinApi(), "cached")
+        val response = CompletableDeferred<ItemsResponse>()
+        val api = object : JellyfinApi by FakeJellyfinApi() {
+            override suspend fun getItems(
+                userId: String,
+                includeItemTypes: String?,
+                excludeItemTypes: String?,
+                genres: String?,
+                filters: String?,
+                enableUserData: Boolean,
+                recursive: Boolean,
+                parentId: String?,
+                artistIds: String?,
+                albumArtistIds: String?,
+                searchTerm: String?,
+                ids: String?,
+                sortBy: String,
+                sortOrder: String,
+                limit: Int,
+                startIndex: Int,
+                fields: String,
+                imageTypeLimit: Int,
+                nameStartsWithOrGreater: String?
+            ): ItemsResponse {
+                return response.await()
+            }
+        }
+        val pending = async(start = CoroutineStart.UNDISPATCHED) { AtmosCatalog.catalog(api, "other") }
+        assertEquals(cached, AtmosCatalog.catalog(api, "cached"))
+        pending.cancel()
+    }
+
+    @Test
     fun `failed scan is not cached and can be retried`() = runTest {
         val failing = FakeJellyfinApi(failingParents = setOf(null))
         val result = runCatching { AtmosCatalog.catalog(failing, "user") }

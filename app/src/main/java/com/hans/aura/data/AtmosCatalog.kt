@@ -26,59 +26,65 @@ object AtmosCatalog {
     private val cache = ConcurrentHashMap<String, Catalog>()
     private val scanMutex = Mutex()
 
-    suspend fun catalog(api: JellyfinApi, userId: String): Catalog = scanMutex.withLock {
+    suspend fun catalog(api: JellyfinApi, userId: String): Catalog {
         val key = userId + LibraryFilter.cacheSuffix()
         cache[key]?.let {
             AtmosFilter.adopt(it)
-            return@withLock it
+            return it
         }
-        val atmosAlbums = HashSet<String>()
-        val atmosTracks = HashSet<String>()
-        val pageSize = 1000
-
-        suspend fun scan(parentId: String?) {
-            var start = 0
-            while (true) {
-                val page = LibraryFilter.queryItems(
-                    api, userId,
-                    LibraryFilter.ItemsQuery(
-                        includeItemTypes = "Audio",
-                        recursive = true,
-                        parentId = parentId,
-                        fields = "MediaSources",
-                        limit = pageSize,
-                        startIndex = start
-                    )
-                )
-                for (track in page.items) {
-                    val isAtmos = track.mediaSources?.any { src ->
-                        src.mediaStreams?.any { s ->
-                            s.codec.equals("eac3", true) &&
-                                (s.profile?.contains("JOC", true) == true ||
-                                    s.profile?.contains("Dolby Atmos", true) == true)
-                        } == true
-                    } == true
-                    if (isAtmos) {
-                        atmosTracks.add(track.id)
-                        track.albumId?.let { atmosAlbums.add(it) }
-                    }
-                }
-                if (page.items.isEmpty() || start + pageSize >= page.totalRecordCount) break
-                start += pageSize
+        return scanMutex.withLock {
+            cache[key]?.let {
+                AtmosFilter.adopt(it)
+                return@withLock it
             }
-        }
+            val atmosAlbums = HashSet<String>()
+            val atmosTracks = HashSet<String>()
+            val pageSize = 1000
 
-        if (LibraryFilter.isActive()) {
-            // One full pass per visible library is cheaper than asking for the
-            // union page-by-page, and each pass is exactly one library's audio.
-            for (lib in LibraryFilter.visibleLibraries()) scan(lib.id)
-        } else {
-            scan(null)
+            suspend fun scan(parentId: String?) {
+                var start = 0
+                while (true) {
+                    val page = LibraryFilter.queryItems(
+                        api, userId,
+                        LibraryFilter.ItemsQuery(
+                            includeItemTypes = "Audio",
+                            recursive = true,
+                            parentId = parentId,
+                            fields = "MediaSources",
+                            limit = pageSize,
+                            startIndex = start
+                        )
+                    )
+                    for (track in page.items) {
+                        val isAtmos = track.mediaSources?.any { src ->
+                            src.mediaStreams?.any { s ->
+                                s.codec.equals("eac3", true) &&
+                                    (s.profile?.contains("JOC", true) == true ||
+                                        s.profile?.contains("Dolby Atmos", true) == true)
+                            } == true
+                        } == true
+                        if (isAtmos) {
+                            atmosTracks.add(track.id)
+                            track.albumId?.let { atmosAlbums.add(it) }
+                        }
+                    }
+                    if (page.items.isEmpty() || start + pageSize >= page.totalRecordCount) break
+                    start += pageSize
+                }
+            }
+
+            if (LibraryFilter.isActive()) {
+                // One full pass per visible library is cheaper than asking for the
+                // union page-by-page, and each pass is exactly one library's audio.
+                for (lib in LibraryFilter.visibleLibraries()) scan(lib.id)
+            } else {
+                scan(null)
+            }
+            val result = Catalog(atmosAlbums.toSet(), atmosTracks.toSet())
+            cache[key] = result
+            AtmosFilter.adopt(result)
+            result
         }
-        val result = Catalog(atmosAlbums.toSet(), atmosTracks.toSet())
-        cache[key] = result
-        AtmosFilter.adopt(result)
-        result
     }
 
     /** Badge-only callers keep this shorthand (Home shelf, artist covers, search). */

@@ -106,6 +106,20 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `cached recent albums are reused by Atmos without an album query`() = runBlocking {
+        val uid = app.jellyfin.auth.session?.userId ?: ""
+        LibraryCache.put("home_new:$uid", listOf(album))
+        val model = model()
+        withTimeout(5000) { scanStarted.await() }
+        scan.complete(setOf(album.id))
+        artists.complete(ItemsResponse())
+        playlists.complete(ItemsResponse())
+        val done = withTimeout(5000) { model.state.first { !it.loading } }
+        assertEquals(listOf(album), done.atmosAlbums)
+        assertEquals(0, albumQueries.get())
+    }
+
+    @Test
     fun `failed shelf remains retryable while siblings finish`() = runBlocking {
         val model = model()
         recent.complete(ItemsResponse())

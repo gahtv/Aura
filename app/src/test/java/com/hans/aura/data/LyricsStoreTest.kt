@@ -103,7 +103,7 @@ class LyricsStoreTest {
     fun `structured offsets shift cue and inline trailing ends`() = runBlocking {
         for (offset in listOf(15000000L, -15000000L, 50000000L)) {
             val response = Json { ignoreUnknownKeys = true }.decodeFromString<LyricsResponse>(
-                """{"Metadata":{"Offset":$offset},"Lyrics":[{"Text":"One","Start":10000000,"Cues":[{"Position":0,"EndPosition":3,"Start":10000000,"End":30000000}]},{"Text":"<00:01>One<00:03>","Start":10000000},{"Text":"<00:01>One<00:03>","Start":40000000}]}"""
+                """{"Metadata":{"Offset":$offset},"Lyrics":[{"Text":"One","Start":10000000,"Cues":[{"Position":0,"EndPosition":3,"Start":10000000,"End":30000000}]},{"Text":"v2: <00:01>One<00:03>","Start":10000000},{"Text":"v2: <00:01>One<00:03>","Start":40000000}]}"""
             )
             val lines = LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track")
             assertEquals(listOf(1000L, 1000L, 4000L).map { (it - offset / 10000L).coerceAtLeast(0L) },

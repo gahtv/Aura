@@ -329,7 +329,8 @@ fun CollectionScreen(
                     .focusRequester(contentFocus)
                     .focusRestorer()
             ) {
-                val rows = tracklistRows(shownTracks, isAlbum = collection.type == "MusicAlbum")
+                val multiDisc = collection.type == "MusicAlbum" && tracks.orEmpty().spansSeveralDiscs()
+                val rows = tracklistRows(shownTracks, multiDisc)
                 itemsIndexed(rows) { rowIndex, row ->
                     if (row is TracklistRow.Disc) {
                         DiscHeader(row.number, first = rowIndex == 0)

@@ -19,14 +19,21 @@ data class TimedWord(
  * [LyricLine] — an implementation maps its own payload onto this shape, and a
  * source that cannot time words simply never produces one (see
  * [MusicSource.lyricsTimed]).
+ *
+ * [adlib] is optional background-vocal text belonging to this line, separate from
+ * the lead [text] and its karaoke [words].
  */
 data class TimedLyricLine(
     val startMs: Long,
     val text: String,
     val translation: String? = null,
     val words: List<TimedWord> = emptyList(),
-    val voice: LyricVoice? = null
+    val voice: LyricVoice? = null,
+    val adlib: String? = null
 )
+
+internal fun LyricLine.toTimedLyricLine() =
+    TimedLyricLine(startMs, text, words = words, voice = voice, adlib = adlib)
 
 /** A run of a lyric line, [sung] once the audio clock has passed its first word. */
 data class KaraokeSpan(

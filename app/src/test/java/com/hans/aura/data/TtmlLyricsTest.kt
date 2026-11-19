@@ -37,14 +37,31 @@ class TtmlLyricsTest {
         """<?xml version="1.0"?><tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>$body</div></body></tt>""")
 
     @Test
-    fun `timed spans preserve separation and omit background and translation`() {
+    fun `timed spans keep background separate and omit translation`() {
         val line = parse("""<p begin="00:00:12.000" end="00:15"><span begin="12s">Hello</span> <span begin="00:12.500">world</span><span begin="13s" ttm:role="x-bg">echo</span><span ttm:role="x-translation">bonjour</span></p>""").single()
         assertEquals("Hello world", line.text)
+        assertEquals("echo", line.adlib)
         assertEquals(12000L, line.startMs)
         assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
         assertTrue(line.isSynced)
         assertEquals(listOf(KaraokeSpan("Hello", true), KaraokeSpan(" world", false)),
-            karaokeSpans(TimedLyricLine(line.startMs, line.text, words = line.words), 12200))
+            karaokeSpans(line.toTimedLyricLine(), 12200))
+    }
+
+    @Test
+    fun `nested background spans stay on their own line without leaking across paragraphs`() {
+        val lines = parse("""
+            <p begin="2s"><span begin="2s">Lead</span>
+                <span ttm:role="x-bg"><span begin="2.1s">(Oh</span><br/><span begin="2.2s">yeah)</span>
+                    <span ttm:role="x-translation">Ignored</span></span>
+                <span ttm:role="x-bg">(again)</span>
+            </p>
+            <p begin="4s">Next<span ttm:role="x-bg"> </span></p>
+            <p begin="5s">Last</p>
+        """)
+        assertEquals(listOf("Lead", "Next", "Last"), lines.map { it.text })
+        assertEquals(listOf("(Oh yeah) (again)", null, null), lines.map { it.adlib })
+        assertEquals(listOf(TimedWord(2000, "Lead")), lines.first().words)
     }
 
     @Test

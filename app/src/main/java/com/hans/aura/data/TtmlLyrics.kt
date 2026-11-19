@@ -41,11 +41,13 @@ internal object TtmlLyrics {
         }
         var lineDepth = -1
         var skipDepth = -1
+        var backgroundDepth = -1
         var wordDepth = -1
         var lineStart: Long? = null
         var wordStart: Long? = null
         var lineAgent: String? = null
         val text = StringBuilder()
+        val backgroundText = StringBuilder()
         val wordText = StringBuilder()
         var words = mutableListOf<TimedWord>()
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
@@ -61,13 +63,20 @@ internal object TtmlLyrics {
                         lineStart = timeMs(parser.getAttributeValue(null, "begin"))
                         lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
                         text.clear()
+                        backgroundText.clear()
                         words = mutableListOf()
                     }
                     if (lineDepth >= 0 && skipDepth < 0) {
                         val role = (0 until parser.attributeCount).firstOrNull { parser.getAttributeName(it) == "role" }
                             ?.let { parser.getAttributeValue(it) }
-                        if (role == "x-bg" || role == "x-translation") skipDepth = parser.depth
-                        else if (parser.name == "span") {
+                        if (role == "x-translation") {
+                            skipDepth = parser.depth
+                        } else if (backgroundDepth >= 0) {
+                            if (parser.name == "br") backgroundText.append(' ')
+                        } else if (role == "x-bg") {
+                            backgroundDepth = parser.depth
+                            if (backgroundText.isNotEmpty()) backgroundText.append(' ')
+                        } else if (parser.name == "span") {
                             if (lineAgent == null) {
                                 lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
                             }
@@ -82,8 +91,12 @@ internal object TtmlLyrics {
                     }
                 }
                 XmlPullParser.TEXT -> if (lineDepth >= 0 && skipDepth < 0) {
-                    text.append(parser.text)
-                    if (wordDepth >= 0) wordText.append(parser.text)
+                    if (backgroundDepth >= 0) {
+                        backgroundText.append(parser.text)
+                    } else {
+                        text.append(parser.text)
+                        if (wordDepth >= 0) wordText.append(parser.text)
+                    }
                 }
                 XmlPullParser.END_TAG -> {
                     if (parser.depth == wordDepth) {
@@ -93,6 +106,7 @@ internal object TtmlLyrics {
                         wordDepth = -1
                     }
                     if (parser.depth == skipDepth) skipDepth = -1
+                    if (parser.depth == backgroundDepth) backgroundDepth = -1
                     if (parser.depth == lineDepth) {
                         val line = normalize(text.toString())
                         val start = lineStart ?: words.firstOrNull()?.startMs
@@ -100,7 +114,10 @@ internal object TtmlLyrics {
                         if (paragraphStart != null && words.isNotEmpty() && words.all { it.startMs < paragraphStart }) {
                             words = words.map { it.copy(startMs = it.startMs + paragraphStart) }.toMutableList()
                         }
-                        if (line.isNotEmpty()) lines += LyricLine(start ?: 0L, line, start != null, words, voice(lineAgent))
+                        if (line.isNotEmpty()) {
+                            val adlib = normalize(backgroundText.toString()).takeIf { it.isNotEmpty() }
+                            lines += LyricLine(start ?: 0L, line, start != null, words, voice(lineAgent), adlib)
+                        }
                         lineDepth = -1
                     }
                 }

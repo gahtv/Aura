@@ -60,6 +60,7 @@ import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
 import com.hans.aura.data.TimedLyricLine
 import com.hans.aura.data.karaokeSpans
+import com.hans.aura.data.toTimedLyricLine
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
@@ -162,7 +163,9 @@ fun LyricsPane(
         webFound = sourceWeb == true
         if (!timed.isNullOrEmpty()) {
             timedLines = timed
-            lines = timed.map { LyricLine(startMs = it.startMs, text = it.text, isSynced = true, words = it.words, voice = it.voice) }
+            lines = timed.map {
+                LyricLine(it.startMs, it.text, isSynced = true, words = it.words, voice = it.voice, adlib = it.adlib)
+            }
             android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")
             return@LaunchedEffect
         }
@@ -170,7 +173,7 @@ fun LyricsPane(
         if (local.isNotEmpty()) {
             lines = local
             if (local.any { it.words.isNotEmpty() }) {
-                timedLines = local.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice) }
+                timedLines = local.map { it.toTimedLyricLine() }
             }
             return@LaunchedEffect
         }
@@ -184,7 +187,7 @@ fun LyricsPane(
         webFound = remote.isNotEmpty()
         lines = remote
         if (remote.any { it.words.isNotEmpty() }) {
-            timedLines = remote.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice) }
+            timedLines = remote.map { it.toTimedLyricLine() }
         }
     }
 
@@ -194,10 +197,8 @@ fun LyricsPane(
         computeCurrentLine(lines, effectivePosition)
     }
 
-    // Anchor offset: the current line lands ~3 line-heights below the top, so
-    // exactly the previous three lines stay visible above it.
-    // Line box (26/22sp text + 20dp vertical padding) measures ~69dp pitch on
-    // TV; 3*70 leaves a small margin so the third previous line never clips.
+    // Anchor about three standard line heights from the top; wrapped lyrics
+    // and adlibs can take up more of the space above the current line.
     val anchorOffsetPx = with(LocalDensity.current) { (3 * AuraSizes.lyricLinePitch.value).dp.roundToPx() }
 
     fun pauseFollow() {
@@ -315,7 +316,7 @@ fun LyricsPane(
                     } else {
                         AnnotatedString(line.text.ifBlank { "\u00A0" })
                     }
-                    Box(
+                    Column(
                         Modifier
                             .fillMaxWidth()
                             .then(if (multipleVoices && isCurrent) {
@@ -337,6 +338,16 @@ fun LyricsPane(
                             textAlign = alignment,
                             modifier = Modifier.fillMaxWidth()
                         )
+                        val adlib = line.adlib
+                        if (!adlib.isNullOrBlank()) {
+                            androidx.tv.material3.Text(
+                                adlib,
+                                color = TextSecondary,
+                                fontSize = AuraTypography.body,
+                                textAlign = alignment,
+                                modifier = Modifier.fillMaxWidth().padding(top = AuraSpacing.xxs)
+                            )
+                        }
                     }
                 }
                 // Enough trailing scroll range that the FINAL line can reach the

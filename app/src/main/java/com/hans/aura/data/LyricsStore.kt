@@ -1,6 +1,7 @@
 package com.hans.aura.data
 
 import kotlinx.coroutines.CancellationException
+import retrofit2.HttpException
 
 data class LyricLine(
     val startMs: Long,
@@ -170,13 +171,19 @@ object LyricsStore {
     private fun finishLrc(entries: List<LrcEntry>, offsetMs: Long): List<LyricLine> =
         applyLrcOffsetAndSort(pairSameStampTranslations(entries), offsetMs)
 
-    suspend fun fetch(api: JellyfinApi, itemId: String): List<LyricLine> {
+    suspend fun fetch(api: JellyfinApi, itemId: String): List<LyricLine> =
+        fetchCacheable(api, itemId).orEmpty()
+
+    /** Empty means absent; null means a failed request that must be retried. */
+    internal suspend fun fetchCacheable(api: JellyfinApi, itemId: String): List<LyricLine>? {
         val response = try {
             api.getLyrics(itemId)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: HttpException) {
+            return if (e.code() == 404) emptyList() else null
         } catch (_: Exception) {
-            return emptyList()
+            return null
         }
         return parseResponse(response)
     }

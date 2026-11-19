@@ -679,11 +679,12 @@ class SourceQueriesTest {
     }
 
     @Test
-    fun `empty lyrics and web misses are retried`() = runTest {
+    fun `failed lyrics and web misses are retried`() = runTest {
         body = "{}"
+        status = 500
         val source = MusicSources.current!!
         assertNull(source.lyricsTimed("song"))
-        status = 500
+        status = 401
         assertNull(source.lyricsTimed("song"))
         status = 200
         body = """{"LyricText":"[00:01.00]Recovered"}"""

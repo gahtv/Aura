@@ -47,7 +47,6 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
-import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
@@ -130,21 +129,16 @@ fun ArtworkCard(
                     ) else Modifier
                 )
         ) {
-            val tag = item.primaryImageTag
-            // Tracks often carry no Primary image of their own; fall back to the album art.
-            val imageItem = when {
-                tag != null -> item.id
-                else -> item.albumId
-            }
-            if (imageItem != null) {
+            val artwork = item.resolveArtwork()
+            if (artwork != null) {
                 Box {
-                    val still = AuthStore.imageUrl(serverUrl, imageItem, tag, maxWidth = 480)
+                    val still = artwork.url(serverUrl, maxWidth = 480)
                     if (animate) {
                         // Same still image, with the motion loop over it when the
                         // budget grants a slot. Losing the slot changes nothing
                         // on screen: the poster is what was drawn before.
                         MotionArtwork(
-                            itemId = imageItem,
+                            itemId = artwork.itemId,
                             posterModel = still,
                             contentDescription = item.name,
                             budgeted = true,

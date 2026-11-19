@@ -12,18 +12,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
-import com.hans.aura.AuraApp
-import com.hans.aura.data.AuthStore
+import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.common.AutoFitMarqueeText
-import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -39,11 +35,7 @@ import com.hans.aura.ui.theme.TextSecondary
  * edges (no start/bottom padding) by design.
  */
 @Composable
-fun BoxScope.NowPlayingChip(app: AuraApp, player: PlayerConnection) {
-    val session = app.jellyfin.auth.session ?: return
-    val item by player.current.collectAsState()
-    val currentItem = item
-
+fun BoxScope.NowPlayingChip(currentItem: JellyfinItem?, artworkUrl: String?) {
     Row(
         Modifier
             .align(Alignment.BottomStart)
@@ -51,19 +43,17 @@ fun BoxScope.NowPlayingChip(app: AuraApp, player: PlayerConnection) {
             .padding(AuraSpacing.md),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        currentItem?.let { cur ->
-            cur.primaryImageTag?.let { tag ->
-                AsyncImage(
-                    model = AuthStore.imageUrl(session.serverUrl, cur.id, tag, maxWidth = 200),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(AuraSizes.artworkChip)
-                        .clip(AuraShapes.card)
-                        .background(SurfaceHigh)
-                )
-                Spacer(Modifier.width(AuraSpacing.md))
-            }
+        if (artworkUrl != null) {
+            AsyncImage(
+                model = artworkUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(AuraSizes.artworkChip)
+                    .clip(AuraShapes.card)
+                    .background(SurfaceHigh)
+            )
+            Spacer(Modifier.width(AuraSpacing.md))
         }
         Column(Modifier.widthIn(max = AuraSizes.npChipMaxWidth)) {
             // Same shrink-then-marquee treatment as the full Now Playing title;

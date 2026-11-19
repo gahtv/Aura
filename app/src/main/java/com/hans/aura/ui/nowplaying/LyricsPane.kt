@@ -73,7 +73,6 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
-import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.KaraokeFill
 import com.hans.aura.data.Lrclib
@@ -92,6 +91,7 @@ import com.hans.aura.data.lyricBreaks
 import com.hans.aura.data.toLyricLine
 import com.hans.aura.data.toTimedLyricLine
 import com.hans.aura.ui.common.AutoFitMarqueeText
+import com.hans.aura.ui.common.resolveArtwork
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraColors
@@ -541,7 +541,9 @@ private fun NoLyricsState(
 /** Album art + title/artist/album card for the no-lyrics state (not focusable). */
 @Composable
 private fun LyricsTrackCard(app: AuraApp, item: JellyfinItem, accent: Color) {
-    val session = app.jellyfin.auth.session
+    val artworkUrl = app.jellyfin.auth.session?.let {
+        item.resolveArtwork()?.url(it.serverUrl, maxWidth = 240)
+    }
     val shape = AuraShapes.card
     Row(
         Modifier
@@ -551,19 +553,17 @@ private fun LyricsTrackCard(app: AuraApp, item: JellyfinItem, accent: Color) {
             .padding(AuraSpacing.md),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        session?.let { s ->
-            item.primaryImageTag?.let { tag ->
-                AsyncImage(
-                    model = AuthStore.imageUrl(s.serverUrl, item.id, tag, maxWidth = 240),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(AuraSizes.artworkChipLarge)
-                        .clip(AuraShapes.card)
-                        .background(SurfaceHigh)
-                )
-                Spacer(Modifier.width(AuraSpacing.md))
-            }
+        if (artworkUrl != null) {
+            AsyncImage(
+                model = artworkUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(AuraSizes.artworkChipLarge)
+                    .clip(AuraShapes.card)
+                    .background(SurfaceHigh)
+            )
+            Spacer(Modifier.width(AuraSpacing.md))
         }
         Column {
             AutoFitMarqueeText(

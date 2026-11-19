@@ -136,6 +136,14 @@ interface MusicSource {
      */
     suspend fun lyricsTimed(itemId: String): List<TimedLyricLine>? = null
 
+    val supportsProviderLyrics: Boolean get() = false
+
+    suspend fun searchProviderLyrics(itemId: String): ProviderLyricsResult<List<ProviderLyricMatch>> =
+        ProviderLyricsResult.Unavailable
+
+    suspend fun saveProviderLyrics(itemId: String, matchId: String): ProviderLyricsResult<Unit> =
+        ProviderLyricsResult.Unavailable
+
     /**
      * True when this backend can serve a looping motion clip for an album, so
      * detail and now-playing surfaces may draw it behind the static cover.

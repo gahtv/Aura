@@ -45,11 +45,33 @@ class JellyfinSource(
     }
 
     internal suspend fun jellyfinLyrics(itemId: String): List<LyricLine> =
-        serverLyrics[itemId] ?: fetchLyrics(itemId).also {
-            if (it.isNotEmpty()) serverLyrics[itemId] = it
+        serverLyrics[itemId] ?: fetchLyrics(itemId).let { fetched ->
+            if (fetched.isEmpty()) serverLyrics[itemId].orEmpty()
+            else serverLyrics.putIfAbsent(itemId, fetched) ?: fetched
         }
 
     fun cachedWebLyricsFound(itemId: String): Boolean? = webLyricsFound[itemId]
+
+    override val supportsProviderLyrics: Boolean = true
+
+    override suspend fun searchProviderLyrics(itemId: String): ProviderLyricsResult<List<ProviderLyricMatch>> =
+        providerLyricsRequest {
+            client.api.searchRemoteLyrics(itemId).mapNotNull { result ->
+                val lines = LyricsStore.parseResponse(result.lyrics)
+                val preview = lines.asSequence().map { it.text }.filter { it.isNotBlank() }.take(4).toList()
+                if (preview.isEmpty()) null
+                else ProviderLyricMatch(result.id, result.providerName, lines.any { it.isSynced }, preview)
+            }
+        }
+
+    override suspend fun saveProviderLyrics(itemId: String, matchId: String): ProviderLyricsResult<Unit> =
+        providerLyricsRequest {
+            val lines = LyricsStore.parseResponse(client.api.downloadRemoteLyrics(itemId, matchId))
+            // Jellyfin queues a metadata refresh after saving. Use the returned lyrics now.
+            if (lines.isEmpty()) serverLyrics.remove(itemId) else serverLyrics[itemId] = lines
+            webLyricsFound.remove(itemId)
+            Unit
+        }
 
     override suspend fun lyricsTimed(itemId: String): List<TimedLyricLine>? {
         webLyricsFound.remove(itemId)

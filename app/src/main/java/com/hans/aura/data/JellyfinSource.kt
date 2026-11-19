@@ -24,9 +24,6 @@ class JellyfinSource(
     private val lookupLyrics: suspend (JellyfinItem) -> List<LyricLine> = { Lrclib.lookup(it) }
 ) : MusicSource {
 
-    override suspend fun removeFromPlaylist(playlistId: String, entryId: String) =
-        media.removeFromPlaylist(playlistId, entryId)
-
     override val id: String = "jellyfin"
 
     override val displayName: String = "Jellyfin"
@@ -120,6 +117,9 @@ class JellyfinSource(
 
     override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse =
         media.browse(query, cachePrefix)
+
+    override suspend fun removeFromPlaylist(playlistId: String, entryId: String) =
+        media.removeFromPlaylist(playlistId, entryId)
 
     override suspend fun recentlyPlayed(limit: Int): List<JellyfinItem> = media.recentlyPlayed(limit)
 

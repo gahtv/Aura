@@ -2,6 +2,7 @@ package com.hans.aura.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
 
 /**
  * Main-safe facade over the browse layer.
@@ -31,7 +32,7 @@ class MediaRepository(
     suspend fun removeFromPlaylist(playlistId: String, entryId: String) = withContext(Dispatchers.IO) {
         require(entryId.isNotBlank()) { "Missing playlist entry id" }
         val response = api().removeFromPlaylist(playlistId, entryId)
-        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+        if (!response.isSuccessful) throw HttpException(response)
     }
 
     private fun userId(): String? = sessionProvider()?.userId

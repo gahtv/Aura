@@ -17,11 +17,6 @@ package com.hans.aura.data
  */
 interface MusicSource {
 
-    /** Remove one playlist occurrence; failures must propagate to the caller. */
-    suspend fun removeFromPlaylist(playlistId: String, entryId: String) {
-        throw UnsupportedOperationException("Playlist removal is not supported")
-    }
-
     /** Stable id for logs and diagnostics ("jellyfin", "local", …). */
     val id: String
 
@@ -178,6 +173,11 @@ interface MusicSource {
 
     /** Runs one browse query, filtered by the current library selection. */
     suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String? = null): ItemsResponse
+
+    /** Remove one playlist occurrence; failures must propagate to the caller. */
+    suspend fun removeFromPlaylist(playlistId: String, entryId: String) {
+        throw UnsupportedOperationException("Playlist removal is not supported")
+    }
 
     /** Album artists for the Artists tab and Home shelf. */
     suspend fun artists(

@@ -87,11 +87,76 @@ class TtmlLyricsTest {
     }
 
     @Test
+    fun `explicit parallel timing resolves adlib offsets and duration like lead offsets`() {
+        val line = parse("""
+            <div begin="2s"><p begin="10s" timeContainer="par"><span begin="500ms">Lead</span>
+                <span ttm:role="x-bg" begin="30f" dur="1s"><span>Oh</span> <span begin="500ms">yeah</span></span>
+            </p></div>
+        """).single()
+        assertEquals(listOf(TimedWord(12500, "Lead")), line.words)
+        assertEquals(LyricAdlib(listOf(AdlibSegment("Oh", 13000), AdlibSegment(" yeah", 13500)), 14000), line.adlib)
+    }
+
+    @Test
     fun `clock and offset times and plain paragraphs`() {
         val lines = parse("""<p begin="01:02.345" end="65s">Clock</p><p begin="12.5s"><span begin="12.501">Offset</span></p><p begin="500ms">Milliseconds</p>""")
         assertEquals(listOf(500L, 12500L, 62345L), lines.map { it.startMs })
         assertEquals(12501L, lines[1].words.single().startMs)
         assertTrue(lines[0].words.isEmpty())
+    }
+
+    @Test
+    fun `full and short clocks plus all offset units use default rates`() {
+        val times = mapOf(
+            "01:02:03" to 3723000L, "00:01:02.345" to 62345L, "01:02.345" to 62345L,
+            "00:00:02:15" to 2500L, "00:00:02:15.0" to 2500L,
+            "1.25h" to 4500000L, "1.25m" to 75000L, "12.5s" to 12500L,
+            "125.5ms" to 126L, "15.5f" to 517L, "1.5t" to 1500L
+        )
+        val lines = parse(times.keys.joinToString("") { """<p begin="$it">$it</p>""" })
+        assertTrue(lines.all { it.isSynced })
+        assertEquals(times, lines.associate { it.text to it.startMs })
+    }
+
+    @Test
+    fun `root timing parameters apply to frames subframes and ticks`() {
+        val body = """<p begin="00:00:02:12.2">Clock</p><p begin="12.5f">Frames</p><p begin="100t">Ticks</p>"""
+        val rates = """xmlns:params="http://www.w3.org/ns/ttml#parameter" params:frameRate="25" params:frameRateMultiplier="2 1" params:subFrameRate="4""""
+        fun parseWithRates(attributes: String) = LyricsStore.parseLyricsText(
+            """<tt $rates $attributes><body><div>$body</div></body></tt>"""
+        ).associate { it.text to it.startMs }
+
+        assertEquals(mapOf("Clock" to 2250L, "Frames" to 250L, "Ticks" to 500L), parseWithRates(""))
+        assertEquals(mapOf("Clock" to 2250L, "Frames" to 250L, "Ticks" to 1000L), parseWithRates("""params:tickRate="100""""))
+    }
+
+    @Test
+    fun `parallel containers resolve nested starts on the playback clock`() {
+        val lines = LyricsStore.parseLyricsText("""<tt><body begin="5s"><div begin="2s"><div begin="500ms">
+            <p begin="1s" timeContainer="par"><span begin="1.5s">Hello</span> <span><span begin="2s">world</span></span></p>
+            <p>Inherited</p></div><p begin="4s">Sibling</p></div></body></tt>""")
+        assertEquals(listOf(7500L, 8500L, 11000L), lines.map { it.startMs })
+        assertEquals(listOf(TimedWord(10000, "Hello"), TimedWord(10500, "world")), lines[1].words)
+    }
+
+    @Test
+    fun `end is relative to the container while dur is relative to the element start`() {
+        val lines = LyricsStore.parseLyricsText("""<tt><body begin="2s">
+            <div begin="3s" dur="2s"><p begin="1s">Inside duration</p><p begin="2s">After duration</p></div>
+            <div begin="6s" end="8s"><p begin="1s">Inside end</p><p begin="2s">At end</p></div>
+            </body></tt>""")
+        assertEquals(listOf("Inside duration", "Inside end"), lines.map { it.text })
+        assertEquals(listOf(6000L, 9000L), lines.map { it.startMs })
+    }
+
+    @Test
+    fun `the earlier of end and dur bounds a container`() {
+        val lines = parse("""<div begin="10s" end="20s" dur="5s">
+            <p begin="4s">Before duration</p><p begin="6s">After duration</p></div>
+            <div begin="20s" end="25s" dur="10s">
+            <p begin="4s">Before end</p><p begin="6s">After end</p></div>""")
+        assertEquals(listOf("Before duration", "Before end"), lines.map { it.text })
+        assertEquals(listOf(14000L, 24000L), lines.map { it.startMs })
     }
 
     @Test
@@ -113,6 +178,12 @@ class TtmlLyricsTest {
         val line = parse("""<p begin="12s"><span><span begin="11s">Hello</span> <span begin="12.5s">world</span></span></p>""").single()
         assertEquals(listOf(TimedWord(11000, "Hello"), TimedWord(12500, "world")), line.words)
         assertTrue(parse("""<p begin="12s">No spans</p>""").single().words.isEmpty())
+    }
+
+    @Test
+    fun `span time that rounds to the paragraph start stays absolute`() {
+        val line = parse("""<p begin="12s"><span begin="11.9999s">Hello</span></p>""").single()
+        assertEquals(listOf(TimedWord(12000, "Hello")), line.words)
     }
 
     @Test

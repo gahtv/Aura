@@ -58,6 +58,7 @@ import com.hans.aura.data.Lrclib
 import com.hans.aura.data.LyricAdlib
 import com.hans.aura.data.LyricLine
 import com.hans.aura.data.LyricVoice
+import com.hans.aura.data.LyricsResult
 import com.hans.aura.data.LyricsStore
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
@@ -138,6 +139,7 @@ fun LyricsPane(
     // produced anything — drives the hint under the empty state.
     var webChecked by remember(item?.id) { mutableStateOf(false) }
     var webFound by remember(item?.id) { mutableStateOf(false) }
+    var instrumental by remember(item?.id) { mutableStateOf(false) }
     // Fresh scroll state per track: without keying on the item id, a track
     // change keeps the previous song's scroll offset until the new song's
     // first line fires a scroll, so the pane lingers at the old end position.
@@ -157,6 +159,7 @@ fun LyricsPane(
         timedLines = null
         webChecked = false
         webFound = false
+        instrumental = false
         // Word-timed lyrics first: they carry the same lines plus per-word
         // timestamps, so the pane can highlight as the line is sung. A source
         // that has none (or fails to) answers null and nothing changes.
@@ -186,7 +189,9 @@ fun LyricsPane(
             return@LaunchedEffect
         }
         // In-process cache inside Lrclib: re-entering the pane does not re-query.
-        val remote = Lrclib.lookup(cur)
+        val result = Lrclib.lookupResult(cur)
+        val remote = result.lines
+        instrumental = result == LyricsResult.Instrumental
         webChecked = true
         webFound = remote.isNotEmpty()
         lines = remote
@@ -309,7 +314,8 @@ fun LyricsPane(
                 accent = highlightColor,
                 webChecked = webChecked,
                 webFound = webFound,
-                webEnabled = Prefs.lyricsWebFallback
+                webEnabled = Prefs.lyricsWebFallback,
+                instrumental = instrumental
             )
             else -> LazyColumn(
                 state = listState,
@@ -403,7 +409,8 @@ private fun NoLyricsState(
     accent: Color,
     webChecked: Boolean,
     webFound: Boolean,
-    webEnabled: Boolean
+    webEnabled: Boolean,
+    instrumental: Boolean
 ) {
     Column(
         Modifier
@@ -417,13 +424,14 @@ private fun NoLyricsState(
             Spacer(Modifier.height(AuraSpacing.lg))
         }
         androidx.tv.material3.Text(
-            "No synced lyrics for this track",
+            if (instrumental) "Instrumental" else "No synced lyrics for this track",
             color = TextPrimary,
             fontSize = AuraTypography.title
         )
         Spacer(Modifier.height(AuraSpacing.xs))
         androidx.tv.material3.Text(
             when {
+                instrumental -> "This track has no vocals."
                 !webEnabled ->
                     "Turn on \u201CLook up lyrics online\u201D in Settings to search LRCLIB for lyrics."
                 webChecked && !webFound ->

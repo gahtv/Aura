@@ -301,6 +301,14 @@ fun CollectionScreen(
             }
         }
 
+        if (state.error != null && tracks != null) {
+            androidx.tv.material3.Text(
+                state.error.orEmpty(), color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = AuraSpacing.screenHorizontal, vertical = AuraSpacing.xs)
+            )
+        }
+
         // Tracklist
         // "Only Atmos" (Settings): an album's tracklist drops non-Atmos files.
         // Playlists are never filtered — that would hide tracks the user put there.
@@ -338,7 +346,7 @@ fun CollectionScreen(
                     }
                     val (i, number, track) = row as TracklistRow.Track
                     val removeFromPlaylist: (() -> Unit)? = if (collection.type == "Playlist") {
-                        { viewModel.removeFromPlaylist(track.id) }
+                        { viewModel.removeFromPlaylist(track.id, shownTracks.take(i).count { it.id == track.id }) }
                     } else null
                     TrackRow(
                         index = number,
@@ -439,7 +447,7 @@ internal fun subtitle(collection: JellyfinItem, tracks: List<JellyfinItem>?): St
     // rather than print a number that contradicts the album's own metadata.
     val expected = collection.childCount ?: 0
     val count = tracks?.size ?: expected
-    val kind = if (expected > count) {
+    val kind = if (collection.type != "Playlist" && expected > count) {
         "$count of " + com.hans.aura.ui.common.countLabel(expected, noun)
     } else {
         com.hans.aura.ui.common.countLabel(count, noun)

@@ -11,6 +11,7 @@ import kotlin.concurrent.thread
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
@@ -85,6 +86,42 @@ class SourceQueriesTest {
         serverThread.join(1000)
         client.auth.clear()
         MusicSources.reset()
+    }
+
+    @Test
+    fun `playlist item identity is decoded separately from track identity`() {
+        val items = Json.decodeFromString<ItemsResponse>(
+            """{"Items":[{"Id":"track","PlaylistItemId":"first"},{"Id":"track","PlaylistItemId":"second"},{"Id":"other"}]}"""
+        ).items
+        assertEquals(listOf("track", "track", "other"), items.map { it.id })
+        assertEquals(listOf("first", "second", null), items.map { it.playlistItemId })
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `failed playlist removal is surfaced without refreshing the list`() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<AuraApp>()
+        app.jellyfin.auth.save(client.auth.session!!)
+        LibraryCache.clear()
+        Dispatchers.setMain(Dispatchers.Unconfined)
+        try {
+            val vm = com.hans.aura.ui.collection.CollectionViewModel(app, "playlist", "Playlist")
+            withTimeout(10_000) { vm.state.first { it.tracks != null } }
+            val original = vm.state.value.tracks
+            requests.clear()
+            respond = { url ->
+                if (url.queryParameter("entryIds") != null) 403 to "Forbidden"
+                else 200 to """{"Items":[{"Id":"track","PlaylistItemId":"entry-one"}]}"""
+            }
+            vm.removeFromPlaylist("track", 0)
+            withTimeout(3_000) { vm.state.first { it.error != null } }
+            assertEquals(original, vm.state.value.tracks)
+            assertEquals(2, requests.size)
+        } finally {
+            Dispatchers.resetMain()
+            LibraryCache.clear()
+            app.jellyfin.auth.clear()
+        }
     }
 
     @Test

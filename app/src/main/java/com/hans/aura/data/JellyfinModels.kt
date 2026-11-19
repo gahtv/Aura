@@ -88,6 +88,7 @@ data class JellyfinItem(
     // Only when Fields asks for it. The genre grid is built from these: the
     // server's own MusicGenre table carries names nothing is tagged with.
     @SerialName("Genres") val genres: List<String>? = null,
+    @SerialName("PlaylistItemId") val playlistItemId: String? = null,
     @SerialName("AlbumPrimaryImageTag") val albumPrimaryImageTag: String? = null
 ) {
     val primaryImageTag: String? get() = imageTags?.get("Primary")
@@ -172,6 +173,16 @@ data class PlaylistRequest(
     @SerialName("Name") val name: String,
     @SerialName("Ids") val ids: List<String> = emptyList(),
     @SerialName("UserId") val userId: String? = null
+)
+
+@Serializable
+data class PlaylistDetails(
+    @SerialName("ItemIds") val itemIds: List<String>
+)
+
+@Serializable
+data class PlaylistItemsUpdate(
+    @SerialName("Ids") val ids: List<String>
 )
 
 /** Announced to the server so Jellyfin web's "Play On" can target this client. */

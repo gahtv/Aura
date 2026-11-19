@@ -50,6 +50,18 @@ class AlbumSubtitleTest {
     }
 
     @Test
+    fun `an empty playlist ignores its old catalog count`() {
+        val playlist = JellyfinItem(id = "p1", type = "Playlist", childCount = 1)
+        assertEquals("0 tracks", subtitle(playlist, tracks(0)))
+    }
+
+    @Test
+    fun `a playlist with a removed entry shows only the remaining count`() {
+        val playlist = JellyfinItem(id = "p1", type = "Playlist", childCount = 2)
+        assertEquals("1 track", subtitle(playlist, tracks(1)))
+    }
+
+    @Test
     fun `playlists say tracks, not songs`() {
         val playlist = JellyfinItem(
             id = "p1",

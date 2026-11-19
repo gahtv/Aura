@@ -2,6 +2,7 @@ package com.hans.aura.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
 
 /**
  * Main-safe facade over the browse layer.
@@ -27,6 +28,28 @@ class MediaRepository(
 ) {
 
     private fun api(): JellyfinApi = jellyfin.api
+
+    suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) = withContext(Dispatchers.IO) {
+        require(itemId.isNotBlank()) { "Missing playlist item id" }
+        require(occurrence >= 0) { "Invalid playlist occurrence" }
+        val items = api().getPlaylistItems(playlistId, checkNotNull(userId()) { "Not signed in" }).items
+        val matches = items.indices.filter { items[it].id == itemId }
+        val index = checkNotNull(matches.getOrNull(occurrence)) { "Playlist entry no longer exists" }
+        val response = if (matches.size == 1) {
+            val entryId = checkNotNull(items[index].playlistItemId?.takeIf { it.isNotBlank() }) {
+                "Missing playlist entry id"
+            }
+            api().removeFromPlaylist(playlistId, entryId)
+        } else {
+            check(api().getPlaylist(playlistId).itemIds.size <= items.size) {
+                "This playlist has tracks you can't see, so one copy can't be removed safely"
+            }
+            api().updatePlaylist(playlistId, PlaylistItemsUpdate(
+                ids = items.filterIndexed { i, _ -> i != index }.map { it.id }
+            ))
+        }
+        if (!response.isSuccessful) throw HttpException(response)
+    }
 
     private fun userId(): String? = sessionProvider()?.userId
 

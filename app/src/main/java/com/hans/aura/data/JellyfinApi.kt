@@ -155,6 +155,11 @@ interface JellyfinApi {
 
     // ---- Playlists ----
 
+    @GET("Playlists/{playlistId}")
+    suspend fun getPlaylist(
+        @retrofit2.http.Path("playlistId") playlistId: String
+    ): PlaylistDetails
+
     @GET("Playlists/{playlistId}/Items")
     suspend fun getPlaylistItems(
         @retrofit2.http.Path("playlistId") playlistId: String,
@@ -168,6 +173,12 @@ interface JellyfinApi {
         @Query("UserId") userId: String,
         @Body body: PlaylistRequest
     ): JellyfinItem
+
+    @POST("Playlists/{playlistId}")
+    suspend fun updatePlaylist(
+        @retrofit2.http.Path("playlistId") playlistId: String,
+        @Body body: PlaylistItemsUpdate
+    ): retrofit2.Response<Unit>
 
     @POST("Playlists/{playlistId}/Items")
     suspend fun addToPlaylist(
@@ -193,7 +204,7 @@ interface JellyfinApi {
     @DELETE("Playlists/{playlistId}/Items")
     suspend fun removeFromPlaylist(
         @retrofit2.http.Path("playlistId") playlistId: String,
-        @Query("Ids") ids: String
+        @Query("entryIds") entryIds: String
     ): retrofit2.Response<Unit>
 
     @DELETE("Items/{itemId}")

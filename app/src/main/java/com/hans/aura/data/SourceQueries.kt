@@ -12,6 +12,10 @@ object SourceQueries {
 
     private fun source(): MusicSource? = MusicSources.current
 
+    suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) {
+        checkNotNull(source()) { "No music source available" }.removeFromPlaylist(playlistId, itemId, occurrence)
+    }
+
     suspend fun recentlyPlayed(limit: Int = 20): List<JellyfinItem> =
         source()?.recentlyPlayed(limit).orEmpty()
 

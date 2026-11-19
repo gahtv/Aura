@@ -174,6 +174,11 @@ interface MusicSource {
     /** Runs one browse query, filtered by the current library selection. */
     suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String? = null): ItemsResponse
 
+    /** Remove the zero-based occurrence of an item among same-id rows; failures propagate. */
+    suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) {
+        throw UnsupportedOperationException("Playlist removal is not supported")
+    }
+
     /** Album artists for the Artists tab and Home shelf. */
     suspend fun artists(
         sortBy: String = "SortName",

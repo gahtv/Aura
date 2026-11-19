@@ -30,6 +30,7 @@ fun AuraTheme(content: @Composable () -> Unit) {
             border = Border,
             secondary = AccentDim
         ),
+        typography = AuraTypography.expressive,
         content = content
     )
 }

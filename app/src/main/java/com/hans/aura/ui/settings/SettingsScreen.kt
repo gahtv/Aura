@@ -28,6 +28,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.AuraApp
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.LibraryFilter
@@ -121,10 +122,10 @@ fun SettingsScreen(
                 .padding(horizontal = 56.dp, vertical = 8.dp)
         ) {
             item {
-                androidx.tv.material3.Text("Settings", fontSize = 32.sp, color = TextPrimary)
+                androidx.tv.material3.Text("Settings", style = MaterialTheme.typography.headlineLarge, color = TextPrimary)
                 androidx.compose.foundation.layout.Spacer(Modifier.height(24.dp))
 
-                androidx.tv.material3.Text("Server", fontSize = 18.sp, color = TextPrimary)
+                androidx.tv.material3.Text("Server", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
                 androidx.tv.material3.Text(session.serverUrl, fontSize = 14.sp, color = TextSecondary)
                 androidx.compose.foundation.layout.Spacer(Modifier.height(6.dp))
                 androidx.tv.material3.Text(
@@ -151,7 +152,7 @@ fun SettingsScreen(
                 )
                 androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
 
-                androidx.tv.material3.Text("Library", fontSize = 18.sp, color = TextPrimary)
+                androidx.tv.material3.Text("Library", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
                 androidx.tv.material3.Text(
                     "Home screens and library lists refresh automatically every 24 hours.",
                     fontSize = 13.sp, color = TextSecondary
@@ -181,7 +182,7 @@ fun SettingsScreen(
                 }
                 androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
 
-                androidx.tv.material3.Text("Libraries shown in Aura", fontSize = 18.sp, color = TextPrimary)
+                androidx.tv.material3.Text("Libraries shown in Aura", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
                 androidx.tv.material3.Text(
                     "Switch a library off and Aura stops querying it — its music disappears " +
                         "from Home, the library tabs and search.",
@@ -241,7 +242,7 @@ fun SettingsScreen(
             }
 
             item {
-                androidx.tv.material3.Text("Playback", fontSize = 18.sp, color = TextPrimary)
+                androidx.tv.material3.Text("Playback", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
                 androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
                 var atmosOnly by remember { mutableStateOf(Prefs.atmosOnly) }
                 SettingsToggleRow(
@@ -274,7 +275,7 @@ fun SettingsScreen(
             }
 
             item {
-                androidx.tv.material3.Text("Lyrics", fontSize = 18.sp, color = TextPrimary)
+                androidx.tv.material3.Text("Lyrics", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
                 androidx.compose.foundation.layout.Spacer(Modifier.height(10.dp))
                 var webLyrics by remember { mutableStateOf(Prefs.lyricsWebFallback) }
                 SettingsToggleRow(
@@ -292,7 +293,7 @@ fun SettingsScreen(
             }
 
             item {
-                androidx.tv.material3.Text("Session", fontSize = 18.sp, color = TextPrimary)
+                androidx.tv.material3.Text("Session", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
                 androidx.compose.foundation.layout.Spacer(Modifier.height(12.dp))
                 // AppRoot owns the teardown + auth clearing for every exit path.
                 androidx.tv.material3.Button(onClick = { onSignOut() }) {

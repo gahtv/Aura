@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Mixes
@@ -174,7 +175,9 @@ fun GenreScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                androidx.tv.material3.Text(genreName, fontSize = 34.sp, color = TextPrimary)
+                androidx.tv.material3.Text(
+                    genreName, style = MaterialTheme.typography.displaySmall, color = TextPrimary
+                )
                 androidx.tv.material3.Text(
                     listOfNotNull(
                         state.albums?.let { com.hans.aura.ui.common.countLabel(it.size, "album") },
@@ -278,7 +281,10 @@ private fun ScreenHeader(title: String, onBack: () -> Unit) {
             .padding(horizontal = 40.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        androidx.tv.material3.Text(title, fontSize = 30.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+        androidx.tv.material3.Text(
+            title, style = MaterialTheme.typography.headlineLarge, color = TextPrimary,
+            modifier = Modifier.weight(1f)
+        )
         androidx.tv.material3.Button(onClick = onBack) {
             androidx.tv.material3.Text("Back")
         }

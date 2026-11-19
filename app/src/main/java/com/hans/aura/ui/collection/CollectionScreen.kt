@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.tv.material3.MaterialTheme
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
@@ -214,7 +215,7 @@ fun CollectionScreen(
                         fontSize = 13.sp, color = TextSecondary
                     )
                     androidx.tv.material3.Text(
-                        shown.name, fontSize = 40.sp, color = TextPrimary,
+                        shown.name, style = MaterialTheme.typography.displayMedium, color = TextPrimary,
                         maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {

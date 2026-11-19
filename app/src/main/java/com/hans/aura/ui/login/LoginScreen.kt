@@ -274,7 +274,7 @@ fun LoginScreen(
         ) {
             Text(
                 text = "Aura",
-                fontSize = AuraTypography.hero,
+                style = MaterialTheme.typography.displayLarge,
                 letterSpacing = 8.sp,
                 color = MaterialTheme.colorScheme.onBackground
             )

@@ -11,6 +11,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.data.Mixes
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
@@ -163,7 +164,9 @@ fun ArtistScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                androidx.tv.material3.Text(shownArtist.name, fontSize = 36.sp, color = TextPrimary)
+                androidx.tv.material3.Text(
+                    shownArtist.name, style = MaterialTheme.typography.displaySmall, color = TextPrimary
+                )
                 bio?.let { text ->
                     androidx.tv.material3.Text(
                         text,
@@ -346,7 +349,7 @@ fun ArtistScreen(
 @Composable
 private fun SectionHeader(title: String, accent: Color) {
     Column(Modifier.padding(horizontal = 48.dp)) {
-        androidx.tv.material3.Text(title, fontSize = 20.sp, color = TextPrimary)
+        androidx.tv.material3.Text(title, style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
         Spacer(Modifier.height(6.dp))
         Box(
             Modifier

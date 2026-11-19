@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.hans.aura.data.AuthStore
@@ -56,7 +57,7 @@ fun CatalogShelf(
 ) {
     if (hits.isEmpty()) return
     Text(
-        "From the catalog", fontSize = 20.sp, color = TextPrimary,
+        "From the catalog", style = MaterialTheme.typography.headlineSmall, color = TextPrimary,
         modifier = Modifier.padding(horizontal = 56.dp, vertical = 6.dp)
     )
     Text(

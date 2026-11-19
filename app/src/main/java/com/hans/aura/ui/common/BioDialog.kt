@@ -35,6 +35,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -100,7 +101,7 @@ fun BioDialog(title: String, subtitle: String?, text: String, onDismiss: () -> U
                 .focusProperties { exit = { FocusRequester.Cancel } }
                 .padding(AuraSpacing.xl)
         ) {
-            androidx.tv.material3.Text(title, fontSize = AuraTypography.headline, color = TextPrimary)
+            androidx.tv.material3.Text(title, style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
             subtitle?.let {
                 androidx.tv.material3.Text(it, fontSize = AuraTypography.bodySmall, color = TextSecondary)
             }

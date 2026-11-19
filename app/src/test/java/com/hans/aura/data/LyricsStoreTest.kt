@@ -35,6 +35,38 @@ class LyricsStoreTest {
     }
 
     @Test
+    fun `LRC credits are retained separately from lyrics`() {
+        val lines = LyricsStore.parseLrcText(
+            "[ar:Performer][AU: Ada Lane ][au:Ada Lane][lr:Ren Park]\n[by: Sam Ford ][lr: ]\n" +
+                "[00:02]Hello\n[00:03]World [au:not a header]"
+        )
+        assertEquals(listOf("Hello", "World [au:not a header]"), lines.map { it.text })
+        assertEquals(
+            LyricCredits(listOf("Ada Lane", "Ren Park"), listOf("Sam Ford")),
+            lines.first().credits
+        )
+        assertEquals(lines.first().credits, lines.last().credits)
+    }
+
+    @Test
+    fun `Jellyfin credits merge with leaked headers in structured and raw lyrics`() = runBlocking {
+        for (lyrics in listOf(
+            """"Lyrics":[{"Text":"[au:Ada Lane][lr:Ren Park]"},{"Text":"[by:Sam Ford]"},{"Text":"Hello"}]""",
+            """"LyricText":"[au:Ada Lane][lr:Ren Park]\n[by:Sam Ford]\nHello""""
+        )) {
+            val response = Json.decodeFromString<LyricsResponse>(
+                """{"Metadata":{"Author":" Ada Lane ","Lyricist":"Jay Poe","By":" "},$lyrics}"""
+            )
+            val line = LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track").single()
+            assertEquals("Hello", line.text)
+            assertEquals(
+                LyricCredits(listOf("Ada Lane", "Jay Poe", "Ren Park"), listOf("Sam Ford")),
+                line.credits
+            )
+        }
+    }
+
+    @Test
     fun `offset shifts lines and repeated inline words and clamps at zero`() {
         for ((offset, starts, words) in listOf(
             Triple("+1500", listOf(0L, 1500L), listOf(0L, 500L)),

@@ -27,11 +27,12 @@ data class TimedLyricLine(
     val translation: String? = null,
     val words: List<TimedWord> = emptyList(),
     val voice: LyricVoice? = null,
-    val adlib: LyricAdlib? = null
+    val adlib: LyricAdlib? = null,
+    val credits: LyricCredits = LyricCredits()
 )
 
 internal fun LyricLine.toTimedLyricLine() =
-    TimedLyricLine(startMs, text, words = words, voice = voice, adlib = adlib)
+    TimedLyricLine(startMs, text, words = words, voice = voice, adlib = adlib, credits = credits)
 
 /** Exact display text (including spacing), optionally timed to the playback clock. */
 data class AdlibSegment(val text: String, val startMs: Long? = null)

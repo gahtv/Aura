@@ -48,6 +48,27 @@ class TtmlLyricsTest {
     }
 
     @Test
+    fun `iTunes TTML songwriters are credits but performer agents are not`() {
+        val line = LyricsStore.parseLyricsText("""
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"
+                xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+                <head><metadata>
+                    <ttm:agent xml:id="voice" type="person"><ttm:name>Performer</ttm:name></ttm:agent>
+                    <itunes:iTunesMetadata><itunes:songwriters>
+                        <itunes:songwriter> Ada   Lane </itunes:songwriter>
+                        <itunes:songwriter>Ren Park</itunes:songwriter>
+                        <itunes:songwriter>Ada Lane</itunes:songwriter>
+                        <itunes:songwriter/>
+                    </itunes:songwriters></itunes:iTunesMetadata>
+                </metadata></head>
+                <body><div><p begin="1s" ttm:agent="voice">Hello</p></div></body>
+            </tt>
+        """.trimIndent()).single()
+        assertEquals("Hello", line.text)
+        assertEquals(LyricCredits(writers = listOf("Ada Lane", "Ren Park")), line.credits)
+    }
+
+    @Test
     fun `agents retain ids with first use ordering and group types`() {
         val lines = LyricsStore.parseLyricsText("""<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
             <head><metadata><ttm:agent xml:id="bob" type="character"/><ttm:agent xml:id="choir" type="group"/><ttm:agent xml:id="alice" type="person"/><ttm:agent xml:id="chris" type="person"/></metadata></head>

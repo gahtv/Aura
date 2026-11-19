@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -40,11 +40,9 @@ import com.hans.aura.R
 import com.hans.aura.ui.common.formatDuration
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraColors
-import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
-import com.hans.aura.ui.theme.Border
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 
@@ -73,22 +71,16 @@ internal fun TransportBar(
     val shuffleEnabled by player.shuffleEnabled.collectAsState()
     val repeatMode by player.repeatMode.collectAsState()
 
-    Column(modifier) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(AuraSizes.seekBarHeight)
-                .clip(RoundedCornerShape(AuraShapes.xs))
-                .background(Border)
-        ) {
-            val frac = if (duration > 0) position.toFloat() / duration else 0f
-            Box(
-                Modifier
-                    .fillMaxWidth(frac)
-                    .height(AuraSizes.seekBarHeight)
-                    .background(accent)
-            )
-        }
+    Column {
+        WavySeekBar(
+            progress = if (duration > 0) position.toFloat() / duration else 0f,
+            isPlaying = isPlaying,
+            accent = accent,
+            modifier = Modifier.focusProperties { down = playPauseFocus },
+            onSeek = { delta ->
+                if (duration > 0) player.seekTo((position.coerceIn(0, duration) + delta).coerceIn(0, duration))
+            }
+        )
         Spacer(Modifier.height(AuraSpacing.xs))
         Row(Modifier.fillMaxWidth()) {
             androidx.tv.material3.Text(
@@ -104,7 +96,7 @@ internal fun TransportBar(
         }
         Spacer(Modifier.height(AuraSpacing.lg))
         Row(
-            Modifier.fillMaxWidth(),
+            modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {

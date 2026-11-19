@@ -87,7 +87,8 @@ data class JellyfinItem(
     @SerialName("CollectionType") val collectionType: String? = null,
     // Only when Fields asks for it. The genre grid is built from these: the
     // server's own MusicGenre table carries names nothing is tagged with.
-    @SerialName("Genres") val genres: List<String>? = null
+    @SerialName("Genres") val genres: List<String>? = null,
+    @SerialName("AlbumPrimaryImageTag") val albumPrimaryImageTag: String? = null
 ) {
     val primaryImageTag: String? get() = imageTags?.get("Primary")
     val durationMs: Long get() = (runTimeTicks ?: 0L) / 10_000L

@@ -35,35 +35,33 @@ object AtmosCatalog {
 
         suspend fun scan(parentId: String?) {
             var start = 0
-            runCatching {
-                while (true) {
-                    val page = LibraryFilter.queryItems(
-                        api, userId,
-                        LibraryFilter.ItemsQuery(
-                            includeItemTypes = "Audio",
-                            recursive = true,
-                            parentId = parentId,
-                            fields = "MediaSources",
-                            limit = pageSize,
-                            startIndex = start
-                        )
+            while (true) {
+                val page = LibraryFilter.queryItems(
+                    api, userId,
+                    LibraryFilter.ItemsQuery(
+                        includeItemTypes = "Audio",
+                        recursive = true,
+                        parentId = parentId,
+                        fields = "MediaSources",
+                        limit = pageSize,
+                        startIndex = start
                     )
-                    for (track in page.items) {
-                        val isAtmos = track.mediaSources?.any { src ->
-                            src.mediaStreams?.any { s ->
-                                s.codec.equals("eac3", true) &&
-                                    (s.profile?.contains("JOC", true) == true ||
-                                        s.profile?.contains("Dolby Atmos", true) == true)
-                            } == true
+                )
+                for (track in page.items) {
+                    val isAtmos = track.mediaSources?.any { src ->
+                        src.mediaStreams?.any { s ->
+                            s.codec.equals("eac3", true) &&
+                                (s.profile?.contains("JOC", true) == true ||
+                                    s.profile?.contains("Dolby Atmos", true) == true)
                         } == true
-                        if (isAtmos) {
-                            atmosTracks.add(track.id)
-                            track.albumId?.let { atmosAlbums.add(it) }
-                        }
+                    } == true
+                    if (isAtmos) {
+                        atmosTracks.add(track.id)
+                        track.albumId?.let { atmosAlbums.add(it) }
                     }
-                    if (page.items.isEmpty() || start + pageSize >= page.totalRecordCount) break
-                    start += pageSize
                 }
+                if (page.items.isEmpty() || start + pageSize >= page.totalRecordCount) break
+                start += pageSize
             }
         }
 

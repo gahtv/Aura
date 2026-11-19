@@ -9,7 +9,9 @@ import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.MusicSources
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +23,7 @@ import com.hans.aura.data.SourceQueries
 private const val TAG = "AURA_HOME"
 
 /**
- * Home's shelves. `null` = not loaded yet, empty list = loaded empty (the shelf hides).
+ * Home's shelves. `null` = unavailable, empty list = loaded empty (the shelf hides).
  *
  * Every shelf is answered by the installed MusicSource, so a backend that has no
  * playlists simply reports none and that shelf never appears.
@@ -33,11 +35,12 @@ data class HomeUiState(
     val atmosAlbums: List<JellyfinItem>? = null,
     val artists: List<JellyfinItem>? = null,
     val playlists: List<JellyfinItem>? = null,
+    val loading: Boolean = false,
     val error: String? = null,
     /** Only a backend with play history has these shelves at all. */
     val historyShelves: Boolean = false
 ) {
-    /** Nothing at all loaded — the only state where a failure surface helps. */
+    /** No content to keep visible behind a full-page failure surface. */
     val allShelvesEmpty: Boolean
         get() = listOf(recentlyPlayed, recentArtists, recentAlbums, atmosAlbums, artists, playlists)
             .all { it.isNullOrEmpty() }
@@ -98,42 +101,45 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
             playlists = LibraryCache.get("home_playlists:$uid")
         )
         if (_state.value.fullyCached) return
+        _state.update { it.copy(loading = true) }
         loadJob = viewModelScope.launch {
-            runCatching {
+            try {
                 withContext(Dispatchers.IO) { fetchMissing(uid) }
-            }.onFailure { e ->
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Log.w(TAG, "shelf load failed: ${e.message}")
                 _state.update { it.copy(error = e.message ?: "Couldn't load from server") }
+            } finally {
+                if (isActive) _state.update { it.copy(loading = false) }
             }
         }
     }
 
     /**
-     * One shelf's query. A backend that cannot answer it (no playlists, no
-     * Atmos, an index without the field) yields an EMPTY shelf, never a failure
-     * that would take the rest of Home down with it.
+     * Unsupported shelves are empty; failed shelves stay unloaded for Retry.
      */
-    private suspend fun shelf(name: String, query: suspend () -> List<JellyfinItem>): List<JellyfinItem> =
+    private suspend fun shelf(name: String, query: suspend () -> List<JellyfinItem>): List<JellyfinItem>? =
         runCatching { query() }
             .onFailure { e ->
+                if (e is CancellationException) throw e
                 Log.w(TAG, "shelf \"$name\" unavailable: ${e.message}")
                 // Remembered only so an all-empty Home can explain itself; a
                 // Home with other shelves loaded never shows this.
                 _state.update { it.copy(error = it.error ?: (e.message ?: "Couldn't load from server")) }
             }
-            .getOrDefault(emptyList())
+            .getOrNull()
 
     private suspend fun fetchMissing(uid: String) {
         // Browse queries go through SourceQueries: the installed source decides
         // how (or whether) to answer, and hidden libraries still apply on Jellyfin.
         if (_state.value.historyShelves && _state.value.recentlyPlayed == null) {
             val items = shelf("recently played") { SourceQueries.recentlyPlayed(limit = 20) }
-            LibraryCache.put("home_recent:$uid", items)
+            items?.let { LibraryCache.put("home_recent:$uid", it) }
             _state.update { it.copy(recentlyPlayed = items) }
         }
         if (_state.value.historyShelves && _state.value.recentArtists == null) {
             val items = shelf("recently played artists") { SourceQueries.recentArtists(limit = 20) }
-            LibraryCache.put("home_recent_artists:$uid", items)
+            items?.let { LibraryCache.put("home_recent_artists:$uid", it) }
             _state.update { it.copy(recentArtists = items) }
         }
         if (_state.value.recentAlbums == null) {
@@ -144,7 +150,7 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
                     )
                 ).items
             }
-            LibraryCache.put("home_new:$uid", items)
+            items?.let { LibraryCache.put("home_new:$uid", it) }
             _state.update { it.copy(recentAlbums = items) }
         }
         if (_state.value.atmosAlbums == null) {
@@ -153,7 +159,7 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
                 // whole-library scan. Its ids are matched against the already
                 // fetched "Recently added" page first (zero extra queries); only
                 // when that page holds no Atmos album do we page the album list.
-                val atmosIds = runCatching { SourceQueries.atmosAlbumIds() }.getOrDefault(emptySet())
+                val atmosIds = SourceQueries.atmosAlbumIds()
                 if (atmosIds.isEmpty()) {
                     emptyList()
                 } else {
@@ -167,12 +173,12 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
                         }
                 }
             }
-            LibraryCache.put("home_atmos:$uid", items)
+            items?.let { LibraryCache.put("home_atmos:$uid", it) }
             _state.update { it.copy(atmosAlbums = items) }
         }
         if (_state.value.artists == null) {
             val items = shelf("artists") { SourceQueries.artists(limit = 100).items }
-            LibraryCache.put("home_artists:$uid", items)
+            items?.let { LibraryCache.put("home_artists:$uid", it) }
             _state.update { it.copy(artists = items) }
         }
         if (_state.value.playlists == null) {
@@ -183,7 +189,7 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
                     sortBy = "SortName", limit = 50
                 ).items
             }
-            LibraryCache.put("home_playlists:$uid", items)
+            items?.let { LibraryCache.put("home_playlists:$uid", it) }
             _state.update { it.copy(playlists = items) }
         }
     }

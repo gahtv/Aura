@@ -176,6 +176,11 @@ data class PlaylistRequest(
 )
 
 @Serializable
+data class PlaylistDetails(
+    @SerialName("ItemIds") val itemIds: List<String>
+)
+
+@Serializable
 data class PlaylistItemsUpdate(
     @SerialName("Ids") val ids: List<String>
 )

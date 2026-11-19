@@ -155,6 +155,11 @@ interface JellyfinApi {
 
     // ---- Playlists ----
 
+    @GET("Playlists/{playlistId}")
+    suspend fun getPlaylist(
+        @retrofit2.http.Path("playlistId") playlistId: String
+    ): PlaylistDetails
+
     @GET("Playlists/{playlistId}/Items")
     suspend fun getPlaylistItems(
         @retrofit2.http.Path("playlistId") playlistId: String,

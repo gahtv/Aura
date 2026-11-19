@@ -41,6 +41,9 @@ class MediaRepository(
             }
             api().removeFromPlaylist(playlistId, entryId)
         } else {
+            check(api().getPlaylist(playlistId).itemIds.size <= items.size) {
+                "This playlist has tracks you can't see, so one copy can't be removed safely"
+            }
             api().updatePlaylist(playlistId, PlaylistItemsUpdate(
                 ids = items.filterIndexed { i, _ -> i != index }.map { it.id }
             ))

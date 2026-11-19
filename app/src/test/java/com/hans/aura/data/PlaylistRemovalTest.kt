@@ -50,6 +50,17 @@ class PlaylistRemovalTest {
         assertEquals("/Playlists/p/Items?userId=user", request.path)
     }
 
+    private fun allEntries(vararg ids: String) {
+        val items = ids.joinToString(",") { "\"$it\"" }
+        server.enqueue(MockResponse().setBody("""{"ItemIds":[$items]}"""))
+    }
+
+    private fun assertUnfilteredRead() {
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/Playlists/p", request.path)
+    }
+
     @Test
     fun `single copy refetches then deletes the fresh entry identity`() = runBlocking {
         playlist("A", "B")
@@ -65,15 +76,41 @@ class PlaylistRemovalTest {
     @Test
     fun `second A is removed from fresh interleaved duplicates`() = runBlocking {
         playlist("A", "B", "A", "B")
+        allEntries("A", "B", "A", "B")
         server.enqueue(MockResponse().setResponseCode(204))
         SourceQueries.removeFromPlaylist("p", "A", 1)
         assertRefetch()
+        assertUnfilteredRead()
         val request = server.takeRequest()
         assertEquals("POST", request.method)
         assertEquals("/Playlists/p", request.path)
         val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
         assertEquals(setOf("Ids"), body.keys)
         assertEquals(listOf("A", "B", "B"), body.getValue("Ids").jsonArray.map { it.jsonPrimitive.content })
+    }
+
+    @Test
+    fun `hidden playlist entries prevent replacing visible duplicates`() = runBlocking {
+        playlist("A", "B", "A", "B")
+        server.enqueue(MockResponse().setBody("""{"ItemIds":["hidden","A","B","A","B"]}"""))
+        val error = runCatching { SourceQueries.removeFromPlaylist("p", "A", 1) }.exceptionOrNull()
+        assertEquals(
+            "This playlist has tracks you can't see, so one copy can't be removed safely",
+            error?.message
+        )
+        assertRefetch()
+        assertUnfilteredRead()
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `unavailable unfiltered entries prevent writing`() = runBlocking {
+        playlist("A", "A")
+        server.enqueue(MockResponse().setResponseCode(403))
+        assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "A", 1) }.exceptionOrNull() is HttpException)
+        assertRefetch()
+        assertUnfilteredRead()
+        assertEquals(2, server.requestCount)
     }
 
     @Test
@@ -101,11 +138,13 @@ class PlaylistRemovalTest {
         assertRefetch()
         for (ids in listOf(arrayOf("A"), arrayOf("A", "A"))) {
             playlist(*ids)
+            if (ids.size > 1) allEntries(*ids)
             server.enqueue(MockResponse().setResponseCode(403))
             assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "A", 0) }.exceptionOrNull() is HttpException)
             assertRefetch()
+            if (ids.size > 1) assertUnfilteredRead()
             server.takeRequest()
         }
-        assertEquals(5, server.requestCount)
+        assertEquals(6, server.requestCount)
     }
 }

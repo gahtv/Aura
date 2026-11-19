@@ -30,6 +30,11 @@ See [current main notes](docs/release-notes-main.md) and the
   state, and optional online lookup (LRCLIB) for tracks Jellyfin has none for
 - **Word-timed lyrics** from enhanced LRC, Jellyfin cues or TTML when supplied by the
   server; singer/duet markers drive alignment and colour. Line-only lyrics stay line-synced.
+- **Lyric translations** — adjacent same-timestamp LRC pairs show the translation
+  beneath the lead line, including LRC returned by LRCLIB or Jellyfin.
+- **Instrumental-break dots** — three dots fill during synced intros and known gaps
+  of at least 4 seconds; blank timestamp rows mark line ends instead of empty lyrics.
+  See [lyrics formats and timing](docs/LYRICS.md) for source requirements and limits.
 - TV-focused visual polish: spring-scaling artwork cards, shared rounded shapes and
   typography, artwork-accented Play controls, and a seek bar that waves while playing
 - **Queue you can steer** — reorder and clear from the menu, resume where you left off,
@@ -88,8 +93,8 @@ scripts/deploy-streamer.sh     # release → Google TV streamer, incl. launch sm
 ## Secrets / configuration
 
 The app talks to Jellyfin with username+password login or Quick Connect — no API keys
-are needed for Jellyfin and none are hardcoded. The one outbound call (optional online
-lyrics) identifies itself with a client id kept in a root-level `.env` (gitignored):
+are needed for Jellyfin and none are hardcoded. Optional online lyrics requests to
+LRCLIB can include a client id kept in a root-level `.env` (gitignored):
 
 ```
 cp .env.example .env

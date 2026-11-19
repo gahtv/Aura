@@ -15,5 +15,8 @@ Personal project, but PRs are welcome. Ground rules:
   `docs/ARCHITECTURE.md` has the full list of invariants.
 - Route browse work through `SourceQueries` / `MusicSource`; keep Jellyfin-specific
   implementation in the data layer. Use the shared theme typography and shape tokens.
+- For lyric changes, preserve the [format and timing rules](docs/LYRICS.md).
+  Parser coverage lives in `LyricsStoreTest`, `TtmlLyricsTest` and `LyricBreaksTest`;
+  changes to lyric presentation also need device checks.
 - Keep the user-visible UX rules: unmistakable focus outlines, ~120dp bottom spacer so
   the now-playing bar never covers the last row, BACK restores exact focus + scroll.

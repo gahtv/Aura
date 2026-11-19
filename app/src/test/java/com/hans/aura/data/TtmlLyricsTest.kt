@@ -51,8 +51,8 @@ class TtmlLyricsTest {
         assertEquals(12000L, line.startMs)
         assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
         assertTrue(line.isSynced)
-        assertEquals(listOf(KaraokeSpan("Hello", true), KaraokeSpan(" world", false)),
-            karaokeSpans(TimedLyricLine(line.startMs, line.text, words = line.words), 12200))
+        assertEquals(listOf(KaraokeFill(0, 5, 0.4f), KaraokeFill(6, 11, 0f)),
+            karaokeFills(TimedLyricLine(line.startMs, line.text, words = line.words), 12200))
     }
 
     @Test
@@ -75,6 +75,8 @@ class TtmlLyricsTest {
         val line = parse("""<p begin="12s"><span><span begin="0s">Hello</span> <span begin="500ms">world</span></span></p>""").single()
         assertEquals(12000L, line.startMs)
         assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
+        assertEquals(listOf(KaraokeFill(0, 5, 0.5f), KaraokeFill(6, 11, 0f)),
+            karaokeFills(TimedLyricLine(line.startMs, line.text, words = line.words), 12250))
     }
 
     @Test

@@ -3,8 +3,7 @@ package com.hans.aura.data
 /**
  * One word inside a word-timed lyric line.
  *
- * [startMs] is on the playback clock, so the karaoke highlight is a pure
- * comparison against the playback position.
+ * [startMs] and optional source-provided [endMs] are on the playback clock.
  */
 data class TimedWord(
     val startMs: Long,
@@ -28,12 +27,6 @@ data class TimedLyricLine(
     val voice: LyricVoice? = null
 )
 
-/** A run of a lyric line, [sung] once the audio clock has passed its first word. */
-data class KaraokeSpan(
-    val text: String,
-    val sung: Boolean
-)
-
 data class KaraokeFill(val start: Int, val end: Int, val fraction: Float)
 
 fun wordFillFraction(word: TimedWord, endMs: Long, positionMs: Long): Float = when {
@@ -42,6 +35,7 @@ fun wordFillFraction(word: TimedWord, endMs: Long, positionMs: Long): Float = wh
     else -> ((positionMs.toDouble() - word.startMs) / (endMs.toDouble() - word.startMs)).toFloat().coerceIn(0f, 1f)
 }
 
+/** Ends use explicit end, then next word start, then the earlier of next line start and a one-second cap. */
 fun karaokeFills(line: TimedLyricLine, positionMs: Long, nextLineStartMs: Long? = null): List<KaraokeFill> {
     val words = line.words.filter { it.text.isNotBlank() }
     fun fallback() = listOf(KaraokeFill(0, line.text.length,
@@ -55,53 +49,8 @@ fun karaokeFills(line: TimedLyricLine, positionMs: Long, nextLineStartMs: Long? 
         val length = word.text.count { !it.isWhitespace() }
         val start = offsets[cursor]
         cursor += length
-        val end = word.endMs ?: words.getOrNull(index + 1)?.startMs ?: nextLineStartMs ?: (word.startMs + 1000L)
+        val cap = word.startMs + 1000L
+        val end = word.endMs ?: words.getOrNull(index + 1)?.startMs ?: minOf(nextLineStartMs ?: cap, cap)
         KaraokeFill(start, offsets[cursor - 1] + 1, wordFillFraction(word, end, positionMs))
     }
 }
-
-/**
- * Splits [line] into runs that share a highlight state at [positionMs].
- *
- * The words are re-joined with whatever separator reproduces the line's own
- * text (word tokens often carry no spaces at all, or already carry their own),
- * and when they still cannot reconstruct the line the whole line is returned as
- * a single run — so a line always renders exactly the text the backend gave us,
- * just with the sung part of it marked.
- */
-fun karaokeSpans(line: TimedLyricLine, positionMs: Long): List<KaraokeSpan> {
-    val words = line.words.filter { it.text.isNotBlank() }
-    if (words.isEmpty()) return listOf(KaraokeSpan(line.text, positionMs >= line.startMs))
-
-    val tight = words.joinToString("") { it.text }
-    val spaced = words.joinToString(" ") { it.text }
-    // Pick the separator that reproduces the backend's line text: tokens often
-    // carry no spaces at all, and some carry their own trailing one. Exact match
-    // first, then a whitespace-insensitive one (punctuation/extra spaces differ).
-    val separator = when {
-        spaced.trim() == line.text.trim() -> " "
-        tight.trim() == line.text.trim() -> ""
-        sameText(spaced, line.text) -> " "
-        sameText(tight, line.text) -> ""
-        // Words that do not rebuild the line (different punctuation, a partial
-        // transcription): keep the backend's line text, mark it as a whole.
-        else -> return listOf(KaraokeSpan(line.text, positionMs >= words.first().startMs))
-    }
-
-    val spans = ArrayList<KaraokeSpan>(words.size)
-    words.forEachIndexed { i, word ->
-        val sung = positionMs >= word.startMs
-        val piece = if (i == 0) word.text else separator + word.text
-        val last = spans.lastOrNull()
-        if (last != null && last.sung == sung) {
-            spans[spans.lastIndex] = last.copy(text = last.text + piece)
-        } else {
-            spans += KaraokeSpan(piece, sung)
-        }
-    }
-    return spans
-}
-
-/** Whitespace-insensitive comparison: tokens may or may not carry spaces. */
-private fun sameText(a: String, b: String): Boolean =
-    a.filterNot { it.isWhitespace() }.equals(b.filterNot { it.isWhitespace() }, ignoreCase = true)

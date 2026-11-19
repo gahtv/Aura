@@ -16,11 +16,13 @@ class TimedLyricsTest {
     }
 
     @Test
-    fun `lrc derives next word then next line then one second cap`() {
+    fun `lrc derives next word then earlier of next line and one second cap`() {
         val parsed = LyricsStore.parseLrcText("[00:01]<00:01>Hello <00:03>world").single()
         val line = TimedLyricLine(parsed.startMs, parsed.text, words = parsed.words)
         assertEquals(listOf(KaraokeFill(0, 5, 0.5f), KaraokeFill(6, 11, 0f)), karaokeFills(line, 2000))
-        assertEquals(0.5f, karaokeFills(line, 4000, 5000).last().fraction)
+        assertEquals(1f, karaokeFills(line, 4000, 5000).last().fraction)
+        assertEquals(0.5f, karaokeFills(line, 3250, 3500).last().fraction)
+        assertEquals(0.5f, karaokeFills(line, 3500, 100000).last().fraction)
         assertEquals(0.5f, karaokeFills(line, 3500).last().fraction)
         assertEquals(1f, karaokeFills(line, 5000).last().fraction)
     }
@@ -30,6 +32,15 @@ class TimedLyricsTest {
         val line = TimedLyricLine(1000, " Hello  world! ", words = listOf(
             TimedWord(1000, "Hello", 5000), TimedWord(2000, "world!")))
         assertEquals(KaraokeFill(1, 6, 0.25f), karaokeFills(line, 2000).first())
+    }
+
+    @Test
+    fun `trailing lrc stamp preserves a long held final word`() {
+        val parsed = LyricsStore.parseLrcText("[00:01]<00:01>Hold <00:02>on <00:05>  ").single()
+        val line = TimedLyricLine(parsed.startMs, parsed.text, words = parsed.words)
+        assertEquals(5000L, line.words.last().endMs)
+        assertEquals(0.5f, karaokeFills(line, 3500, 10000).last().fraction)
+        assertEquals(1f, karaokeFills(line, 5000, 10000).last().fraction)
     }
 
     @Test

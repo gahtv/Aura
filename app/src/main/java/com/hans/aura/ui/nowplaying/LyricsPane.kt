@@ -505,7 +505,7 @@ private fun KaraokeLine(
     LaunchedEffect(line, positionMs, playing, anchorMs) {
         elapsed.longValue = 0L
         if (playing) while (true) {
-            withFrameMillis { elapsed.longValue = (SystemClock.uptimeMillis() - anchorMs).coerceAtLeast(0L) }
+            withFrameMillis { elapsed.longValue = (SystemClock.uptimeMillis() - anchorMs).coerceIn(0L, 750L) }
         }
     }
     androidx.tv.material3.Text(

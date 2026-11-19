@@ -31,7 +31,11 @@ object LyricsStore {
         return tags.mapIndexedNotNull { index, tag ->
             val word = normalize(text.substring(tag.range.last + 1, tags.getOrNull(index + 1)?.range?.first ?: text.length))
             word.takeIf { it.isNotEmpty() }?.let {
-                TimedWord(stampMs(tag.groupValues[1], tag.groupValues[2]), it)
+                val trailing = tags.getOrNull(index + 1)?.takeIf { next ->
+                    text.substring(next.range.last + 1).isBlank()
+                }
+                TimedWord(stampMs(tag.groupValues[1], tag.groupValues[2]), it,
+                    trailing?.let { next -> stampMs(next.groupValues[1], next.groupValues[2]) })
             }
         }
     }
@@ -62,7 +66,8 @@ object LyricsStore {
                     val offset = lineStartMs?.let { start ->
                         start - firstInlineStart.getOrPut(original) { start }
                     } ?: 0L
-                    inlineWords(content).map { word -> word.copy(startMs = word.startMs + offset) }
+                    inlineWords(content).map { word -> word.copy(startMs = word.startMs + offset,
+                        endMs = word.endMs?.plus(offset)) }
                 } else emptyList()
                 LyricLine(
                     startMs = lineStartMs ?: 0L,
@@ -116,7 +121,8 @@ object LyricsStore {
             for (m in stamps) {
                 val ms = stampMs(m.groupValues[1], m.groupValues[2])
                 synced.add(LyricLine(startMs = ms, text = text, isSynced = true,
-                    words = words.map { it.copy(startMs = it.startMs + ms - firstMs) }, voice = voice))
+                    words = words.map { it.copy(startMs = it.startMs + ms - firstMs,
+                        endMs = it.endMs?.plus(ms - firstMs)) }, voice = voice))
             }
         }
 

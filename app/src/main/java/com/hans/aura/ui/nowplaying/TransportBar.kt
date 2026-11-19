@@ -69,7 +69,7 @@ internal fun TransportBar(
     isPlaying: Boolean,
     playPauseFocus: FocusRequester,
     accent: Color,
-    onOpenPeek: () -> Boolean,
+    onOpenPeek: (FocusRequester) -> Boolean,
     favorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
     onRadio: (() -> Unit)? = null
@@ -77,10 +77,14 @@ internal fun TransportBar(
     val shuffleEnabled by player.shuffleEnabled.collectAsState()
     val repeatMode by player.repeatMode.collectAsState()
     val shuffleFocus = remember { FocusRequester() }
-    val peekOnDown = Modifier.onPreviewKeyEvent { event ->
-        event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown &&
-            event.nativeKeyEvent.repeatCount == 0 && onOpenPeek()
-    }
+    val repeatFocus = remember { FocusRequester() }
+
+    fun peekOnDown(origin: FocusRequester) = Modifier
+        .focusRequester(origin)
+        .onPreviewKeyEvent { event ->
+            event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown &&
+                event.nativeKeyEvent.repeatCount == 0 && onOpenPeek(origin)
+        }
 
     Column {
         Box(
@@ -158,7 +162,7 @@ internal fun TransportBar(
                 label = "Shuffle",
                 accent = accent,
                 active = shuffleEnabled,
-                modifier = Modifier.focusRequester(shuffleFocus).then(peekOnDown)
+                modifier = peekOnDown(shuffleFocus)
             ) {
                 player.setShuffle(!shuffleEnabled)
             }
@@ -172,7 +176,7 @@ internal fun TransportBar(
                 },
                 accent = accent,
                 active = repeatMode != Player.REPEAT_MODE_OFF,
-                modifier = peekOnDown
+                modifier = peekOnDown(repeatFocus)
             ) {
                 player.setRepeat(
                     when (repeatMode) {

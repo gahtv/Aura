@@ -143,6 +143,7 @@ fun NowPlayingScreen(
     var peekSize by remember { mutableStateOf(0) }
     var peekFocusToken by remember { mutableStateOf(0) }
     var peekGraceUntil by remember { mutableStateOf(0L) }
+    var peekOrigin by remember { mutableStateOf<FocusRequester?>(null) }
     // Everything queued after the playing track, in real play order (the
     // player's order, not the order the user tapped — shuffle included).
     val upcoming = queueState.drop((queueIndexState + 1).coerceAtLeast(0))
@@ -150,20 +151,21 @@ fun NowPlayingScreen(
     fun closePeek(log: Boolean = true) {
         if (peekSize == 0) return
         peekSize = 0
+        val restoreFocus = peekOrigin ?: playPauseFocus
+        peekOrigin = null
         if (log) android.util.Log.d("AURA_PEEK", "closed")
-        // Focus was trapped inside the overlay; hand it back to play/pause or
-        // the screen is left with no ring after BACK.
         npScope.launch {
             delay(120)
             repeat(5) {
-                if (runCatching { playPauseFocus.requestFocus() }.isSuccess) return@launch
+                if (runCatching { restoreFocus.requestFocus() }.isSuccess) return@launch
                 delay(80)
             }
         }
     }
 
-    fun openPeek(): Boolean {
+    fun openPeek(origin: FocusRequester): Boolean {
         if (peekSize != 0 || upcoming.isEmpty()) return false
+        peekOrigin = origin
         peekSize = 3
         peekFocusToken++
         // The DOWN that opened the peek is still held: swallow its repeats (and

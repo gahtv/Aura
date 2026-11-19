@@ -197,6 +197,46 @@ class LibraryFilterTest {
     // ---- merging -----------------------------------------------------------
 
     @Test
+    fun `Title paging shows every visible track exactly once in server SortName order`() = runTest {
+        Prefs.knownLibraries = Fixtures.allLibraries.filter { it.id in setOf("lib-music", "lib-atmos", "lib-mixed") }
+        hide("lib-mixed")
+        val rows: Map<String?, List<JellyfinItem>> = listOf("lib-music", "lib-atmos").mapIndexed { lib, id ->
+            id to (0 until 180).map { index ->
+                val album = index / 2
+                val track = index % 2 + 1
+                val name = "Album ${album.toString().padStart(3, '0')} Track $track Library $lib"
+                Fixtures.item("$lib-$index", name = name, sortName = "000$track - $name")
+            }
+        }.toMap()
+        val expected = rows.values.flatten().sortedBy { it.sortName }.map { it.id }
+        val api = FakeJellyfinApi(itemsByParent = rows, pagedBrowse = true, honorSortNameField = true)
+        val actual = (0 until 6).flatMap { page ->
+            LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio",
+                sortBy = "SortName", startIndex = page * 60, limit = 60)).items.map { it.id }
+        }
+        val duplicates = actual.groupingBy { it }.eachCount().count { it.value > 1 }
+        val skipped = (expected.toSet() - actual.toSet()).size
+        assertEquals("duplicated IDs=$duplicates, skipped IDs=$skipped", expected, actual)
+        assertTrue(api.browseFields.all { "SortName" in it.split(',') })
+    }
+
+    @Test
+    fun `cursor requests SortName for library artist and playlist sources only once`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        for (fields in listOf("", "Path,UserData", "SortName,Path")) {
+            val api = FakeJellyfinApi(pagedBrowse = true)
+            LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(
+                includeItemTypes = "Audio,Playlist", fields = fields))
+            LibraryFilter.queryAlbumArtists(api, "u", fields = fields)
+            assertEquals(5, api.browseFields.size)
+            api.browseFields.forEach { requested ->
+                assertEquals(1, requested.split(',').count { it == "SortName" })
+                assertTrue(requested.split(',').containsAll(fields.split(',').filter { it.isNotEmpty() }))
+            }
+        }
+    }
+
+    @Test
     fun `different cursor shapes fetch concurrently`() = runTest {
         hide("lib-movies", "lib-playlists", "lib-mixed")
         val started = CompletableDeferred<Unit>()
@@ -286,7 +326,7 @@ class LibraryFilterTest {
         val query = LibraryFilter.ItemsQuery(includeItemTypes = "Audio", startIndex = 17, limit = 4)
         val expected = (17..20).map { "$it".padStart(3, '0') }
         assertEquals(expected, LibraryFilter.queryItems(api, "u", query).items.map { it.id })
-        repeat(5) { LibraryFilter.queryItems(api, "u", query.copy(searchTerm = "shape-$it")) }
+        repeat(5) { LibraryFilter.queryItems(api, "u", query.copy(filters = "shape-$it")) }
         val before = api.browsePages.size
         assertEquals(expected, LibraryFilter.queryItems(api, "u", query).items.map { it.id })
         assertTrue(api.browsePages.drop(before).any { it.start == 0 })
@@ -306,6 +346,47 @@ class LibraryFilterTest {
         assertEquals(listOf("b2", "b3"), LibraryFilter.queryItems(api, "u", query).items.map { it.id })
         failing.clear()
         assertEquals(listOf("a2", "a3"), LibraryFilter.queryItems(api, "u", query).items.map { it.id })
+    }
+
+    @Test
+    fun `non allow-listed sorts retain prefix requests for items and artists`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val rows = mapOf<String?, List<JellyfinItem>>(
+            "lib-music" to (0..9).map { Fixtures.item("a$it") },
+            "lib-atmos" to (0..9).map { Fixtures.item("b$it") })
+        for (sort in listOf("DateCreated", "Album", "AlbumArtist", "Runtime", "PlayCount",
+            "DatePlayed", "ProductionYear", "Random", "Unknown", "SortName,DateCreated")) {
+            val api = FakeJellyfinApi(itemsByParent = rows, artistsByParent = rows, pagedBrowse = true)
+            for (start in listOf(0, 2, 4)) {
+                val before = api.browsePages.size
+                LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio",
+                    sortBy = sort, sortOrder = "Descending", startIndex = start, limit = 2))
+                LibraryFilter.queryAlbumArtists(api, "u", sortBy = sort, sortOrder = "Descending",
+                    startIndex = start, limit = 2)
+                val requests = api.browsePages.drop(before)
+                assertEquals("$sort page $start", 4, requests.size)
+                assertTrue("$sort page $start: $requests", requests.all { it.start == 0 && it.limit == start + 2 })
+                assertTrue(api.browseFields.none { "SortName" in it.split(',') })
+            }
+        }
+    }
+
+    @Test
+    fun `SortName search retains prefix requests`() = runTest {
+        hide("lib-movies", "lib-playlists", "lib-mixed")
+        val rows = mapOf<String?, List<JellyfinItem>>(
+            "lib-music" to (0..9).map { Fixtures.item("a$it") },
+            "lib-atmos" to (0..9).map { Fixtures.item("b$it") })
+        val api = FakeJellyfinApi(itemsByParent = rows, pagedBrowse = true)
+        for (start in listOf(0, 2, 4)) {
+            val before = api.browsePages.size
+            LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio",
+                searchTerm = "Track", sortBy = "SortName", startIndex = start, limit = 2))
+            val requests = api.browsePages.drop(before)
+            assertEquals(2, requests.size)
+            assertTrue(requests.all { it.start == 0 && it.limit == start + 2 })
+            assertTrue(api.browseFields.none { "SortName" in it.split(',') })
+        }
     }
 
     @Test

@@ -18,6 +18,7 @@ class FakeJellyfinApi(
     private val failingParents: Set<String?> = emptySet(),
     private val lyricsResponse: LyricsResponse? = null,
     private val pagedBrowse: Boolean = false,
+    private val honorSortNameField: Boolean = false,
     private val cancelledParents: Set<String?> = emptySet(),
     private val beforeItems: suspend (filters: String?) -> Unit = {}
 ) : JellyfinApi {
@@ -27,9 +28,11 @@ class FakeJellyfinApi(
     val artistQueries = mutableListOf<String?>()
     data class BrowsePage(val parent: String?, val start: Int, val limit: Int, val rows: Int)
     val browsePages = mutableListOf<BrowsePage>()
+    val browseFields = mutableListOf<String>()
 
     private fun page(all: List<JellyfinItem>, parent: String?, sortBy: String, sortOrder: String,
-                     start: Int, limit: Int): List<JellyfinItem> {
+                     start: Int, limit: Int, fields: String): List<JellyfinItem> {
+        browseFields += fields
         if (!pagedBrowse) return all
         val comparator = when (sortBy) {
             "DateCreated" -> compareBy<JellyfinItem> { it.dateCreated }.thenBy { it.name.lowercase() }
@@ -42,7 +45,9 @@ class FakeJellyfinApi(
         )
         val rows = sorted.drop(start).take(limit)
         browsePages += BrowsePage(parent, start, limit, rows.size)
-        return rows
+        return if (honorSortNameField && fields.split(',').none { it.equals("SortName", ignoreCase = true) }) {
+            rows.map { it.copy(sortName = null) }
+        } else rows
     }
 
     /** Server-side item filter / id hydration seen on each getItems call. */
@@ -80,7 +85,7 @@ class FakeJellyfinApi(
         if (parentId in failingParents) throw IllegalStateException("library $parentId is unreadable")
         val all = itemsByParent[parentId] ?: emptyList()
         return ItemsResponse(
-            items = page(all, parentId, sortBy, sortOrder, startIndex, limit),
+            items = page(all, parentId, sortBy, sortOrder, startIndex, limit, fields),
             totalRecordCount = all.size,
             startIndex = startIndex
         )
@@ -100,7 +105,7 @@ class FakeJellyfinApi(
         artistQueries += parentId
         if (parentId in failingParents) throw IllegalStateException("library $parentId is unreadable")
         val all = artistsByParent[parentId] ?: emptyList()
-        return ItemsResponse(items = page(all, parentId, sortBy, sortOrder, startIndex, limit),
+        return ItemsResponse(items = page(all, parentId, sortBy, sortOrder, startIndex, limit, fields),
             totalRecordCount = all.size, startIndex = startIndex)
     }
 

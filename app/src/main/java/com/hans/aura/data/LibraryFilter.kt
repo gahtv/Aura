@@ -29,6 +29,8 @@ object LibraryFilter {
     /** Per-library page cap: one library may have to answer a deep page. */
     private const val MAX_FETCH_PER_LIBRARY = 5000
     private const val MAX_CURSOR_SHAPES = 4
+    // Only SortName browses reproduce server ordering; other sorts and search retain prefix merging.
+    private val INCREMENTAL_CURSOR_SORTS = setOf("SortName")
     private val cursorCacheLock = Any()
     private var cursors = newCursorCache()
 
@@ -320,16 +322,17 @@ object LibraryFilter {
             Log.w(TAG, "all libraries hidden — returning empty result for ${q.includeItemTypes}")
             return ItemsResponse()
         }
-        if (comparatorFor(q.sortBy, q.sortOrder) != null) {
+        if (q.sortBy in INCREMENTAL_CURSOR_SORTS && q.searchTerm == null) {
+            val cursorQuery = q.copy(fields = withSortName(q.fields))
             val playlists = q.includeItemTypes?.contains("Playlist", ignoreCase = true) == true
             logStrategy(q.includeItemTypes, libs)
             return cursorPage(api, userId, q, libs, sourceCount = libs.size + if (playlists) 1 else 0) { index, offset, count ->
                 if (index < libs.size) {
-                    queryItems(api, userId, q.copy(parentId = libs[index].id, startIndex = offset, limit = count))
+                    queryItems(api, userId, cursorQuery.copy(parentId = libs[index].id, startIndex = offset, limit = count))
                 } else {
                     queryItems(api, userId, ItemsQuery(includeItemTypes = "Playlist", filters = q.filters,
                         enableUserData = q.enableUserData, searchTerm = q.searchTerm, sortBy = q.sortBy,
-                        sortOrder = q.sortOrder, limit = count, startIndex = offset, fields = q.fields,
+                        sortOrder = q.sortOrder, limit = count, startIndex = offset, fields = cursorQuery.fields,
                         imageTypeLimit = q.imageTypeLimit, nameStartsWithOrGreater = q.nameStartsWithOrGreater))
                 }
             }
@@ -414,13 +417,13 @@ object LibraryFilter {
             Log.w(TAG, "all music libraries hidden — returning empty artist result")
             return ItemsResponse()
         }
-        if (comparatorFor(sortBy, sortOrder) != null) {
+        if (sortBy in INCREMENTAL_CURSOR_SORTS) {
             logStrategy("MusicArtist", libs)
             return cursorPage(api, userId, ItemsQuery(sortBy = sortBy, sortOrder = sortOrder,
                 limit = limit, startIndex = startIndex, fields = fields, imageTypeLimit = imageTypeLimit),
                 libs, artists = true) { index, offset, count ->
                 api.getAlbumArtists(userId = userId, sortBy = sortBy, sortOrder = sortOrder,
-                    limit = count, startIndex = offset, fields = fields, imageTypeLimit = imageTypeLimit,
+                    limit = count, startIndex = offset, fields = withSortName(fields), imageTypeLimit = imageTypeLimit,
                     parentId = libs[index].id)
             }
         }
@@ -460,6 +463,10 @@ object LibraryFilter {
         val page = ordered.drop(q.startIndex).take(q.limit)
         return ItemsResponse(items = page, totalRecordCount = total, startIndex = q.startIndex)
     }
+
+    private fun withSortName(fields: String): String =
+        if (fields.split(',').any { it.trim().equals("SortName", ignoreCase = true) }) fields
+        else listOf(fields, "SortName").filter { it.isNotBlank() }.joinToString(",")
 
     /**
      * Re-creates the server's ordering for the sort the caller asked for. Each

@@ -32,6 +32,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -51,7 +56,6 @@ import com.hans.aura.ui.theme.TextSecondary
  * Layout: seek bar, times, transport row (prev / -10s / play-pause / +10s /
  * next), then shuffle + repeat + heart + Radio toggles.
  *
- * [modifier] is how the screen hangs the queue-peek DOWN handler on the row;
  * [onRadio] seeds an Instant Mix from the current track (null when nothing is
  * playing, so the control simply is not drawn).
  */
@@ -63,13 +67,22 @@ internal fun TransportBar(
     isPlaying: Boolean,
     playPauseFocus: FocusRequester,
     accent: Color,
+    onOpenPeek: (FocusRequester) -> Boolean,
     favorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
     onRadio: (() -> Unit)? = null
 ) {
     val shuffleEnabled by player.shuffleEnabled.collectAsState()
     val repeatMode by player.repeatMode.collectAsState()
+    val shuffleFocus = remember { FocusRequester() }
+    val repeatFocus = remember { FocusRequester() }
+
+    fun peekOnDown(origin: FocusRequester) = Modifier
+        .focusRequester(origin)
+        .onPreviewKeyEvent { event ->
+            event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown &&
+                event.nativeKeyEvent.repeatCount == 0 && onOpenPeek(origin)
+        }
 
     Column {
         WavySeekBar(
@@ -94,7 +107,7 @@ internal fun TransportBar(
         }
         Spacer(Modifier.height(AuraSpacing.lg))
         Row(
-            modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -113,7 +126,9 @@ internal fun TransportBar(
                 accent = accent,
                 iconSize = AuraSizes.transportIconLarge,
                 filled = true,
-                modifier = Modifier.focusRequester(playPauseFocus)
+                modifier = Modifier
+                    .focusRequester(playPauseFocus)
+                    .focusProperties { down = shuffleFocus }
             ) {
                 player.playPause()
             }
@@ -136,7 +151,8 @@ internal fun TransportBar(
                 icon = R.drawable.ic_shuffle,
                 label = "Shuffle",
                 accent = accent,
-                active = shuffleEnabled
+                active = shuffleEnabled,
+                modifier = peekOnDown(shuffleFocus)
             ) {
                 player.setShuffle(!shuffleEnabled)
             }
@@ -149,7 +165,8 @@ internal fun TransportBar(
                     else -> "Repeat off"
                 },
                 accent = accent,
-                active = repeatMode != Player.REPEAT_MODE_OFF
+                active = repeatMode != Player.REPEAT_MODE_OFF,
+                modifier = peekOnDown(repeatFocus)
             ) {
                 player.setRepeat(
                     when (repeatMode) {

@@ -197,6 +197,12 @@ object AuraSizes {
     val transportPlateExtra: Dp = 40.dp
     val transportButtonPlate: Dp = 64.dp
     val seekBarHeight: Dp = 8.dp
+    val wavySeekBarHeight: Dp = 24.dp
+    val seekStroke: Dp = 4.dp
+    val seekWavelength: Dp = 40.dp
+    val seekAmplitude: Dp = 3.dp
+    val seekGap: Dp = 4.dp
+    val seekHandleHeight: Dp = 20.dp
 
     // ---- Rows / lists ---------------------------------------------------------
     val trackRowHeight: Dp = 56.dp

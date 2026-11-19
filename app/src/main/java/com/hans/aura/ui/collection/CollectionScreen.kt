@@ -410,7 +410,7 @@ internal fun subtitle(collection: JellyfinItem, tracks: List<JellyfinItem>?): St
     // rather than print a number that contradicts the album's own metadata.
     val expected = collection.childCount ?: 0
     val count = tracks?.size ?: expected
-    val kind = if (expected > count) {
+    val kind = if (collection.type != "Playlist" && expected > count) {
         "$count of " + com.hans.aura.ui.common.countLabel(expected, noun)
     } else {
         com.hans.aura.ui.common.countLabel(count, noun)

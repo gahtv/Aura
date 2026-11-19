@@ -10,6 +10,21 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class TtmlLyricsTest {
     @Test
+    fun `Apple song part line and word starts use the track clock`() {
+        val fixture = checkNotNull(javaClass.getResource("/apple-song-parts.ttml")).readText()
+        val lines = LyricsStore.parseLyricsText(fixture)
+
+        assertEquals(listOf(2000L, 12500L, 17000L, 25000L), lines.map { it.startMs })
+        assertEquals(listOf("First light", "Turn around", "Sing again", "Last light"), lines.map { it.text })
+        assertEquals(listOf(
+            listOf(TimedWord(2000, "First"), TimedWord(4500, "light")),
+            listOf(TimedWord(12500, "Turn"), TimedWord(13750, "around")),
+            listOf(TimedWord(17000, "Sing"), TimedWord(18250, "again")),
+            listOf(TimedWord(25000, "Last"), TimedWord(26500, "light"))
+        ), lines.map { it.words })
+    }
+
+    @Test
     fun `iTunes TTML songwriters are credits but performer agents are not`() {
         val line = LyricsStore.parseLyricsText("""
             <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"

@@ -418,7 +418,8 @@ class TtmlLyricsTest {
                 """<p begin="10s"><span begin="10s" end="11s">Abs</span> <span begin="11s" end="12.5s">spans</span></p>""" +
                 """<p begin="20s"><span begin="0s" end="1s">Rel</span> <span begin="1s" end="2s">spans</span></p>""" +
                 """<p begin="30s">Open</p>""" +
-                """<p begin="40s"><span begin="40s" end="41s">Last</span> <span begin="41s">open</span></p>""")
-        assertEquals(listOf(3_000L, 6_000L, 12_500L, 22_000L, null, null), lines.map { it.endMs })
+                """<p begin="40s"><span begin="40s" end="41s">Last</span> <span begin="41s">open</span></p>""" +
+                """<p begin="50s"><span begin="50s" end="54s">Held</span> <span begin="51s" end="52s">over</span></p>""")
+        assertEquals(listOf(3_000L, 6_000L, 12_500L, 22_000L, null, null, 54_000L), lines.map { it.endMs })
     }
 }

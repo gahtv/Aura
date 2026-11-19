@@ -158,7 +158,7 @@ object LyricsStore {
                     },
                     voice = voice,
                     credits = credits,
-                    endMs = (words?.lastOrNull()?.endMs
+                    endMs = (words?.sungEnd()
                         ?: inlineEnd(content)?.plus(inlineOffset))?.let { end -> shifted(end, offsetMs) }
                 )
             })

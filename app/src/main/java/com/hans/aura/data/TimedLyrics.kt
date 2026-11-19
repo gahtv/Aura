@@ -47,6 +47,10 @@ internal fun TimedLyricLine.toLyricLine() =
     )
 
 /** Exact display text (including spacing), optionally timed to the playback clock. */
+/** The latest end of any word, known only when the last word has one; overlapping words may end out of order. */
+internal fun List<TimedWord>.sungEnd(): Long? =
+    lastOrNull()?.endMs?.let { last -> maxOf(last, maxOf { it.endMs ?: last }) }
+
 data class AdlibSegment(val text: String, val startMs: Long? = null, val endMs: Long? = null)
 
 /** Any lyric sub-line (adlib, translation or romanization), with optional independent timing. */

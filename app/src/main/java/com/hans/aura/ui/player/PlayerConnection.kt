@@ -10,11 +10,13 @@ import com.hans.aura.data.Session
 import com.hans.aura.playback.PlaybackService
 import com.hans.aura.player.controller.AutoplayPolicy
 import com.hans.aura.player.controller.PlaybackController
+import com.hans.aura.player.controller.QueueItemLoader
 import com.hans.aura.player.controller.QueueRegistry
 import com.hans.aura.player.controller.ResumePolicy
 import com.hans.aura.player.controller.SleepTimer
 import com.hans.aura.util.AuraLog
 import com.hans.aura.util.AuraTag
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,6 +56,7 @@ class PlayerConnection(
 
     /** mediaId -> full item (UI metadata, Atmos badge, lyrics, reporting). */
     private val registry = QueueRegistry()
+    private val queueItemLoader = QueueItemLoader(scope, registry)
 
     private val resumePolicy = ResumePolicy()
 
@@ -164,17 +167,21 @@ class PlayerConnection(
         } else {
             _currentItem.value = null
             scope.launch {
-                runCatching {
-                    val session = sessionProvider() ?: return@launch
-                    jellyfin.api.getItem(itemId = mediaId, userId = session.userId)
-                }.onSuccess { item ->
-                    registry.put(item)
-                    // Only publish if this is still the current item.
-                    if (c.currentMediaItem?.mediaId == mediaId) {
-                        _currentItem.value = item
+                val session = sessionProvider() ?: return@launch
+                val item = try {
+                    queueItemLoader.load(mediaId) {
+                        jellyfin.api.getItem(itemId = mediaId, userId = session.userId)
                     }
-                    readQueue(c)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    return@launch
                 }
+                // Only publish if this is still the current item.
+                if (c.currentMediaItem?.mediaId == mediaId) {
+                    _currentItem.value = item
+                }
+                readQueue(c)
             }
         }
     }
@@ -195,14 +202,17 @@ class PlayerConnection(
         // Fetch any items the UI doesn't know yet (remote cast items).
         if (missing.isNotEmpty()) {
             scope.launch {
-                runCatching {
-                    val session = sessionProvider() ?: return@launch
-                    for (id in missing) {
-                        val item = jellyfin.api.getItem(itemId = id, userId = session.userId)
-                        registry.put(item)
+                val session = sessionProvider() ?: return@launch
+                try {
+                    queueItemLoader.loadAll(missing) { id ->
+                        jellyfin.api.getItem(itemId = id, userId = session.userId)
                     }
-                    readQueue(c)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    return@launch
                 }
+                readQueue(c)
             }
         }
     }

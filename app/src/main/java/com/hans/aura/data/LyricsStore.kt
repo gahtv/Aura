@@ -1,6 +1,8 @@
 package com.hans.aura.data
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class LyricLine(
     val startMs: Long,
@@ -178,8 +180,11 @@ object LyricsStore {
         } catch (_: Exception) {
             return emptyList()
         }
-        return parseResponse(response)
+        return parseResponseOffMain(response)
     }
+
+    internal suspend fun parseResponseOffMain(response: LyricsResponse): List<LyricLine> =
+        withContext(Dispatchers.Default) { parseResponse(response) }
 
     internal fun parseResponse(resp: LyricsResponse): List<LyricLine> {
         val metadata = resp.metadata
@@ -249,9 +254,15 @@ object LyricsStore {
      */
     suspend fun fetchPreferred(api: JellyfinApi, itemId: String): List<LyricLine> {
         (MusicSources.current as? JellyfinSource)?.let { return it.jellyfinLyrics(itemId) }
-        val fromSource = runCatching { MusicSources.current?.lyrics(itemId) }.getOrNull()
+        val fromSource = try {
+            MusicSources.current?.lyrics(itemId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
         if (!fromSource.isNullOrBlank()) {
-            val parsed = parseLyricsText(fromSource)
+            val parsed = withContext(Dispatchers.Default) { parseLyricsText(fromSource) }
             android.util.Log.i("AURA_LYRICS", "source item=$itemId chars=${fromSource.length} lines=${parsed.size}")
             if (parsed.isNotEmpty()) return parsed
         } else {

@@ -577,6 +577,80 @@ class LibraryFilterTest {
     // ---- emptiness / failure handling --------------------------------------
 
     @Test
+    fun `date added merge requests dates and interleaves library pages`() = runTest {
+        hide("lib-movies")
+        val tracks = mapOf(
+            "lib-music" to listOf(
+                Fixtures.item("newest", name = "Alpha").copy(dateCreated = "2025-01-04T12:00:00Z"),
+                Fixtures.item("third", name = "Mike").copy(dateCreated = "2025-01-02T12:00:00Z")
+            ),
+            "lib-atmos" to listOf(
+                Fixtures.item("second", name = "Bravo").copy(dateCreated = "2025-01-03T12:00:00Z"),
+                Fixtures.item("oldest", name = "Zulu").copy(dateCreated = "2025-01-01T12:00:00Z")
+            )
+        )
+        val requestedFields = mutableListOf<List<String>>()
+        val api = object : JellyfinApi by FakeJellyfinApi() {
+            override suspend fun getItems(
+                userId: String,
+                includeItemTypes: String?,
+                excludeItemTypes: String?,
+                genres: String?,
+                filters: String?,
+                enableUserData: Boolean,
+                recursive: Boolean,
+                parentId: String?,
+                artistIds: String?,
+                albumArtistIds: String?,
+                searchTerm: String?,
+                ids: String?,
+                sortBy: String,
+                sortOrder: String,
+                limit: Int,
+                startIndex: Int,
+                fields: String,
+                imageTypeLimit: Int,
+                nameStartsWithOrGreater: String?
+            ): ItemsResponse {
+                assertEquals("Audio", includeItemTypes)
+                assertEquals("DateCreated", sortBy)
+                assertEquals("Descending", sortOrder)
+                assertEquals(0, startIndex)
+                val projection = fields.split(',').map { it.trim() }
+                requestedFields += projection
+                val all = tracks[parentId].orEmpty()
+                val items = all.take(limit).map {
+                    if (projection.any { field -> field.equals("DateCreated", ignoreCase = true) }) it
+                    else it.copy(dateCreated = null)
+                }
+                return ItemsResponse(items = items, totalRecordCount = all.size)
+            }
+        }
+        val query = LibraryFilter.ItemsQuery(
+            includeItemTypes = "Audio", sortBy = "DateCreated", sortOrder = "Descending",
+            limit = 2, fields = "PrimaryImageAspectRatio,Path"
+        )
+
+        val first = LibraryFilter.queryItems(api, "u", query)
+        val second = LibraryFilter.queryItems(api, "u", query.copy(startIndex = 2))
+
+        assertEquals(listOf("newest", "second"), first.items.map { it.id })
+        assertEquals(listOf("third", "oldest"), second.items.map { it.id })
+        assertEquals(4, first.totalRecordCount)
+        assertEquals(2, second.startIndex)
+        assertTrue(requestedFields.isNotEmpty())
+        requestedFields.forEach {
+            assertTrue(it.containsAll(listOf("PrimaryImageAspectRatio", "Path", "DateCreated")))
+        }
+        requestedFields.clear()
+        LibraryFilter.queryItems(api, "u", query.copy(fields = "Path,datecreated"))
+        requestedFields.forEach {
+            assertEquals(1, it.count { field -> field.equals("DateCreated", ignoreCase = true) })
+            assertTrue(it.contains("Path"))
+        }
+    }
+
+    @Test
     fun `all libraries hidden returns an empty result without querying`() = runTest {
         hide("lib-music", "lib-atmos", "lib-movies", "lib-playlists", "lib-mixed")
         val api = FakeJellyfinApi()

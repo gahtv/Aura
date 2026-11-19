@@ -337,6 +337,7 @@ object LibraryFilter {
             }
         }
         val perLibraryLimit = (q.startIndex + q.limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
+        val fields = fieldsForMerge(q.fields, q.sortBy)
         val responses = libs.map { lib ->
             runCatching {
                 api.getItems(
@@ -356,7 +357,7 @@ object LibraryFilter {
                     sortOrder = q.sortOrder,
                     limit = perLibraryLimit,
                     startIndex = 0,
-                    fields = q.fields,
+                    fields = fields,
                     imageTypeLimit = q.imageTypeLimit,
                     nameStartsWithOrGreater = q.nameStartsWithOrGreater
                 )
@@ -382,7 +383,7 @@ object LibraryFilter {
                         sortOrder = q.sortOrder,
                         limit = perLibraryLimit,
                         startIndex = 0,
-                        fields = q.fields,
+                        fields = fields,
                         imageTypeLimit = q.imageTypeLimit,
                         nameStartsWithOrGreater = q.nameStartsWithOrGreater
                     )
@@ -427,12 +428,13 @@ object LibraryFilter {
             }
         }
         val perLibraryLimit = (startIndex + limit).coerceAtMost(MAX_FETCH_PER_LIBRARY)
+        val mergeFields = fieldsForMerge(fields, sortBy)
         val responses = libs.map { lib ->
             runCatching {
                 api.getAlbumArtists(
                     userId = userId, sortBy = sortBy, sortOrder = sortOrder,
                     limit = perLibraryLimit, startIndex = 0,
-                    fields = fields, imageTypeLimit = imageTypeLimit,
+                    fields = mergeFields, imageTypeLimit = imageTypeLimit,
                     parentId = lib.id
                 )
             }.onFailure {
@@ -451,6 +453,14 @@ object LibraryFilter {
         val responses = results.mapNotNull { it.getOrNull() }
         if (responses.isEmpty()) results.firstOrNull()?.getOrThrow()
         return responses
+    }
+
+    /** Jellyfin omits DateCreated unless requested; the merge comparator needs it. */
+    private fun fieldsForMerge(fields: String, sortBy: String): String {
+        if (!sortBy.contains("DateCreated", ignoreCase = true) ||
+            fields.split(',').any { it.trim().equals("DateCreated", ignoreCase = true) }
+        ) return fields
+        return if (fields.isBlank()) "DateCreated" else "$fields,DateCreated"
     }
 
     /** Merge per-library pages: honour the requested sort, then the page window. */

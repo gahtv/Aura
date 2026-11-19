@@ -96,10 +96,6 @@ fun ArtworkCard(
         modifier = Modifier
             .width(size)
             .zIndex(if (focused) 2f else if (scale > 1f) 1f else 0f)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
             .then(
                 if (focusKeeper != null) {
                     Modifier.focusRequester(focusKeeper.requesterFor(item.id))
@@ -111,6 +107,11 @@ fun ArtworkCard(
                 if (it.isFocused) onFocused?.invoke(item.id)
             }
             .clickable { onClick() }
+            // Keep the spring inside the focus target so TV scrolling sees stable bounds.
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
     ) {
         val bg by animateColorAsState(if (focused) SurfaceHigh else Surface, label = "card")
         val focusedShape = RoundedCornerShape(AuraShapes.cardRadius - AuraSizes.focusBorder)

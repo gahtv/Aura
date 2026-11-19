@@ -34,11 +34,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
@@ -143,8 +138,6 @@ fun NowPlayingScreen(
     }
 
     // ---- Queue peek (B14) ---------------------------------------------------
-    // The transport row is the bottom of the screen's focus tree, so DOWN from
-    // it has nowhere to go. Spend that key on a compact "up next" peek instead:
     // 0 = closed, 3 = peek, 5 = extended peek.
     val queueIndexState by player.queueIndex.collectAsState()
     var peekSize by remember { mutableStateOf(0) }
@@ -169,8 +162,8 @@ fun NowPlayingScreen(
         }
     }
 
-    fun openPeek() {
-        if (upcoming.isEmpty()) return
+    fun openPeek(): Boolean {
+        if (peekSize != 0 || upcoming.isEmpty()) return false
         peekSize = 3
         peekFocusToken++
         // The DOWN that opened the peek is still held: swallow its repeats (and
@@ -178,6 +171,7 @@ fun NowPlayingScreen(
         // click the first row on the same press.
         peekGraceUntil = android.os.SystemClock.uptimeMillis() + 1000L
         android.util.Log.d("AURA_PEEK", "open=3 index=$queueIndexState")
+        return true
     }
 
     fun extendPeek() {
@@ -304,27 +298,7 @@ fun NowPlayingScreen(
                                     }
                                 }
                             },
-                            // DOWN off the transport row opens the queue peek
-                            // (only while it is closed; once it is up, the
-                            // overlay owns the D-pad).
-                            modifier = Modifier.onPreviewKeyEvent { e ->
-                                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionDown) {
-                                    android.util.Log.d(
-                                        "AURA_PEEK",
-                                        "down: peek=$peekSize upcoming=${upcoming.size} idx=$queueIndexState"
-                                    )
-                                }
-                                if (e.type == KeyEventType.KeyDown &&
-                                    e.key == Key.DirectionDown &&
-                                    peekSize == 0
-                                ) {
-                                    // Nothing queued behind this track: leave
-                                    // the key alone rather than eating it.
-                                    val willOpen = upcoming.isNotEmpty()
-                                    if (willOpen) openPeek()
-                                    willOpen
-                                } else false
-                            },
+                            onOpenPeek = ::openPeek,
                             // Track radio: re-seed an Instant Mix from the
                             // CURRENT track through the shared Mixes entry
                             // point (the request itself is not reimplemented).

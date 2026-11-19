@@ -20,7 +20,7 @@ object LyricsStore {
 
     private val wordTag = Regex("""<(\d+):(\d+(?:\.\d+)?)>""")
     private val whitespace = Regex("""\s+""")
-    private val idTag = Regex("""\[[A-Za-z#][A-Za-z0-9_-]*:[^\]]*\]""")
+    private val idTag = Regex("""\[(?:ar|al|ti|au|by|re|ve|tool|length|offset|#):[^\]]*\]""", RegexOption.IGNORE_CASE)
     private val offsetTag = Regex("""\[offset:([+-]?\d+)\]""", RegexOption.IGNORE_CASE)
 
     private fun isHeader(text: String): Boolean =

@@ -25,11 +25,20 @@ class LyricsStoreTest {
 
     @Test
     fun `headers never become plain or synced lyrics`() {
-        val headers = "[ar:Artist][ti:Title]\n[al:Album]\n[au:Author]\n[by:Writer]\n[re:Editor]\n[ve:1]\n[length:03:00]\n[#:1]\n[custom:Value]\n[offset:+1500]"
+        val headers = "[ar:Artist][ti:Title]\n[al:Album]\n[au:Author]\n[by:Writer]\n[re:Editor]\n[ve:1]\n[TOOL:Editor]\n[length:03:00]\n[#:1]\n[offset:+1500]"
         assertTrue(LyricsStore.parseLrcText(headers).isEmpty())
         assertEquals(listOf("Hello"), LyricsStore.parseLrcText("$headers\nHello").map { it.text })
         assertEquals(listOf("Hello"), LyricsStore.parseLrcText("$headers\n[00:02]Hello\n[00:03][ar:Artist]").map { it.text })
         assertEquals(2000L, LyricsStore.parseLrcText("[offset:invalid]\n[00:02]Hello").single().startMs)
+    }
+
+    @Test
+    fun `section labels remain lyrics in raw and structured paths`() = runBlocking {
+        val labels = listOf("[Chorus: Drake]", "[Intro:Kendrick]")
+        assertEquals(labels, LyricsStore.parseLrcText(labels.joinToString("\n")).map { it.text })
+        assertEquals(labels, LyricsStore.parseLrcText(labels.joinToString("\n") { "[00:01]$it" }).map { it.text })
+        val response = LyricsResponse(lyrics = labels.map { LyricLineDto(it) })
+        assertEquals(labels, LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track").map { it.text })
     }
 
     @Test

@@ -37,6 +37,10 @@ lyrics, mirroring and pairing.
 
 **Now Playing**
 - Synced LRC lyrics, top-anchored with the current line held in view.
+- Word-by-word karaoke when enhanced LRC, Jellyfin cues or TTML provide word timings;
+  singer/duet metadata changes lyric alignment and colour. Plain LRC stays line-synced.
+- Artwork-accented Play/Pause, an animated wavy seek bar while playing, and stronger
+  current-line typography. Cards and controls share rounded shapes and TV focus styling.
 - Transport controls, jump ±10 s, queue view, and a now-playing pill in the top bar.
 
 **Integration**
@@ -80,10 +84,11 @@ lyrics, mirroring and pairing.
 
 ## Next
 
-- **Retire ADB.** Auto-launching Aura from the remote is the only thing that still needs USB debugging;
-  moving to the Android TV Remote v2 protocol (PIN pairing) removes it entirely.
-- **Live state instead of polling.** The remote polls the mirror link every couple of seconds; a push
-  channel would make queue and progress changes instant.
+- **Live state instead of polling.** The mirror link currently exposes HTTP snapshots;
+  a push channel could make queue and progress changes instant.
+
+Remote launch/discovery plans belong in [Aura Remote](https://github.com/gahtv/aura-remote).
+Aura's own HTTP link cannot launch an app whose process is not running.
 
 ## Considering
 

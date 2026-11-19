@@ -1,5 +1,9 @@
 ## Aura Remote
 
+Historical release notes. For current Aura protocol/lifecycle details see
+[Remote control](REMOTE-CONTROL.md); for the companion's current features and setup see
+[Aura Remote](https://github.com/gahtv/aura-remote).
+
 Aura now has a companion remote you can open in any browser on your network —
 no app store, no ADB, no keypad pairing. It behaves like Spotify Connect: the TV
 keeps playing and owns the queue, the phone just reads it and sends commands.
@@ -13,10 +17,10 @@ travels both ways.
 
 ## What's new in Aura itself
 
-**Mirror link** — while in the foreground Aura serves a small local API on port
+**Mirror link** — after launch Aura serves a small local API on port
 8099: current screen, playback state, the live queue, and commands for
-navigation and transport. Nothing is written outside the app, and it closes when
-Aura does.
+navigation and transport. Nothing is written outside the app. The listener lives
+with the process, not strictly with foreground visibility.
 
 **Pairing** — the first time a remote connects, Aura asks you, on the TV, whether
 to allow that device, the way USB debugging does. Allow mints a token; deny,

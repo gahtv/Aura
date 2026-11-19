@@ -48,8 +48,11 @@ needs a real receiver to confirm.
 
 ## Known gaps
 
-- Album/artist/genre screens still read the data singletons directly instead of the new browse
-  facade; that is the last structural step, and it is not visible from the couch.
+These notes describe the original refactor release. Later `main` changes still report
+`0.5.0-alpha.1`; see [current main notes](release-notes-main.md) for the source-tree changes.
+
+- At release, album/artist/genre screens still read the data singletons directly. Subsequent
+  work moved browse queries behind `SourceQueries` / `MusicSource`.
 - The error pane ("couldn't load, retry") is wired on Home, Library, Album, Artist, Genres and Search,
   but the retry path was not exercised with the server actually stopped this round.
 

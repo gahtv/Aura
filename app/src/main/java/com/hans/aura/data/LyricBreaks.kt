@@ -40,5 +40,9 @@ fun lyricBreaks(lines: List<LyricLine>, minGapMs: Long = MIN_LYRIC_BREAK_MS): Li
     return breaks
 }
 
-/** An adlib trailing past its lead line keeps the break from starting. */
-private fun LyricLine.sungUntil(): Long? = endMs?.let { maxOf(it, adlib?.endMs ?: it) }
+/** An adlib trailing past its lead line keeps the break from starting; an open-ended timed one runs to the next line. */
+private fun LyricLine.sungUntil(): Long? {
+    val end = endMs ?: return null
+    val adlib = adlib ?: return end
+    return adlib.endMs?.let { maxOf(end, it) } ?: end.takeUnless { adlib.isTimed }
+}

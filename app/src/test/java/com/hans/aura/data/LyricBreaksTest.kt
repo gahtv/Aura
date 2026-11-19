@@ -35,6 +35,12 @@ class LyricBreaksTest {
     }
 
     @Test
+    fun `an open-ended timed adlib holds off the break`() {
+        val withAdlib = line(0, 2_000).copy(adlib = LyricAdlib(listOf(AdlibSegment("ooh", startMs = 3_000))))
+        assertTrue(lyricBreaks(listOf(withAdlib, line(12_000))).isEmpty())
+    }
+
+    @Test
     fun `unsynced lyrics have no breaks`() {
         assertTrue(lyricBreaks(listOf(LyricLine(0, "a", isSynced = false))).isEmpty())
         assertTrue(lyricBreaks(emptyList()).isEmpty())

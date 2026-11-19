@@ -44,6 +44,7 @@ import androidx.media3.common.Player
 import com.hans.aura.R
 import com.hans.aura.ui.common.formatDuration
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.ui.player.nextRepeatMode
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
@@ -168,13 +169,7 @@ internal fun TransportBar(
                 active = repeatMode != Player.REPEAT_MODE_OFF,
                 modifier = peekOnDown(repeatFocus)
             ) {
-                player.setRepeat(
-                    when (repeatMode) {
-                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                        else -> Player.REPEAT_MODE_OFF
-                    }
-                )
+                player.setRepeat(nextRepeatMode(repeatMode))
             }
             if (onToggleFavorite != null) {
                 Spacer(Modifier.width(AuraSpacing.lg))

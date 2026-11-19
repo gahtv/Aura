@@ -5,7 +5,8 @@ data class LyricLine(
     val text: String,
     val isSynced: Boolean,
     val words: List<TimedWord> = emptyList(),
-    val voice: LyricVoice? = null
+    val voice: LyricVoice? = null,
+    val adlib: LyricAdlib? = null
 )
 
 /**

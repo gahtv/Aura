@@ -3,6 +3,7 @@
 package com.hans.aura.ui.common
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,6 +36,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +49,7 @@ import com.hans.aura.R
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
@@ -82,9 +86,19 @@ fun ArtworkCard(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) AuraMotion.artworkFocusedScale else 1f,
+        animationSpec = AuraMotion.artworkFocusSpring,
+        label = "artworkFocusScale"
+    )
     Column(
         modifier = Modifier
             .width(size)
+            .zIndex(if (focused) 2f else if (scale > 1f) 1f else 0f)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .then(
                 if (focusKeeper != null) {
                     Modifier.focusRequester(focusKeeper.requesterFor(item.id))
@@ -400,6 +414,7 @@ fun ItemShelf(
                     .fillMaxWidth()
                     .onGloballyPositioned { viewportPx = it.size.width }
                     .horizontalScroll(scroll)
+                    .padding(vertical = AuraMotion.artworkFocusInset(size))
                     .focusRestorer(),
                 horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md)
             ) {

@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,6 +50,7 @@ import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.FocusOutline
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
@@ -229,9 +231,12 @@ fun GenreScreen(
                 state = rememberLazyGridState(),
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 32.dp)
                     .focusRequester(contentFocus)
                     .focusRestorer(),
+                contentPadding = PaddingValues(
+                    horizontal = 32.dp,
+                    vertical = AuraMotion.artworkFocusInset(210.dp)
+                ),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {

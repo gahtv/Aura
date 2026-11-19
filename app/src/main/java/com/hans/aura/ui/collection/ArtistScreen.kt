@@ -52,6 +52,7 @@ import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
@@ -248,9 +249,12 @@ fun ArtistScreen(
                         Spacer(Modifier.height(12.dp))
                         Row(
                             Modifier
-                                .padding(horizontal = 48.dp)
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState())
+                                .padding(
+                                    horizontal = 48.dp,
+                                    vertical = AuraMotion.artworkFocusInset(180.dp)
+                                )
                                 .focusRestorer(),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {

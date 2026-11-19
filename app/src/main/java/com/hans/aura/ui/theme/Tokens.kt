@@ -1,5 +1,6 @@
 package com.hans.aura.ui.theme
 
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -8,6 +9,14 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Typography
+
+object AuraMotion {
+    const val artworkFocusedScale = 1.06f
+    val artworkFocusSpring = spring<Float>(dampingRatio = 0.75f, stiffness = 400f)
+
+    /** Full growth reserves room for the caption and the spring's overshoot. */
+    fun artworkFocusInset(size: Dp): Dp = size * (artworkFocusedScale - 1f)
+}
 
 /**
  * Aura design tokens — one 10-foot (1080p, D-pad) scale for the whole app.

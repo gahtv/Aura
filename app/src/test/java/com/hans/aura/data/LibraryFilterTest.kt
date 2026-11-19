@@ -372,6 +372,25 @@ class LibraryFilterTest {
     }
 
     @Test
+    fun `count-only requests retain visible totals for items and artists`() = runTest {
+        Prefs.knownLibraries = Fixtures.allLibraries.filter { it.id in setOf("lib-music", "lib-atmos", "lib-mixed") }
+        hide("lib-mixed")
+        val rows = mapOf<String?, List<JellyfinItem>>(
+            "lib-music" to listOf(Fixtures.item("a"), Fixtures.item("b")),
+            "lib-atmos" to listOf(Fixtures.item("c"), Fixtures.item("d"), Fixtures.item("e")),
+            "lib-mixed" to listOf(Fixtures.item("hidden")))
+        val totals = listOf(rows, emptyMap()).flatMap { fixture ->
+            val api = FakeJellyfinApi(itemsByParent = fixture, artistsByParent = fixture, pagedBrowse = true)
+            val items = LibraryFilter.queryItems(api, "u", LibraryFilter.ItemsQuery(includeItemTypes = "Audio", limit = 0))
+            val artists = LibraryFilter.queryAlbumArtists(api, "u", limit = 0)
+            assertTrue(items.items.isEmpty())
+            assertTrue(artists.items.isEmpty())
+            listOf(items.totalRecordCount, artists.totalRecordCount)
+        }
+        assertEquals(listOf(5, 5, 0, 0), totals)
+    }
+
+    @Test
     fun `SortName search retains prefix requests`() = runTest {
         hide("lib-movies", "lib-playlists", "lib-mixed")
         val rows = mapOf<String?, List<JellyfinItem>>(

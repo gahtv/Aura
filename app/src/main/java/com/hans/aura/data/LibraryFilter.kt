@@ -106,7 +106,6 @@ object LibraryFilter {
         }
         return state.mutex.withLock {
             try {
-                if (q.limit <= 0) return@withLock ItemsResponse(startIndex = q.startIndex)
                 if (q.startIndex == 0) state.reset()
                 val failed = mutableMapOf<Int, Throwable>()
                 mergeForward(state, q, failed, fetch)
@@ -322,7 +321,7 @@ object LibraryFilter {
             Log.w(TAG, "all libraries hidden — returning empty result for ${q.includeItemTypes}")
             return ItemsResponse()
         }
-        if (q.sortBy in INCREMENTAL_CURSOR_SORTS && q.searchTerm == null) {
+        if (q.limit > 0 && q.sortBy in INCREMENTAL_CURSOR_SORTS && q.searchTerm == null) {
             val cursorQuery = q.copy(fields = withSortName(q.fields))
             val playlists = q.includeItemTypes?.contains("Playlist", ignoreCase = true) == true
             logStrategy(q.includeItemTypes, libs)
@@ -417,7 +416,7 @@ object LibraryFilter {
             Log.w(TAG, "all music libraries hidden — returning empty artist result")
             return ItemsResponse()
         }
-        if (sortBy in INCREMENTAL_CURSOR_SORTS) {
+        if (limit > 0 && sortBy in INCREMENTAL_CURSOR_SORTS) {
             logStrategy("MusicArtist", libs)
             return cursorPage(api, userId, ItemsQuery(sortBy = sortBy, sortOrder = sortOrder,
                 limit = limit, startIndex = startIndex, fields = fields, imageTypeLimit = imageTypeLimit),

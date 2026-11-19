@@ -37,6 +37,7 @@ import com.hans.aura.ui.common.ContextMenus
 import com.hans.aura.ui.common.InitialFocusOnPush
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.ui.player.nextRepeatMode
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -109,12 +110,7 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
                     else -> "Repeat off"
                 },
                 active = repeatMode != Player.REPEAT_MODE_OFF,
-                onClick = {
-                    player.setRepeat(
-                        if (repeatMode == Player.REPEAT_MODE_OFF) Player.REPEAT_MODE_ALL
-                        else Player.REPEAT_MODE_OFF
-                    )
-                }
+                onClick = { player.setRepeat(nextRepeatMode(repeatMode)) }
             )
             // Only meaningful while something is actually queued behind the
             // current track; the current track keeps playing either way.

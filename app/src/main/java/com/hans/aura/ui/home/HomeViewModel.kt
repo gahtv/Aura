@@ -11,6 +11,8 @@ import com.hans.aura.data.MusicSources
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -129,68 +131,81 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
             }
             .getOrNull()
 
-    private suspend fun fetchMissing(uid: String) {
+    private suspend fun fetchMissing(uid: String) = coroutineScope {
         // Browse queries go through SourceQueries: the installed source decides
         // how (or whether) to answer, and hidden libraries still apply on Jellyfin.
         if (_state.value.historyShelves && _state.value.recentlyPlayed == null) {
-            val items = shelf("recently played") { SourceQueries.recentlyPlayed(limit = 20) }
-            items?.let { LibraryCache.put("home_recent:$uid", it) }
-            _state.update { it.copy(recentlyPlayed = items) }
+            launch {
+                val items = shelf("recently played") { SourceQueries.recentlyPlayed(limit = 20) }
+                items?.let { LibraryCache.put("home_recent:$uid", it) }
+                _state.update { it.copy(recentlyPlayed = items) }
+            }
         }
         if (_state.value.historyShelves && _state.value.recentArtists == null) {
-            val items = shelf("recently played artists") { SourceQueries.recentArtists(limit = 20) }
-            items?.let { LibraryCache.put("home_recent_artists:$uid", it) }
-            _state.update { it.copy(recentArtists = items) }
-        }
-        if (_state.value.recentAlbums == null) {
-            val items = shelf("recently added") {
-                SourceQueries.items(LibraryFilter.ItemsQuery(
-                        includeItemTypes = "MusicAlbum", recursive = true,
-                        sortBy = "DateCreated", sortOrder = "Descending", limit = 20
-                    )
-                ).items
+            launch {
+                val items = shelf("recently played artists") { SourceQueries.recentArtists(limit = 20) }
+                items?.let { LibraryCache.put("home_recent_artists:$uid", it) }
+                _state.update { it.copy(recentArtists = items) }
             }
-            items?.let { LibraryCache.put("home_new:$uid", it) }
-            _state.update { it.copy(recentAlbums = items) }
         }
-        if (_state.value.atmosAlbums == null) {
-            val items = shelf("atmos") {
-                // Reuse the session-cached AtmosCatalog — never a second
-                // whole-library scan. Its ids are matched against the already
-                // fetched "Recently added" page first (zero extra queries); only
-                // when that page holds no Atmos album do we page the album list.
-                val atmosIds = SourceQueries.atmosAlbumIds()
-                if (atmosIds.isEmpty()) {
-                    emptyList()
-                } else {
-                    _state.value.recentAlbums.orEmpty().filter { it.id in atmosIds }.take(20)
-                        .ifEmpty {
-                            SourceQueries.items(LibraryFilter.ItemsQuery(
-                                    includeItemTypes = "MusicAlbum", recursive = true,
-                                    sortBy = "DateCreated", sortOrder = "Descending", limit = 120
-                                )
-                            ).items.filter { it.id in atmosIds }.take(20)
-                        }
+        val recentAlbums = if (_state.value.recentAlbums == null) {
+            async {
+                val items = shelf("recently added") {
+                    SourceQueries.items(LibraryFilter.ItemsQuery(
+                            includeItemTypes = "MusicAlbum", recursive = true,
+                            sortBy = "DateCreated", sortOrder = "Descending", limit = 20
+                        )
+                    ).items
                 }
+                items?.let { LibraryCache.put("home_new:$uid", it) }
+                _state.update { it.copy(recentAlbums = items) }
             }
-            items?.let { LibraryCache.put("home_atmos:$uid", it) }
-            _state.update { it.copy(atmosAlbums = items) }
+        } else null
+        if (_state.value.atmosAlbums == null) {
+            launch {
+                val items = shelf("atmos") {
+                    // Reuse the session-cached AtmosCatalog — never a second
+                    // whole-library scan. Its ids are matched against the already
+                    // fetched "Recently added" page first (zero extra queries); only
+                    // when that page holds no Atmos album do we page the album list.
+                    val atmosIds = SourceQueries.atmosAlbumIds()
+                    recentAlbums?.await()
+                    if (atmosIds.isEmpty()) {
+                        emptyList()
+                    } else {
+                        _state.value.recentAlbums.orEmpty().filter { it.id in atmosIds }.take(20)
+                            .ifEmpty {
+                                SourceQueries.items(LibraryFilter.ItemsQuery(
+                                        includeItemTypes = "MusicAlbum", recursive = true,
+                                        sortBy = "DateCreated", sortOrder = "Descending", limit = 120
+                                    )
+                                ).items.filter { it.id in atmosIds }.take(20)
+                            }
+                    }
+                }
+                items?.let { LibraryCache.put("home_atmos:$uid", it) }
+                _state.update { it.copy(atmosAlbums = items) }
+            }
         }
         if (_state.value.artists == null) {
-            val items = shelf("artists") { SourceQueries.artists(limit = 100).items }
-            items?.let { LibraryCache.put("home_artists:$uid", it) }
-            _state.update { it.copy(artists = items) }
+            launch {
+                val items = shelf("artists") { SourceQueries.artists(limit = 100).items }
+                items?.let { LibraryCache.put("home_artists:$uid", it) }
+                _state.update { it.copy(artists = items) }
+            }
         }
         if (_state.value.playlists == null) {
-            // Empty on a source without playlists: the shelf is then not drawn.
-            val items = shelf("playlists") {
-                SourceQueries.items(
-                    includeItemTypes = "Playlist", recursive = true,
-                    sortBy = "SortName", limit = 50
-                ).items
+            launch {
+                // Empty on a source without playlists: the shelf is then not drawn.
+                val items = shelf("playlists") {
+                    SourceQueries.items(
+                        includeItemTypes = "Playlist", recursive = true,
+                        sortBy = "SortName", limit = 50
+                    ).items
+                }
+                items?.let { LibraryCache.put("home_playlists:$uid", it) }
+                _state.update { it.copy(playlists = items) }
             }
-            items?.let { LibraryCache.put("home_playlists:$uid", it) }
-            _state.update { it.copy(playlists = items) }
         }
     }
 }

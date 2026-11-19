@@ -4,6 +4,7 @@ package com.hans.aura.ui.collection
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.foundation.border
@@ -18,12 +19,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,11 +41,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
+import com.hans.aura.data.ArtistArtwork
 import com.hans.aura.data.AuthStore
+import com.hans.aura.data.artistArtwork
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.darken
 import com.hans.aura.ui.theme.rememberDynamicColors
@@ -85,7 +96,8 @@ fun ArtistScreen(
     // Dynamic color wash from the artist image, kept dark for text contrast.
     // The hydrated item is preferred: a stub artist (id + name only) carries no
     // PrimaryImageTag, so the palette would have nothing to read.
-    val shownArtist = state.fetchedArtist ?: artist
+    val shownArtist = state.shown(artist)
+    val artwork = shownArtist.artistArtwork(session.serverUrl)
     val artUrl = shownArtist.primaryImageTag?.let {
         AuthStore.imageUrl(session.serverUrl, shownArtist.id, it, maxWidth = 480)
     }
@@ -153,21 +165,9 @@ fun ArtistScreen(
             )
     ) {
         Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 48.dp, vertical = 28.dp)
-                .background(
-                    Color(0x990E0C0A),
-                    AuraShapes.card
-                )
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        ArtistHeader(artwork) {
             Column(Modifier.weight(1f)) {
-                androidx.tv.material3.Text(
-                    shownArtist.name, style = MaterialTheme.typography.displaySmall, color = TextPrimary
-                )
+                ArtistTitle(shownArtist.name, artwork.logoUrl)
                 bio?.let { text ->
                     androidx.tv.material3.Text(
                         text,
@@ -344,6 +344,70 @@ fun ArtistScreen(
             )
         }
     }
+}
+
+@Composable
+private fun ArtistHeader(artwork: ArtistArtwork, content: @Composable RowScope.() -> Unit) {
+    var bannerLoaded by remember(artwork.bannerUrl) { mutableStateOf(false) }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 48.dp, vertical = 28.dp)
+            .clip(AuraShapes.card)
+            .background(Color(0x990E0C0A))
+    ) {
+        artwork.bannerUrl?.let { url ->
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                onSuccess = { bannerLoaded = true },
+                onError = { bannerLoaded = false },
+                modifier = Modifier.matchParentSize()
+            )
+            if (bannerLoaded) {
+                Box(
+                    Modifier.matchParentSize().background(
+                        Brush.horizontalGradient(listOf(Color(0xCC101010), Color(0x66101010)))
+                    )
+                )
+            }
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = if (bannerLoaded) 136.dp else 0.dp)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun ArtistTitle(name: String, logoUrl: String?) {
+    if (logoUrl != null) {
+        val context = LocalContext.current
+        val request = remember(context, logoUrl) {
+            ImageRequest.Builder(context)
+                .data(logoUrl)
+                .size(640, 160)
+                .bitmapConfig(android.graphics.Bitmap.Config.ARGB_8888)
+                .build()
+        }
+        val painter = rememberAsyncImagePainter(request)
+        if (painter.state is AsyncImagePainter.State.Success) {
+            Image(
+                painter = painter,
+                contentDescription = name,
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.CenterStart,
+                modifier = Modifier.widthIn(max = 320.dp).height(64.dp)
+            )
+            return
+        }
+    }
+    androidx.tv.material3.Text(name, style = MaterialTheme.typography.displaySmall, color = TextPrimary)
 }
 
 /**

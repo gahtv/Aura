@@ -139,8 +139,17 @@ class AuthStore(context: Context) {
             maxWidth: Int = 600
         ): String? =
             MusicSources.current?.takeIf { it.servesArtwork }?.artworkUrl(itemId, tag, maxWidth)
-                ?: ("$serverUrl/Items/$itemId/Images/Primary?maxWidth=$maxWidth" +
-                    (tag?.let { "&tag=$it" } ?: ""))
+                ?: jellyfinImageUrl(serverUrl, itemId, "Primary", tag, maxWidth)
+
+        internal fun jellyfinImageUrl(
+            serverUrl: String,
+            itemId: String,
+            type: String,
+            tag: String?,
+            maxWidth: Int
+        ): String =
+            "$serverUrl/Items/$itemId/Images/$type?maxWidth=$maxWidth" +
+                (tag?.let { "&tag=$it" } ?: "")
 
         /** Short host form for logs: http://192.168.2.10:8096/ -> 192.168.2.10:8096 */
         fun host(url: String?): String = url

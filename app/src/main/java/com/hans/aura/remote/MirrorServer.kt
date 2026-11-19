@@ -14,6 +14,10 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
 import java.util.UUID
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +54,7 @@ object MirrorServer {
     private const val PORT = 8099
     private const val PREFS = "aura_mirror"
     private const val PAIR_TIMEOUT_MS = 90_000L
+    private const val READ_TIMEOUT_MS = 2_000
 
     data class Snapshot(
         val screen: String,
@@ -80,6 +85,8 @@ object MirrorServer {
     private var appContext: Context? = null
     private val main = Handler(Looper.getMainLooper())
     private val prefsLock = Any()
+    private val pairingLock = Any()
+    private val pairRequestLock = Any()
 
     private data class QueueEntry(val id: String, val title: String, val artist: String)
     @Volatile private var queue: List<QueueEntry> = emptyList()
@@ -123,16 +130,20 @@ object MirrorServer {
     fun isPaired(): Boolean = token != null
 
     fun unpair() {
-        token = null
-        appContext?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()?.remove("token")?.apply()
+        synchronized(prefsLock) {
+            token = null
+            appContext?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()?.remove("token")?.apply()
+        }
         AuraLog.i(AuraTag.MIRROR, "unpaired")
     }
 
     /** Called by the on-TV prompt. */
     fun answerPairing(allowed: Boolean) {
-        pendingPair?.complete(allowed)
-        pendingPair = null
-        _pairing.value = null
+        synchronized(pairingLock) {
+            pendingPair?.complete(allowed)
+            pendingPair = null
+            _pairing.value = null
+        }
     }
 
     fun publish(screen: String, itemId: String? = null, title: String? = null) {
@@ -172,18 +183,33 @@ object MirrorServer {
         )
     }
 
+    @Synchronized
     fun start() {
         if (started) return
         started = true
         Thread({
+            val workers = ThreadPoolExecutor(
+                8, 8, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue<Runnable>(16),
+                { task -> Thread(task, "aura-mirror-client").apply { isDaemon = true } }
+            )
             try {
                 ServerSocket(PORT).use { server ->
                     AuraLog.i(AuraTag.MIRROR, "listening on 0.0.0.0:$PORT")
-                    while (true) handle(server.accept())
+                    while (true) {
+                        val socket = server.accept()
+                        try {
+                            socket.soTimeout = READ_TIMEOUT_MS
+                            workers.execute { handle(socket) }
+                        } catch (_: RejectedExecutionException) {
+                            socket.close()
+                        }
+                    }
                 }
             } catch (t: Throwable) {
                 AuraLog.w(AuraTag.MIRROR, "server stopped: ${t.message}")
                 started = false
+            } finally {
+                workers.shutdownNow()
             }
         }, "aura-mirror").apply { isDaemon = true }.start()
     }
@@ -221,7 +247,8 @@ object MirrorServer {
                 // An unpaired device must not be able to do anything: comparing
                 // a missing header against a null token would otherwise let
                 // null == null through.
-                val authorised = token != null && headers["x-aura-token"] == token
+                val currentToken = token
+                val authorised = currentToken != null && headers["x-aura-token"] == currentToken
                 if (!open && !authorised) {
                     AuraLog.w(AuraTag.MIRROR, "rejected $path: bad token")
                     reply(401, """{"error":"unauthorized"}""")
@@ -271,25 +298,32 @@ object MirrorServer {
      * Blocks the calling HTTP thread while the TV shows the prompt. Times out to
      * a denial, so a remote that is ignored never ends up paired by accident.
      */
-    private fun promptAndPair(name: String): String? {
+    private fun promptAndPair(name: String): String? = synchronized(pairRequestLock) {
         val deferred = CompletableDeferred<Boolean>()
-        pendingPair = deferred
-        _pairing.value = PairingRequest(name)
+        synchronized(pairingLock) {
+            pendingPair = deferred
+            _pairing.value = PairingRequest(name)
+        }
         AuraLog.i(AuraTag.MIRROR, "pairing request from $name")
 
         val allowed = runBlocking { withTimeoutOrNull(PAIR_TIMEOUT_MS) { deferred.await() } } ?: false
-        _pairing.value = null
+        synchronized(pairingLock) {
+            pendingPair = null
+            _pairing.value = null
+        }
         if (!allowed) {
             AuraLog.i(AuraTag.MIRROR, "pairing denied for $name")
-            return null
+            return@synchronized null
         }
 
         val issued = UUID.randomUUID().toString().replace("-", "")
-        token = issued
-        appContext?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            ?.edit()?.putString("token", issued)?.apply()
+        synchronized(prefsLock) {
+            token = issued
+            appContext?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                ?.edit()?.putString("token", issued)?.apply()
+        }
         AuraLog.i(AuraTag.MIRROR, "paired $name")
-        return issued
+        issued
     }
 
     private fun stateJson(): String {

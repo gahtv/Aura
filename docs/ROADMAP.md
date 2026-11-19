@@ -8,18 +8,6 @@ lyrics, mirroring and pairing.
 
 ## Shipped
 
-**Under the hood** (0.5.0)
-- The app was restructured so screens, navigation and playback each have one owner: one
-  destination table instead of three copies of the same mapping, screen state that survives
-  navigation instead of dying with the view, and a single place where the player is wired up.
-  Behaviour is unchanged — the visible differences are the fixes listed in the release notes
-  (no phantom Now Playing screen at launch, and the correct app version reported to the server).
-
-**Under the hood**
-- Browse queries now ask the app's library source rather than one server's API, so the backend a
-  build talks to is a wiring decision instead of something every screen repeats. Behaviour is
-  unchanged.
-
 **Playback**
 - Direct play of E-AC-3 JOC (Dolby Atmos) M4A from Jellyfin, bitstream untouched to an Atmos-capable
   receiver. No transcoding, no downmix, no in-app attenuation.
@@ -39,6 +27,9 @@ lyrics, mirroring and pairing.
 - Synced LRC lyrics, top-anchored with the current line held in view.
 - Word-by-word karaoke when enhanced LRC, Jellyfin cues or TTML provide word timings;
   singer/duet metadata changes lyric alignment and colour. Plain LRC stays line-synced.
+- Same-timestamp LRC translation pairs display beneath their lead lines.
+- Breathing dots fill during synced intros and known instrumental breaks of at least 4 seconds;
+  blank timestamp rows no longer appear as empty lyrics. [Format details](LYRICS.md).
 - Artwork-accented Play/Pause, an animated wavy seek bar while playing, and stronger
   current-line typography. Cards and controls share rounded shapes and TV focus styling.
 - Transport controls, jump ±10 s, queue view, and a now-playing pill in the top bar.

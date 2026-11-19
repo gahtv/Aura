@@ -125,11 +125,6 @@ renderer and its decoder budget are infrastructure, not an animated-cover featur
 the current Jellyfin build. Source caches for bios and lyrics clear on manual refresh;
 missing server lyrics are not cached as permanent failures.
 
-`LyricsStore`, `TimedLyrics`, `TtmlLyrics` and `LyricVoice` preserve line/word timing and
-singer metadata from enhanced LRC, Jellyfin cues and TTML. `LyricsPane` highlights words
-only when word timings exist; ordinary LRC remains line-synced. LRCLIB is an opt-in
-fallback, and does not require a configured app-id header.
-
 ## Navigation contract
 
 `ui/nav/Destinations.kt` holds the single source of truth. Every destination is a case of an
@@ -346,6 +341,16 @@ has nothing and the setting is on, `Lrclib` queries `lrclib.net/api/get` (fallba
 `/api/search`) identifying itself with a versioned client header and, when configured,
 `Lrclib-App-Id` from `BuildConfig.LRCLIB_APP_ID` (root `.env`, never in source);
 hits and misses are cached, errors are not.
+
+`LyricsStore.pairSameStampTranslations` groups adjacent same-stamp LRC source rows
+before offset clamping and sorting, retaining repeated-stamp copies and timed
+translation segments. Cue-only/inline-only Jellyfin lines without `Start` do not pair.
+`LyricLine.endMs` / `TimedLyricLine.endMs` carry explicit line ends from TTML,
+Jellyfin cues or enhanced LRC; `foldBlankLines` folds blank synced rows into the
+previous line's end. `lyricBreaks` requires a gap of at least 4 seconds after all
+earlier vocals (including timed adlibs) end. `LyricsPane` gives the active break's
+non-focusable dots the current-line scroll anchor and removes current-line styling
+from the ended lyric. See [lyrics formats and timing](LYRICS.md) for edge cases.
 
 Search runs one query with `IncludeItemTypes=Audio,MusicAlbum,MusicArtist,Playlist` and splits
 results client-side into three stacked shelves — no tabs. The field auto-focuses on entry,

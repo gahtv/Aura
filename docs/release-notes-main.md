@@ -19,6 +19,14 @@ record of their original releases, including the checks reported at the time.
   TTML relative span times resolve against their paragraph, and lines sort by playback time.
 - Singer markers are retained and duet/group lyrics receive distinct alignment/colour.
   Lyrics without word timing still highlight whole lines; unmarked lyrics stay centred.
+- Adjacent same-timestamp LRC rows pair as lead and translation, with the translation
+  shown beneath the lead. This applies to raw LRC (including LRCLIB) and Jellyfin
+  structured lines with `Start`; cue-only lines and explicit different-voice replies
+  remain separate. Repeated-stamp copies retain their translations.
+- Three breathing dots fill during synced intros and known instrumental gaps of at
+  least 4 seconds. Blank timestamp rows mark the previous line's end instead of
+  rendering empty rows. Without explicit line ends, only intro dots can be inferred;
+  no outro is guessed. See [lyrics formats and timing](LYRICS.md).
 
 ## TV polish
 

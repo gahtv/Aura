@@ -1,6 +1,8 @@
 package com.hans.aura.data
 
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Knows which albums and tracks contain an E-AC-3 JOC (Dolby Atmos) stream.
@@ -22,12 +24,13 @@ object AtmosCatalog {
     )
 
     private val cache = ConcurrentHashMap<String, Catalog>()
+    private val scanMutex = Mutex()
 
-    suspend fun catalog(api: JellyfinApi, userId: String): Catalog {
+    suspend fun catalog(api: JellyfinApi, userId: String): Catalog = scanMutex.withLock {
         val key = userId + LibraryFilter.cacheSuffix()
         cache[key]?.let {
             AtmosFilter.adopt(it)
-            return it
+            return@withLock it
         }
         val atmosAlbums = HashSet<String>()
         val atmosTracks = HashSet<String>()
@@ -75,7 +78,7 @@ object AtmosCatalog {
         val result = Catalog(atmosAlbums.toSet(), atmosTracks.toSet())
         cache[key] = result
         AtmosFilter.adopt(result)
-        return result
+        result
     }
 
     /** Badge-only callers keep this shorthand (Home shelf, artist covers, search). */

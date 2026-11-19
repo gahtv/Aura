@@ -326,6 +326,13 @@ class PlayerConnection(
     fun next() { controller()?.seekToNextMediaItem() }
     fun previous() { controller()?.seekToPreviousMediaItem() }
     fun seekTo(ms: Long) { controller()?.seekTo(ms) }
+    fun seekBy(deltaMs: Long) = onMainThread {
+        val c = controller() ?: return@onMainThread
+        val duration = c.duration
+        if (duration <= 0) return@onMainThread
+        val position = c.currentPosition.coerceIn(0, duration)
+        c.seekTo(position + deltaMs.coerceIn(-position, duration - position))
+    }
     fun skipToQueue(index: Int) { controller()?.seekTo(index, 0) }
 
     fun removeFromQueue(index: Int) = onMainThread {

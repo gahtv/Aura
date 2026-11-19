@@ -77,9 +77,7 @@ internal fun TransportBar(
             isPlaying = isPlaying,
             accent = accent,
             modifier = Modifier.focusProperties { down = playPauseFocus },
-            onSeek = { delta ->
-                if (duration > 0) player.seekTo((position.coerceIn(0, duration) + delta).coerceIn(0, duration))
-            }
+            onSeek = player::seekBy
         )
         Spacer(Modifier.height(AuraSpacing.xs))
         Row(Modifier.fillMaxWidth()) {

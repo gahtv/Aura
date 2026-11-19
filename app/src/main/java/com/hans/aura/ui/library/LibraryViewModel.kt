@@ -133,10 +133,22 @@ class LibraryViewModel(
 
     private val userId: String get() = app.jellyfin.auth.session?.userId ?: ""
     private val api: JellyfinApi get() = app.jellyfin.api
+    private val playlistUserId = userId.takeIf { kind == "Playlists" }
+    private var playlistRevisionSeen = 0L
 
     init {
         reload()
+        if (playlistUserId != null) {
+            viewModelScope.launch {
+                app.container.media.playlistRevisions.collect {
+                    if (playlistUserId == userId && playlistRevisionSeen != currentPlaylistRevision()) reload()
+                }
+            }
+        }
     }
+
+    private fun currentPlaylistRevision(): Long =
+        playlistUserId?.let { app.container.media.playlistRevisions.value[it] } ?: 0L
 
     /** Settings > Refresh library (and a library-selection change) bumps this. */
     fun onRefreshKey(key: Int) {
@@ -217,6 +229,7 @@ class LibraryViewModel(
 
     private fun reload() {
         val generation = ++loadGeneration
+        playlistRevisionSeen = currentPlaylistRevision()
         loadJob?.cancel()
         val current = _state.value
         val effective = current.atmosCapable && (current.atmosView || AtmosFilter.on)
@@ -234,6 +247,7 @@ class LibraryViewModel(
         }
         scanAtmos(generation)
         loadJob = viewModelScope.launch {
+            if (!isCurrentLoad(generation)) return@launch
             // Session-scoped paged store first: keeps deep-scroll state alive
             // across BACK so focus restoration can find the exact item.
             val paged = PagedLibrary.get(key)
@@ -252,8 +266,11 @@ class LibraryViewModel(
         }
     }
 
+    private fun isCurrentLoad(generation: Long): Boolean =
+        generation == loadGeneration && playlistRevisionSeen == currentPlaylistRevision()
+
     private suspend fun loadPage(key: String, generation: Long) {
-        if (generation != loadGeneration) return
+        if (!isCurrentLoad(generation)) return
         val snapshot = _state.value
         if (snapshot.loading || snapshot.items.size >= snapshot.total) return
         _state.update { it.copy(loading = true) }
@@ -261,7 +278,7 @@ class LibraryViewModel(
         runCatching {
             withContext(Dispatchers.IO) { fetchPage(snapshot, startIndex) }
         }.onSuccess { result ->
-            if (generation != loadGeneration) return@onSuccess
+            if (!isCurrentLoad(generation)) return@onSuccess
             val merged = snapshot.items + result.items
             // A-Z jump skips the count: pagination ends on a short page instead
             // of trusting a total that belongs to the whole (unfiltered) list.
@@ -275,7 +292,7 @@ class LibraryViewModel(
             LibraryCache.put(key, merged.take(PAGE_SIZE))
         }.onFailure { e ->
             if (e is CancellationException) throw e
-            if (generation != loadGeneration) return@onFailure
+            if (!isCurrentLoad(generation)) return@onFailure
             Log.w(TAG, "page kind=$kind key=$key failed: ${e.message}")
             _state.update {
                 it.copy(loading = false, error = e.message ?: "Couldn't load from server")
@@ -352,8 +369,8 @@ class LibraryViewModel(
             "lib_atmos_${kind.lowercase()}:$userId:${state.sort.sortBy}:${state.desc}:${if (state.likedOnly) "fav" else "all"}"
         state.likedOnly -> "lib_liked:$userId:${state.sort.sortBy}:${state.desc}"
         state.letter != null ->
-            "lib_${kind.lowercase()}:$userId:${state.sort.sortBy}:${state.desc}:az_${state.letter}"
-        else -> "lib_${kind.lowercase()}:$userId:${state.sort.sortBy}:${state.desc}"
+            "${LibraryCache.tabKeyPrefix(kind, userId)}${state.sort.sortBy}:${state.desc}:az_${state.letter}"
+        else -> "${LibraryCache.tabKeyPrefix(kind, userId)}${state.sort.sortBy}:${state.desc}"
     }
 
     private fun logAz(message: String) = Log.d("AURA_AZ", "$message kind=$kind")

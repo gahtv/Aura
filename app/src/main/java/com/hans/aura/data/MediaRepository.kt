@@ -1,6 +1,9 @@
 package com.hans.aura.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 
@@ -13,8 +16,8 @@ import retrofit2.HttpException
  * "hidden library still shows albums" class of bug). ViewModels/state holders
  * now talk to this single object instead:
  *
- *  - every suspend method is `withContext(Dispatchers.IO)`, so callers never
- *    block the main thread on a server round-trip;
+ *  - server calls run on `Dispatchers.IO`, so callers never block the main
+ *    thread on a server round-trip;
  *  - cached reads are memory-only and cheap ([cachedPage], [cachedGenres]);
  *  - browse queries still go through [LibraryFilter], so library selection and
  *    the Atmos preference keep their exact existing semantics.
@@ -26,6 +29,8 @@ class MediaRepository(
     private val jellyfin: JellyfinClient,
     private val sessionProvider: () -> Session? = { jellyfin.auth.session }
 ) {
+    private val _playlistRevisions = MutableStateFlow<Map<String, Long>>(emptyMap())
+    internal val playlistRevisions = _playlistRevisions.asStateFlow()
 
     private fun api(): JellyfinApi = jellyfin.api
 
@@ -115,6 +120,26 @@ class MediaRepository(
 
     fun storePage(key: String, items: List<JellyfinItem>, total: Int) {
         PagedLibrary.put(key, items, total)
+    }
+
+    suspend fun createPlaylist(userId: String, name: String, trackIds: List<String>): JellyfinItem {
+        val created = withContext(Dispatchers.IO) {
+            api().createPlaylist(
+                name = name,
+                ids = trackIds.joinToString(","),
+                userId = userId,
+                body = PlaylistRequest(name = name, ids = trackIds, userId = userId)
+            )
+        }
+        // Serialize invalidation with LibraryViewModel's page writes on Main.
+        withContext(Dispatchers.Main.immediate) {
+            LibraryCache.evict("home_playlists:$userId")
+            val prefix = LibraryCache.tabKeyPrefix("Playlists", userId)
+            LibraryCache.evictWhere { it.startsWith(prefix) }
+            PagedLibrary.evictWhere { it.startsWith(prefix) }
+            _playlistRevisions.update { it + (userId to ((it[userId] ?: 0L) + 1)) }
+        }
+        return created
     }
 
     /** Item detail (never filtered: detail screens must open for any id). */

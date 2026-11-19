@@ -13,6 +13,55 @@ internal object TtmlLyrics {
 
     private fun normalize(text: String): String = text.replace(whitespace, " ").trim()
 
+    private class Background {
+        private data class Timing(val depth: Int, val start: Double?, val end: Double)
+
+        private val timings = ArrayDeque<Timing>()
+        private val segments = mutableListOf<AdlibSegment>()
+        private var pendingSpace = false
+        private var endMs: Long? = null
+        val inside: Boolean get() = timings.isNotEmpty()
+
+        fun enter(depth: Int, begin: Double?, end: Double?, duration: Double?) {
+            val parent = timings.lastOrNull()
+            val start = begin ?: parent?.start
+            val limit = minOf(
+                parent?.end ?: Double.POSITIVE_INFINITY,
+                end ?: Double.POSITIVE_INFINITY,
+                duration?.let { start?.plus(it) } ?: Double.POSITIVE_INFINITY
+            )
+            timings.addLast(Timing(depth, start, limit))
+        }
+
+        fun leave(depth: Int) {
+            if (timings.lastOrNull()?.depth == depth) timings.removeLast()
+        }
+
+        fun space() {
+            pendingSpace = true
+        }
+
+        fun append(text: String) {
+            if (text.isEmpty()) return
+            val normalized = text.replace(whitespace, " ")
+            val content = normalized.trim()
+            if (content.isNotEmpty()) {
+                val separator = if (segments.isNotEmpty() && (pendingSpace || normalized.startsWith(' '))) " " else ""
+                val timing = timings.last()
+                val start = timing.start?.takeIf { it < timing.end }
+                segments += AdlibSegment(separator + content, start?.roundToLong())
+                if (start != null && timing.end.isFinite()) {
+                    val end = timing.end.roundToLong()
+                    endMs = maxOf(end, endMs ?: end)
+                }
+            }
+            pendingSpace = normalized.endsWith(' ')
+        }
+
+        fun toAdlib(): LyricAdlib? =
+            segments.takeIf { it.isNotEmpty() }?.let { LyricAdlib(it.toList(), endMs) }
+    }
+
     private data class Rates(
         val frame: Int = 30,
         val effectiveFrame: Double = 30.0,
@@ -110,6 +159,7 @@ internal object TtmlLyrics {
         var songwriterDepth = -1
         val songwriterText = StringBuilder()
         val text = StringBuilder()
+        var background = Background()
         val wordText = StringBuilder()
         var words = mutableListOf<Word>()
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
@@ -132,11 +182,9 @@ internal object TtmlLyrics {
                         else -> false
                     }
                     val begin = if (timedElement) rates.timeMs(parser.getAttributeValue(null, "begin")) else null
-                    val interval = if (timedElement) parent.child(
-                        begin,
-                        rates.timeMs(parser.getAttributeValue(null, "end")),
-                        rates.timeMs(parser.getAttributeValue(null, "dur"))
-                    ) else parent
+                    val end = if (timedElement) rates.timeMs(parser.getAttributeValue(null, "end")) else null
+                    val duration = if (timedElement) rates.timeMs(parser.getAttributeValue(null, "dur")) else null
+                    val interval = if (timedElement) parent.child(begin, end, duration) else parent
                     intervals.add(interval)
                     if (parser.name == "agent" && parser.namespace == metadataNamespace) {
                         parser.getAttributeValue("http://www.w3.org/XML/1998/namespace", "id")?.let {
@@ -149,13 +197,23 @@ internal object TtmlLyrics {
                         legacyWordTimes = parser.getAttributeValue(null, "timeContainer") == null
                         lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
                         text.clear()
+                        background = Background()
                         words = mutableListOf()
                     }
                     if (lineDepth >= 0 && skipDepth < 0) {
                         val role = (0 until parser.attributeCount).firstOrNull { parser.getAttributeName(it) == "role" }
                             ?.let { parser.getAttributeValue(it) }
-                        if (role == "x-bg" || role == "x-translation") skipDepth = parser.depth
-                        else if (parser.name == "span") {
+                        if (role == "x-translation") {
+                            skipDepth = parser.depth
+                        } else if (background.inside || role == "x-bg") {
+                            if (!background.inside || parser.name == "br") background.space()
+                            if (legacyWordTimes) {
+                                // Apple-style background cues use the track clock and may overlap the lead.
+                                background.enter(parser.depth, begin, end, duration)
+                            } else {
+                                background.enter(parser.depth, interval.start.takeIf { begin != null }, interval.end, null)
+                            }
+                        } else if (parser.name == "span") {
                             if (lineAgent == null) {
                                 lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
                             }
@@ -169,8 +227,12 @@ internal object TtmlLyrics {
                 XmlPullParser.TEXT -> {
                     if (songwriterDepth >= 0) songwriterText.append(parser.text)
                     if (lineDepth >= 0 && skipDepth < 0) {
-                        text.append(parser.text)
-                        if (wordDepth >= 0) wordText.append(parser.text)
+                        if (background.inside) {
+                            background.append(parser.text)
+                        } else {
+                            text.append(parser.text)
+                            if (wordDepth >= 0) wordText.append(parser.text)
+                        }
                     }
                 }
                 XmlPullParser.END_TAG -> {
@@ -188,6 +250,7 @@ internal object TtmlLyrics {
                         wordDepth = -1
                     }
                     if (parser.depth == skipDepth) skipDepth = -1
+                    background.leave(parser.depth)
                     if (parser.depth == lineDepth) {
                         val line = normalize(text.toString())
                         val begin = lineBegin
@@ -202,7 +265,7 @@ internal object TtmlLyrics {
                         val start = if (begin != null) interval.start.roundToLong()
                             else timedWords.firstOrNull()?.startMs ?: interval.start.roundToLong().takeIf { interval.timed }
                         if (line.isNotEmpty() && interval.start < interval.end) {
-                            lines += LyricLine(start ?: 0L, line, start != null, timedWords, voice(lineAgent))
+                            lines += LyricLine(start ?: 0L, line, start != null, timedWords, voice(lineAgent), background.toAdlib())
                         }
                         lineDepth = -1
                     }

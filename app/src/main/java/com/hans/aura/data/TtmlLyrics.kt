@@ -7,6 +7,11 @@ import kotlin.math.roundToLong
 internal object TtmlLyrics {
     private const val metadataNamespace = "http://www.w3.org/ns/ttml#metadata"
     private const val parameterNamespace = "http://www.w3.org/ns/ttml#parameter"
+    private val appleLyricNamespaces = setOf(
+        "http://music.apple.com/lyric-ttml-internal",
+        "http://music.apple.com/lyrics",
+        "http://itunes.apple.com/lyric-ttml-extensions"
+    )
     private val whitespace = Regex("""\s+""")
     private val clockTime = Regex("""(?:(\d+):)?(\d+):(\d{2})(?:(\.\d+)|:(\d{2,})(?:\.(\d+))?)?""")
     private val offsetTime = Regex("""(\d+(?:\.\d+)?)(ms|h|m|s|f|t)?""")
@@ -113,11 +118,12 @@ internal object TtmlLyrics {
         val end: Double = Double.POSITIVE_INFINITY,
         val timed: Boolean = false
     ) {
-        fun child(begin: Double?, end: Double?, duration: Double?): Interval {
-            val childStart = start + (begin ?: 0.0)
+        fun child(begin: Double?, end: Double?, duration: Double?, trackTimes: Boolean): Interval {
+            val referenceStart = if (trackTimes) 0.0 else start
+            val childStart = begin?.let { referenceStart + it } ?: start
             val childEnd = minOf(
                 this.end,
-                end?.let { start + it } ?: Double.POSITIVE_INFINITY,
+                end?.let { referenceStart + it } ?: Double.POSITIVE_INFINITY,
                 duration?.let { childStart + it } ?: Double.POSITIVE_INFINITY
             )
             return Interval(childStart, childEnd, timed || begin != null)
@@ -149,6 +155,7 @@ internal object TtmlLyrics {
         var skipDepth = -1
         var wordDepth = -1
         var rates = Rates()
+        var appleTrackTimes = false
         val intervals = mutableListOf(Interval())
         var lineBegin: Double? = null
         var legacyWordTimes = false
@@ -175,8 +182,14 @@ internal object TtmlLyrics {
                             songwriterText.clear()
                         }
                     }
-                    if (parser.depth == 1 && parser.name == "tt") rates = parser.rates()
+                    if (parser.depth == 1 && parser.name == "tt") {
+                        rates = parser.rates()
+                        appleTrackTimes = (0 until parser.getNamespaceCount(parser.depth)).any {
+                            parser.getNamespaceUri(it) in appleLyricNamespaces
+                        }
+                    }
                     val parent = intervals.last()
+                    val referenceStart = if (appleTrackTimes) 0.0 else parent.start
                     val timedElement = when (parser.name) {
                         "body", "div", "p", "span" -> true
                         else -> false
@@ -184,7 +197,7 @@ internal object TtmlLyrics {
                     val begin = if (timedElement) rates.timeMs(parser.getAttributeValue(null, "begin")) else null
                     val end = if (timedElement) rates.timeMs(parser.getAttributeValue(null, "end")) else null
                     val duration = if (timedElement) rates.timeMs(parser.getAttributeValue(null, "dur")) else null
-                    val interval = if (timedElement) parent.child(begin, end, duration) else parent
+                    val interval = if (timedElement) parent.child(begin, end, duration, trackTimes = appleTrackTimes) else parent
                     intervals.add(interval)
                     if (parser.name == "agent" && parser.namespace == metadataNamespace) {
                         parser.getAttributeValue("http://www.w3.org/XML/1998/namespace", "id")?.let {
@@ -207,12 +220,12 @@ internal object TtmlLyrics {
                             skipDepth = parser.depth
                         } else if (background.inside || role == "x-bg") {
                             if (!background.inside || parser.name == "br") background.space()
-                            if (legacyWordTimes) {
+                            if (legacyWordTimes && !appleTrackTimes) {
                                 // Apple-style background cues use the track clock and may overlap the lead.
                                 background.enter(parser.depth, begin, end, duration)
                             } else {
                                 background.enter(parser.depth, interval.start.takeIf { begin != null },
-                                    end?.let { parent.start + it }, duration, interval.end)
+                                    end?.let { referenceStart + it }, duration, interval.end)
                             }
                         } else if (parser.name == "span") {
                             if (lineAgent == null) {
@@ -220,7 +233,7 @@ internal object TtmlLyrics {
                             }
                             if (wordDepth < 0 && begin != null) {
                                 wordDepth = parser.depth
-                                wordEnd = listOfNotNull(end?.let { parent.start + it },
+                                wordEnd = listOfNotNull(end?.let { referenceStart + it },
                                     duration?.let { interval.start + it }).minOrNull()
                                 wordText.clear()
                             }
@@ -258,7 +271,7 @@ internal object TtmlLyrics {
                         val line = normalize(text.toString())
                         val begin = lineBegin
                         // Undeclared lyric paragraphs may use track-relative word timestamps.
-                        val adjustment = if (legacyWordTimes && begin != null &&
+                        val adjustment = if (!appleTrackTimes && legacyWordTimes && begin != null &&
                             words.any { (it.start - interval.start).roundToLong() >= begin.roundToLong() }
                         ) begin else 0.0
                         val timedWords = words.mapNotNull {

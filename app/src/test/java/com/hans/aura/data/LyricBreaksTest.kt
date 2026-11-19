@@ -61,7 +61,7 @@ class LyricBreaksTest {
     @Test
     fun `enhanced lrc trailing stamp is the line end, not a word`() {
         val line = LyricsStore.parseLrcText("[00:02.00]<00:02.00>Hold <00:03.00>this <00:04.00>note<00:06.00>").single()
-        assertEquals(listOf(TimedWord(2_000, "Hold"), TimedWord(3_000, "this"), TimedWord(4_000, "note")), line.words)
+        assertEquals(listOf(TimedWord(2_000, "Hold"), TimedWord(3_000, "this"), TimedWord(4_000, "note", 6_000)), line.words)
         assertEquals(6_000L, line.endMs)
         val repeated = LyricsStore.parseLrcText("[00:02.00][00:20.00]<00:02.00>Hey <00:03.00>you<00:05.00>")
         assertEquals(listOf(5_000L, 23_000L), repeated.map { it.endMs })

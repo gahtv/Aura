@@ -455,6 +455,13 @@ class SourceQueriesTest {
     }
 
     @Test
+    fun `jellyfin timed lyrics preserve credits from the chosen lyrics`() = runTest {
+        body = """{"Metadata":{"Author":"Ada Lane","By":"Sam Ford"},"Lyrics":[{"Text":"Hello","Start":10000000}]}"""
+        val timed = MusicSources.current!!.lyricsTimed("song")!!.single()
+        assertEquals(LyricCredits(listOf("Ada Lane"), listOf("Sam Ford")), timed.credits)
+    }
+
+    @Test
     fun `jellyfin distinguishes explicit zero and single timed lines from plain lyrics`() = runTest {
         val source = MusicSources.current!!
         body = """{"Metadata":{},"Lyrics":[{"Text":"One line","Start":50000000,"Cues":[]}]}"""

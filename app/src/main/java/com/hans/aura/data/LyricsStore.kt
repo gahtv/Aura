@@ -7,9 +7,20 @@ data class LyricLine(
     val words: List<TimedWord> = emptyList(),
     val voice: LyricVoice? = null,
     val adlib: LyricAdlib? = null,
+    val credits: LyricCredits = LyricCredits(),
     /** Song part (verse, chorus, …) the line belongs to; neighbours that differ start a new part. */
     val part: Int = 0
 )
+
+data class LyricCredits(
+    val writers: List<String> = emptyList(),
+    val transcribers: List<String> = emptyList()
+) {
+    internal operator fun plus(other: LyricCredits) = LyricCredits(
+        writers = (writers + other.writers).distinct(),
+        transcribers = (transcribers + other.transcribers).distinct()
+    )
+}
 
 /**
  * Fetches and normalizes lyrics from Jellyfin's /Audio/{id}/lyrics endpoint.
@@ -23,11 +34,22 @@ object LyricsStore {
 
     private val wordTag = Regex("""<(\d+):(\d+(?:\.\d+)?)>""")
     private val whitespace = Regex("""\s+""")
-    private val idTag = Regex("""\[(?:ar|al|ti|au|by|re|ve|tool|length|offset|#):[^\]]*\]""", RegexOption.IGNORE_CASE)
+    private val idTag = Regex("""\[(ar|al|ti|au|lr|by|re|ve|tool|length|offset|#):([^\]]*)\]""", RegexOption.IGNORE_CASE)
     private val offsetTag = Regex("""\[offset:([+-]?\d+)\]""", RegexOption.IGNORE_CASE)
 
     private fun isHeader(text: String): Boolean =
         idTag.containsMatchIn(text) && text.replace(idTag, "").isBlank()
+
+    private fun headerCredits(headers: Sequence<String>): LyricCredits {
+        val tags = headers.flatMap { idTag.findAll(it) }.groupBy(
+            { it.groupValues[1].lowercase() }, { normalize(it.groupValues[2]) }
+        )
+        fun values(tag: String) = tags[tag].orEmpty().filter { it.isNotEmpty() }
+        return LyricCredits(
+            writers = (values("au") + values("lr")).distinct(),
+            transcribers = values("by").distinct()
+        )
+    }
 
     private fun shifted(startMs: Long, offsetMs: Long): Long = (startMs - offsetMs).coerceAtLeast(0L)
 
@@ -49,11 +71,17 @@ object LyricsStore {
     suspend fun fetch(api: JellyfinApi, itemId: String): List<LyricLine> {
         val resp = runCatching { api.getLyrics(itemId) }.getOrNull()
             ?: return emptyList()
+        val metadata = resp.metadata
+        val serverCredits = LyricCredits(
+            writers = listOfNotNull(metadata?.author, metadata?.lyricist).map(::normalize).filter { it.isNotEmpty() }.distinct(),
+            transcribers = listOfNotNull(metadata?.by?.let(::normalize)?.takeIf { it.isNotEmpty() })
+        )
 
         // 1) Structured synced/plain lines
         val dtoLines = resp.lyrics
         if (!dtoLines.isNullOrEmpty()) {
-            val offsetMs = (resp.metadata?.offset ?: 0L) / 10_000L
+            val offsetMs = (metadata?.offset ?: 0L) / 10_000L
+            val credits = serverCredits + headerCredits(dtoLines.asSequence().map { it.text }.filter(::isHeader))
             val firstInlineStart = mutableMapOf<String, Long>()
             return dtoLines.filterNot { isHeader(it.text.trim()) }.map {
                 val original = it.text.trim()
@@ -80,14 +108,15 @@ object LyricsStore {
                     text = if (hasInlineTags) normalize(content.replace(wordTag, "")) else content,
                     isSynced = lineStartMs != null || !it.cues.isNullOrEmpty() || hasInlineTags,
                     words = words.map { word -> word.copy(startMs = shifted(word.startMs, offsetMs)) },
-                    voice = voice
+                    voice = voice,
+                    credits = credits
                 )
             }
         }
 
         // 2) Raw text, possibly LRC-formatted
         val text = resp.lyricText?.takeIf { it.isNotBlank() } ?: return emptyList()
-        return parseLyricsText(text)
+        return parseLyricsText(text).map { it.copy(credits = serverCredits + it.credits) }
     }
 
     /**
@@ -113,12 +142,16 @@ object LyricsStore {
         val stampRegex = Regex("""\[(\d+):(\d+(?:[.:]\d+)?)\]""")
         val synced = mutableListOf<LyricLine>()
         val plain = mutableListOf<LyricLine>()
+        val headers = mutableListOf<String>()
         val offsetMs = offsetTag.findAll(raw).mapNotNull { it.groupValues[1].toLongOrNull() }.lastOrNull() ?: 0L
 
         for (rawLine in raw.lines()) {
             val stamps = stampRegex.findAll(rawLine).toList()
             val (content, voice) = LrcVoices.split(rawLine.replace(stampRegex, "").trim())
-            if (isHeader(content)) continue
+            if (isHeader(content)) {
+                headers += content
+                continue
+            }
             val words = inlineWords(content)
             val text = if (wordTag.containsMatchIn(content)) normalize(content.replace(wordTag, "")) else content
             if (stamps.isEmpty()) {
@@ -133,10 +166,11 @@ object LyricsStore {
             }
         }
 
+        val credits = headerCredits(headers.asSequence())
         return when {
             synced.isNotEmpty() -> synced.sortedBy { it.startMs }
             plain.isNotEmpty() -> plain
             else -> emptyList()
-        }
+        }.map { it.copy(credits = credits) }
     }
 }

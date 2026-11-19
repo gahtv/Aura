@@ -1,5 +1,7 @@
 package com.hans.aura.data
 
+import kotlinx.coroutines.CancellationException
+
 data class LyricLine(
     val startMs: Long,
     val text: String,
@@ -37,9 +39,17 @@ object LyricsStore {
     }
 
     suspend fun fetch(api: JellyfinApi, itemId: String): List<LyricLine> {
-        val resp = runCatching { api.getLyrics(itemId) }.getOrNull()
-            ?: return emptyList()
+        val response = try {
+            api.getLyrics(itemId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return parseResponse(response)
+    }
 
+    internal fun parseResponse(resp: LyricsResponse): List<LyricLine> {
         // 1) Structured synced/plain lines
         val dtoLines = resp.lyrics
         if (!dtoLines.isNullOrEmpty()) {

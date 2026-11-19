@@ -29,11 +29,12 @@ data class TimedLyricLine(
     val words: List<TimedWord> = emptyList(),
     val voice: LyricVoice? = null,
     val adlib: LyricAdlib? = null,
-    val credits: LyricCredits = LyricCredits()
+    val credits: LyricCredits = LyricCredits(),
+    val part: Int = 0
 )
 
 internal fun LyricLine.toTimedLyricLine() =
-    TimedLyricLine(startMs, text, translation = translation, words = words, voice = voice, adlib = adlib, credits = credits)
+    TimedLyricLine(startMs, text, translation = translation, words = words, voice = voice, adlib = adlib, credits = credits, part = part)
 
 /** A run of a lyric line, [sung] once the audio clock has passed its first word. */
 data class KaraokeSpan(

@@ -176,7 +176,7 @@ fun LyricsPane(
             lines = timed.map {
                 LyricLine(
                     it.startMs, it.text, isSynced = true, words = it.words, voice = it.voice,
-                    adlib = it.adlib, credits = it.credits, translation = it.translation
+                    adlib = it.adlib, credits = it.credits, part = it.part, translation = it.translation
                 )
             }
             android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")
@@ -375,6 +375,8 @@ fun LyricsPane(
                             AdlibText(translation, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight)
                         }
                     }
+                    // After the part's last line, so the current-line anchor stays on the text.
+                    if (endsSongPart(loadedLines, i)) Spacer(Modifier.height(AuraSpacing.lyricPartGap))
                 }
                 val credits = loadedLines.first().credits
                 if (credits.writers.isNotEmpty() || credits.transcribers.isNotEmpty()) {
@@ -542,6 +544,9 @@ private fun LyricsTrackCard(app: AuraApp, item: JellyfinItem, accent: Color) {
         }
     }
 }
+
+internal fun endsSongPart(lines: List<LyricLine>, index: Int): Boolean =
+    index < lines.lastIndex && lines[index].part != lines[index + 1].part
 
 fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
     if (lines.isNullOrEmpty()) return -1

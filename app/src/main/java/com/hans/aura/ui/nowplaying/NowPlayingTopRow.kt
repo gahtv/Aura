@@ -54,6 +54,7 @@ internal fun NowPlayingTopRow(
     accent: Color,
     onBack: () -> Unit,
     onOpenQueue: () -> Unit,
+    onFindLyrics: (() -> Unit)?,
     onToggleLyrics: () -> Unit
 ) {
     if (!visible) return
@@ -90,6 +91,10 @@ internal fun NowPlayingTopRow(
             onClick = { ContextMenuHost.openPicker(queue) }
         )
         Spacer(Modifier.width(AuraSpacing.sm))
+        if (onFindLyrics != null) {
+            NpControlButton(label = "Find lyrics", onClick = onFindLyrics)
+            Spacer(Modifier.width(AuraSpacing.sm))
+        }
         NpControlButton(
             label = if (lyricsMode) "Track" else "Lyrics",
             onClick = onToggleLyrics

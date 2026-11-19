@@ -153,12 +153,13 @@ internal object TtmlLyrics {
             return LyricVoice(ids.joinToString(" "), if (ids.size > 1) LyricVoice.Kind.GROUP else kinds.single())
         }
         var lineDepth = -1
-        var translationsDepth = -1
+        var sublinesDepth = -1
+        var metadataKind = ""
         var metadataTextDepth = -1
         var metadataLanguage = ""
         var metadataKey: String? = null
         var metadataText = Background()
-        val translations = linkedMapOf<String, MutableMap<String, LyricAdlib>>()
+        val metadataSublines = mutableMapOf<String, LinkedHashMap<String, MutableMap<String, LyricAdlib>>>()
         var lineKey: String? = null
         var wordDepth = -1
         var rates = Rates()
@@ -175,7 +176,7 @@ internal object TtmlLyrics {
         val songwriterText = StringBuilder()
         val text = StringBuilder()
         var background = Background()
-        var translation = Background()
+        var sublines = linkedMapOf("x-translation" to Background(), "x-roman" to Background())
         val wordText = StringBuilder()
         var words = mutableListOf<Word>()
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
@@ -208,12 +209,16 @@ internal object TtmlLyrics {
                     val duration = if (timedElement) rates.timeMs(parser.getAttributeValue(null, "dur")) else null
                     val interval = if (timedElement) parent.child(begin, end, duration, trackTimes = appleTrackTimes) else parent
                     intervals.add(interval)
-                    if (parser.name == "translations" && lineDepth < 0) translationsDepth = parser.depth
-                    if (translationsDepth >= 0 && parser.name == "translation") {
-                        metadataLanguage = parser.getAttributeValue("http://www.w3.org/XML/1998/namespace", "lang").orEmpty()
-                        translations.getOrPut(metadataLanguage) { mutableMapOf() }
+                    if (parser.name in setOf("translations", "transliterations") && lineDepth < 0) {
+                        sublinesDepth = parser.depth
+                        metadataKind = parser.name.removeSuffix("s")
+                        metadataSublines.getOrPut(metadataKind) { linkedMapOf() }
                     }
-                    if (translationsDepth >= 0 && parser.name == "text") {
+                    if (sublinesDepth >= 0 && parser.name == metadataKind) {
+                        metadataLanguage = parser.getAttributeValue("http://www.w3.org/XML/1998/namespace", "lang").orEmpty()
+                        metadataSublines.getValue(metadataKind).getOrPut(metadataLanguage) { mutableMapOf() }
+                    }
+                    if (sublinesDepth >= 0 && parser.name == "text") {
                         metadataTextDepth = parser.depth
                         metadataKey = parser.getAttributeValue(null, "for")
                         metadataText = Background()
@@ -235,7 +240,7 @@ internal object TtmlLyrics {
                         lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
                         text.clear()
                         background = Background()
-                        translation = Background()
+                        sublines = linkedMapOf("x-translation" to Background(), "x-roman" to Background())
                         lineKey = (0 until parser.attributeCount).firstOrNull { parser.getAttributeName(it) == "key" }
                             ?.let { parser.getAttributeValue(it) }
                         words = mutableListOf()
@@ -243,12 +248,13 @@ internal object TtmlLyrics {
                     if (lineDepth >= 0) {
                         val role = (0 until parser.attributeCount).firstOrNull { parser.getAttributeName(it) == "role" }
                             ?.let { parser.getAttributeValue(it) }
-                        if (translation.inside || role == "x-translation") {
-                            if (!translation.inside || parser.name == "br") translation.space()
+                        val subline = sublines.values.firstOrNull { it.inside } ?: sublines[role]
+                        if (subline != null) {
+                            if (!subline.inside || parser.name == "br") subline.space()
                             if (legacyWordTimes) {
-                                translation.enter(parser.depth, begin, end, duration)
+                                subline.enter(parser.depth, begin, end, duration)
                             } else {
-                                translation.enter(parser.depth, interval.start.takeIf { begin != null }, interval.end, null)
+                                subline.enter(parser.depth, interval.start.takeIf { begin != null }, interval.end, null)
                             }
                         } else if (background.inside || role == "x-bg") {
                             if (!background.inside || parser.name == "br") background.space()
@@ -277,8 +283,9 @@ internal object TtmlLyrics {
                     if (metadataTextDepth >= 0) {
                         metadataText.append(parser.text)
                     } else if (lineDepth >= 0) {
-                        if (translation.inside) {
-                            translation.append(parser.text)
+                        val subline = sublines.values.firstOrNull { it.inside }
+                        if (subline != null) {
+                            subline.append(parser.text)
                         } else if (background.inside) {
                             background.append(parser.text)
                         } else {
@@ -305,11 +312,11 @@ internal object TtmlLyrics {
                     if (parser.depth == metadataTextDepth) {
                         val key = metadataKey
                         val value = metadataText.toAdlib()
-                        if (key != null && value != null) translations.getValue(metadataLanguage)[key] = value
+                        if (key != null && value != null) metadataSublines.getValue(metadataKind).getValue(metadataLanguage)[key] = value
                         metadataTextDepth = -1
                     }
-                    if (parser.depth == translationsDepth) translationsDepth = -1
-                    translation.leave(parser.depth)
+                    if (parser.depth == sublinesDepth) sublinesDepth = -1
+                    sublines.values.forEach { it.leave(parser.depth) }
                     background.leave(parser.depth)
                     if (parser.depth == lineDepth) {
                         val line = normalize(text.toString())
@@ -331,7 +338,8 @@ internal object TtmlLyrics {
                         if (line.isNotEmpty() && interval.start < interval.end) {
                             val lyric = LyricLine(
                                 start ?: 0L, line, start != null, timedWords, voice(lineAgent), background.toAdlib(),
-                                part = part, translation = translation.toAdlib(), endMs = end
+                                part = part, translation = sublines.getValue("x-translation").toAdlib(),
+                                romanization = sublines.getValue("x-roman").toAdlib(), endMs = end
                             )
                             lines += lyric to lineKey
                         }
@@ -342,11 +350,19 @@ internal object TtmlLyrics {
             parser.next()
         }
         val credits = LyricCredits(writers = writers.distinct())
-        val preferred = translations.entries.firstOrNull {
-            Locale.forLanguageTag(it.key).language == Locale.getDefault().language
-        }?.value ?: translations.values.firstOrNull()
+        fun preferred(kind: String): Map<String, LyricAdlib>? {
+            val languages = metadataSublines[kind] ?: return null
+            return languages.entries.firstOrNull {
+                val locale = Locale.forLanguageTag(it.key)
+                if (kind == "transliteration") locale.script == "Latn"
+                else locale.language == Locale.getDefault().language
+            }?.value ?: languages.values.firstOrNull()
+        }
+        val translation = preferred("translation")
+        val romanization = preferred("transliteration")
         lines.map { (line, key) ->
-            line.copy(translation = line.translation ?: preferred?.get(key), credits = credits)
+            line.copy(translation = line.translation ?: translation?.get(key),
+                romanization = line.romanization ?: romanization?.get(key), credits = credits)
         }.sortedBy { it.startMs }
     }.getOrDefault(emptyList())
 }

@@ -13,6 +13,7 @@ data class LyricLine(
     /** Song part (verse, chorus, …) the line belongs to; neighbours that differ start a new part. */
     val part: Int = 0,
     val translation: LyricAdlib? = null,
+    val romanization: LyricAdlib? = null,
     /** When the line stops being sung, if the source says so. */
     val endMs: Long? = null
 )

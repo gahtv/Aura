@@ -237,7 +237,7 @@ fun LyricsPane(
     // During a break the dots take the current line's anchor slot.
     val followRow = activeBreak?.let { rows.indexOf(LyricRow.Break(it)) }
         ?: rows.indexOf(LyricRow.Line(currentLineIndex.coerceAtLeast(0)))
-    val hasTimedAdlibs = remember(lines) { lines.orEmpty().any { it.adlib?.isTimed == true || it.translation?.isTimed == true } }
+    val hasTimedAdlibs = remember(lines) { lines.orEmpty().any { it.adlib?.isTimed == true || it.translation?.isTimed == true || it.romanization?.isTimed == true } }
     val adlibPosition = remember(trackId) { mutableStateOf<Long?>(null) }
     LaunchedEffect(player, adlibPosition, hasTimedAdlibs, isPlaying) {
         adlibPosition.value = null
@@ -253,6 +253,8 @@ fun LyricsPane(
     // Anchor about three standard line heights from the top; wrapped lyrics
     // and adlibs can take up more of the space above the current line.
     val anchorOffsetPx = with(LocalDensity.current) { (3 * AuraSizes.lyricLinePitch.value).dp.roundToPx() }
+    // Plain-text lyrics have no clock to follow or offset to nudge: they read as a static page.
+    val synced = lines?.firstOrNull()?.isSynced == true
 
     fun pauseFollow() {
         followPaused = true
@@ -283,7 +285,7 @@ fun LyricsPane(
     }
 
     LaunchedEffect(lines, followRow, followPaused) {
-        if (lines.isNullOrEmpty() || followPaused) return@LaunchedEffect
+        if (!synced || followPaused) return@LaunchedEffect
         // Before the first synced line's timestamp (currentLineIndex == -1)
         // anchor the FIRST line, or the intro dots, instead.
         listState.animateScrollToItem(
@@ -316,13 +318,13 @@ fun LyricsPane(
                             scope.launch { listState.scrollBy(-160f) }
                             true
                         }
-                        // Only when there is something to sync: with no lyrics
-                        // LEFT/RIGHT must stay ordinary focus movement.
-                        Key.DirectionLeft -> if (lines.isNullOrEmpty()) false else {
+                        // Only when there is something to sync: with no synced
+                        // lyrics LEFT/RIGHT must stay ordinary focus movement.
+                        Key.DirectionLeft -> if (!synced) false else {
                             nudge(-500L)
                             true
                         }
-                        Key.DirectionRight -> if (lines.isNullOrEmpty()) false else {
+                        Key.DirectionRight -> if (!synced) false else {
                             nudge(500L)
                             true
                         }
@@ -412,6 +414,10 @@ fun LyricsPane(
                         val adlib = line.adlib
                         if (adlib != null && adlib.text.isNotBlank()) {
                             AdlibText(adlib, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
+                        }
+                        val romanization = line.romanization
+                        if (romanization != null && romanization.text.isNotBlank()) {
+                            AdlibText(romanization, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
                         }
                         val translation = line.translation
                         if (translation != null && translation.text.isNotBlank()) {
@@ -666,7 +672,7 @@ internal fun endsSongPart(lines: List<LyricLine>, index: Int): Boolean =
 
 fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
     if (lines.isNullOrEmpty()) return -1
-    if (!lines[0].isSynced) return 0
+    if (!lines[0].isSynced) return -1
     var idx = -1
     for (i in lines.indices) {
         if (positionMs >= lines[i].startMs) idx = i else break

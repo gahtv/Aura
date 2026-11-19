@@ -9,6 +9,38 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class TtmlLyricsTest {
+    @Test
+    fun `inline romanization preserves timing and coexists with translation and background`() {
+        val lines = parse("""<p begin="2s">Lead<span ttm:role="x-roman"><span begin="2s" end="2.5s">Ro</span><span begin="2.5s" end="3s">ma</span></span><span ttm:role="x-translation">Meaning</span><span ttm:role="x-bg">Echo</span></p>
+            <p begin="4s">Next<span ttm:role="x-roman">Plain</span></p>
+            <p begin="6s">Last<span ttm:role="x-roman"> </span></p>""")
+        assertEquals(listOf("Lead", "Next", "Last"), lines.map { it.text })
+        assertEquals(LyricAdlib(listOf(AdlibSegment("Ro", 2000, 2500), AdlibSegment("ma", 2500, 3000)), 3000), lines[0].romanization)
+        assertEquals("Meaning", lines[0].translation?.text)
+        assertEquals("Echo", lines[0].adlib?.text)
+        assertEquals(LyricAdlib(listOf(AdlibSegment("Plain"))), lines[1].romanization)
+        assertEquals(null, lines[2].romanization)
+        assertEquals(lines[0].romanization, lines[0].toTimedLyricLine().romanization)
+    }
+
+    @Test
+    fun `metadata transliterations prefer Latin script retain timing and defer to inline`() {
+        fun transliterated(language: String) = LyricsStore.parseLyricsText("""<tt xmlns:itunes="http://music.apple.com/lyric-ttml-internal" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+            <head><metadata><iTunesMetadata><transliterations>
+            <transliteration xml:lang="ja-Jpan"><text for="L1">First</text></transliteration>
+            <transliteration xml:lang="$language"><text for="L1"><span begin="2s" end="3s">Ro</span><span begin="3s" end="4s">ma</span></text><text for="L2">Untimed</text><text for="L3">Metadata</text><text for="L4"> </text></transliteration>
+            </transliterations><translations><translation xml:lang="en"><text for="L1">Meaning</text></translation></translations></iTunesMetadata></metadata></head>
+            <body><div><p begin="2s" itunes:key="L1">Lead</p><p begin="4s" itunes:key="L2">Next</p><p begin="6s" itunes:key="L3">Last<span ttm:role="x-roman">Inline</span></p><p begin="8s" itunes:key="L4">Empty</p><p begin="10s" itunes:key="missing">Missing</p></div></body></tt>""")
+        val lines = transliterated("ja-Latn")
+        assertEquals(LyricAdlib(listOf(AdlibSegment("Ro", 2000, 3000), AdlibSegment("ma", 3000, 4000)), 4000), lines[0].romanization)
+        assertEquals("Meaning", lines[0].translation?.text)
+        assertEquals(LyricAdlib(listOf(AdlibSegment("Untimed"))), lines[1].romanization)
+        assertEquals("Inline", lines[2].romanization?.text)
+        assertEquals(null, lines[3].romanization)
+        assertEquals(null, lines[4].romanization)
+        assertEquals("First", transliterated("ja-Hira")[0].romanization?.text)
+    }
+
     private fun translation(line: LyricLine): LyricAdlib? = line.translation
 
     @Test

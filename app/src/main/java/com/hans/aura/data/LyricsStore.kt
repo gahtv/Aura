@@ -12,7 +12,10 @@ data class LyricLine(
     val credits: LyricCredits = LyricCredits(),
     /** Song part (verse, chorus, …) the line belongs to; neighbours that differ start a new part. */
     val part: Int = 0,
-    val translation: LyricAdlib? = null
+    val translation: LyricAdlib? = null,
+    val romanization: LyricAdlib? = null,
+    /** When the line stops being sung, if the source says so. */
+    val endMs: Long? = null
 )
 
 data class LyricCredits(
@@ -75,6 +78,34 @@ object LyricsStore {
         }
     }
 
+    /** Enhanced LRC's closing `<mm:ss.xx>` after the last word marks when the line ends. */
+    private fun inlineEnd(text: String): Long? {
+        val tags = wordTag.findAll(text).toList()
+        val last = tags.lastOrNull()?.takeIf { tags.size > 1 && text.substring(it.range.last + 1).isBlank() }
+            ?: return null
+        return stampMs(last.groupValues[1], last.groupValues[2])
+    }
+
+    /**
+     * A blank synced line is how LRC (and Jellyfin's copy of it) marks the end of
+     * the line before it: fold it into that line's [LyricLine.endMs] instead of
+     * rendering an empty row.
+     */
+    internal fun foldBlankLines(lines: List<LyricLine>): List<LyricLine> {
+        val folded = ArrayList<LyricLine>(lines.size)
+        for (line in lines) {
+            val previous = folded.lastOrNull()
+            if (line.isSynced && line.text.isBlank()) {
+                if (previous != null && previous.endMs == null && previous.startMs < line.startMs) {
+                    folded[folded.lastIndex] = previous.copy(endMs = line.startMs)
+                }
+            } else {
+                folded += line
+            }
+        }
+        return folded
+    }
+
     /** Slices timed words into sub-line segments while keeping the line's exact spacing. */
     private fun sublineSegments(line: LyricLine): List<AdlibSegment> {
         var cursor = 0
@@ -124,6 +155,7 @@ object LyricsStore {
         lines.map { line ->
             line.copy(
                 startMs = if (line.isSynced) shifted(line.startMs, offsetMs) else line.startMs,
+                endMs = line.endMs?.let { shifted(it, offsetMs) },
                 words = line.words.map { it.copy(startMs = shifted(it.startMs, offsetMs),
                     endMs = it.endMs?.let { end -> shifted(end, offsetMs) }) },
                 translation = line.translation?.let { subline ->
@@ -174,21 +206,21 @@ object LyricsStore {
                         normalize(it.text.substring(start, end)).takeIf { word -> word.isNotEmpty() }
                             ?.let { word -> TimedWord(cue.start / 10_000L, word, cue.end?.div(10_000L)) }
                     }
-                }?.takeIf { words -> words.isNotEmpty() } ?: if (hasInlineTags) {
-                    // Jellyfin expands repeated line stamps but leaves their inline word stamps unchanged.
-                    val offset = lineStartMs?.let { start ->
-                        start - firstInlineStart.getOrPut(original) { start }
-                    } ?: 0L
-                    inlineWords(content).map { word -> word.copy(startMs = word.startMs + offset,
-                        endMs = word.endMs?.plus(offset)) }
-                } else emptyList()
+                }?.takeIf { words -> words.isNotEmpty() }
+                // Jellyfin expands repeated line stamps but leaves their inline word stamps unchanged.
+                val inlineOffset = if (hasInlineTags && lineStartMs != null) {
+                    lineStartMs - firstInlineStart.getOrPut(original) { lineStartMs }
+                } else 0L
                 LyricLine(
                     startMs = lineStartMs ?: 0L,
                     text = if (hasInlineTags) normalize(content.replace(wordTag, "")) else content,
                     isSynced = !isHeader(content) && (lineStartMs != null || !it.cues.isNullOrEmpty() || hasInlineTags),
-                    words = words,
+                    words = words ?: inlineWords(content).map { word ->
+                        word.copy(startMs = word.startMs + inlineOffset, endMs = word.endMs?.plus(inlineOffset))
+                    },
                     voice = voice,
-                    credits = credits
+                    credits = credits,
+                    endMs = words?.sungEnd() ?: inlineEnd(content)?.plus(inlineOffset)
                 ) to (lineStartMs != null && !isHeader(content))
             }
             // Jellyfin expands a repeated-stamp line into consecutive copies with distinct starts.
@@ -202,7 +234,7 @@ object LyricsStore {
                 rowStarts += line.startMs
                 LrcEntry(line, hasLineStamp, row)
             }
-            return finishLrc(entries, offsetMs)
+            return foldBlankLines(finishLrc(entries, offsetMs))
         }
 
         // 2) Raw text, possibly LRC-formatted
@@ -250,18 +282,20 @@ object LyricsStore {
                 continue
             }
             val firstMs = stampMs(stamps.first().groupValues[1], stamps.first().groupValues[2])
+            val endMs = inlineEnd(content)
             for (m in stamps) {
                 val ms = stampMs(m.groupValues[1], m.groupValues[2])
                 parsed += LrcEntry(LyricLine(startMs = ms, text = text, isSynced = true,
                     words = words.map { it.copy(startMs = it.startMs + ms - firstMs,
-                        endMs = it.endMs?.let { end -> end + ms - firstMs }) }, voice = voice), true, row)
+                        endMs = it.endMs?.let { end -> end + ms - firstMs }) }, voice = voice,
+                    endMs = endMs?.let { it + ms - firstMs }), true, row)
             }
         }
 
         val credits = headerCredits(headers.asSequence())
         val hasSynced = parsed.any { it.line.isSynced }
-        return finishLrc(parsed, offsetMs).filter {
-            if (hasSynced) it.isSynced else it.text.isNotEmpty()
-        }.map { it.copy(credits = credits) }
+        val lines = finishLrc(parsed, offsetMs)
+        return (if (hasSynced) foldBlankLines(lines.filter { it.isSynced }) else lines.filter { it.text.isNotEmpty() })
+            .map { it.copy(credits = credits) }
     }
 }

@@ -25,20 +25,35 @@ data class TimedLyricLine(
     val startMs: Long,
     val text: String,
     val translation: LyricAdlib? = null,
+    val romanization: LyricAdlib? = null,
     val words: List<TimedWord> = emptyList(),
     val voice: LyricVoice? = null,
     val adlib: LyricAdlib? = null,
     val credits: LyricCredits = LyricCredits(),
-    val part: Int = 0
+    val part: Int = 0,
+    val endMs: Long? = null
 )
 
 internal fun LyricLine.toTimedLyricLine() =
-    TimedLyricLine(startMs, text, translation = translation, words = words, voice = voice, adlib = adlib, credits = credits, part = part)
+    TimedLyricLine(
+        startMs, text, translation = translation, romanization = romanization, words = words, voice = voice,
+        adlib = adlib, credits = credits, part = part, endMs = endMs
+    )
+
+internal fun TimedLyricLine.toLyricLine() =
+    LyricLine(
+        startMs, text, isSynced = true, words = words, voice = voice, adlib = adlib, credits = credits,
+        part = part, translation = translation, romanization = romanization, endMs = endMs
+    )
 
 /** Exact display text (including spacing), optionally timed to the playback clock. */
+/** The latest end of any word, known only when the last word has one; overlapping words may end out of order. */
+internal fun List<TimedWord>.sungEnd(): Long? =
+    lastOrNull()?.endMs?.let { last -> maxOf(last, maxOf { it.endMs ?: last }) }
+
 data class AdlibSegment(val text: String, val startMs: Long? = null, val endMs: Long? = null)
 
-/** Any lyric sub-line (adlib or translation), with optional independent timing. */
+/** Any lyric sub-line (adlib, translation or romanization), with optional independent timing. */
 data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null) {
     val text: String = segments.joinToString("") { it.text }
     private val startMs = segments.mapNotNull { it.startMs }.minOrNull()

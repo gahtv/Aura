@@ -211,7 +211,7 @@ class PlaybackRemote(
                 val cmd = data?.get("Command")?.jsonPrimitive?.content
                 AuraLog.i(AuraTag.REMOTE, "remote playstate: $cmd")
                 when (cmd) {
-                    "Play", "Unpause" -> onMainThread { player.play() }
+                    "Play", "Unpause" -> onMainThread { player.playPrepared() }
                     "Pause" -> onMainThread { player.pause() }
                     "PlayPause" -> onMainThread { togglePlayPause() }
                     "Stop" -> onMainThread { stopPlayback() }
@@ -241,8 +241,8 @@ class PlaybackRemote(
                 fun arg(key: String): String? =
                     args?.get(key)?.jsonPrimitive?.content
                 when (name) {
-                    "Play" -> onMainThread { player.play() }
-                    "Unpause" -> onMainThread { player.play() }
+                    "Play" -> onMainThread { player.playPrepared() }
+                    "Unpause" -> onMainThread { player.playPrepared() }
                     "PlayState", "PlayPause" -> onMainThread { togglePlayPause() }
                     "Pause" -> onMainThread { player.pause() }
                     "Stop" -> onMainThread { stopPlayback() }
@@ -276,7 +276,7 @@ class PlaybackRemote(
     }
 
     private fun togglePlayPause() {
-        if (player.isPlaying) player.pause() else player.play()
+        if (player.isPlaying) player.pause() else player.playPrepared()
     }
 
     private fun stopPlayback() {

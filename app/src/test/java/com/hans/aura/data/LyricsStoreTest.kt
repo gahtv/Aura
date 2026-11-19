@@ -44,7 +44,8 @@ class LyricsStoreTest {
         val raw = entries.joinToString("\n") { (time, text) -> "[00:${time / 1000}]$text" }
         val response = LyricsResponse(lyrics = entries.map { (time, text) -> LyricLineDto(text, time * 10000) })
         for (lines in listOf(LyricsStore.parseLrcText(raw), LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track"))) {
-            assertEquals(listOf("Across the sky", "Third line", "Fourth line", "Duet lead", "Duet reply", "", "After blank", "Before blank", "", "Hello world"), lines.map { it.text })
+            assertEquals(listOf("Across the sky", "Third line", "Fourth line", "Duet lead", "Duet reply", "After blank", "Before blank", "Hello world"), lines.map { it.text })
+            assertEquals(30000L, lines.single { it.text == "Duet reply" }.endMs)
             assertEquals("A travers le ciel", lines.first().translation?.text)
             assertFalse(requireNotNull(lines.first().translation).isTimed)
             assertEquals(LyricVoice("v1", LyricVoice.Kind.PRIMARY), lines.first().voice)
@@ -284,7 +285,7 @@ class LyricsStoreTest {
         assertTrue(lines.all { it.text == "Hello world" })
         assertTrue(LyricsStore.parseLrcText("[00:01]Plain  line").single().words.isEmpty())
         assertEquals("Plain  line", LyricsStore.parseLrcText("[00:01]Plain  line").single().text)
-        assertTrue(LyricsStore.parseLrcText("[00:01]<00:01> <00:02>").single().words.isEmpty())
+        assertTrue(LyricsStore.parseLrcText("[00:01]<00:01> <00:02>").isEmpty())
     }
 
     @Test

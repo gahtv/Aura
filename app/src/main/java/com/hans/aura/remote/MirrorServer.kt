@@ -367,7 +367,7 @@ object MirrorServer {
             "right" -> KeyEvent.KEYCODE_DPAD_RIGHT
             "select" -> KeyEvent.KEYCODE_DPAD_CENTER
             "back" -> KeyEvent.KEYCODE_BACK
-            "playpause" -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+            "playpause" -> return control("playpause", emptyMap())
             else -> null
         }
         // "home" is app-level: Android's HOME needs a system permission, and

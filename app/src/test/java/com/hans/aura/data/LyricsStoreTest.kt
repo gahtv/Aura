@@ -104,6 +104,19 @@ class LyricsStoreTest {
     }
 
     @Test
+    fun `partially matching repeated stamps pair only the matching copies`() = runBlocking {
+        val raw = "[00:10]Hello\n[00:10][00:20]Bonjour"
+        val dto = LyricsResponse(lyrics = listOf(
+            LyricLineDto("Hello", 100000000), LyricLineDto("Bonjour", 100000000), LyricLineDto("Bonjour", 200000000)
+        ))
+        for (lines in listOf(LyricsStore.parseLrcText(raw), LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = dto), "track"))) {
+            assertEquals(listOf("Hello", "Bonjour"), lines.map { it.text })
+            assertEquals(listOf(10000L, 20000L), lines.map { it.startMs })
+            assertEquals(listOf("Bonjour", null), lines.map { it.translation?.text })
+        }
+    }
+
+    @Test
     fun `file offsets shift trailing ends with repeated word starts`() {
         for (offset in listOf(1500L, -1500L, 5000L)) {
             val lines = LyricsStore.parseLrcText("[00:01][00:03]<00:01>One <00:02>two<00:04>\n[offset:$offset]")

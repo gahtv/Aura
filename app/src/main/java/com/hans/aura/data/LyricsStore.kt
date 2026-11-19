@@ -90,37 +90,32 @@ object LyricsStore {
     private data class LrcEntry(val line: LyricLine, val hasLineStamp: Boolean, val row: Int)
 
     private fun pairSameStampTranslations(entries: List<LrcEntry>): List<LyricLine> {
-        val rows = mutableListOf<MutableList<LrcEntry>>()
-        for (entry in entries) {
-            if (rows.lastOrNull()?.first()?.row == entry.row) rows.last() += entry else rows += mutableListOf(entry)
-        }
+        /** [index] is the entry's slot in the output, or null once it became a translation. */
+        class Placed(val entry: LrcEntry, val runLength: Int, val index: Int?)
         val paired = mutableListOf<LyricLine>()
-        var previous: List<LrcEntry> = emptyList()
-        var previousIndices: List<Int> = emptyList()
-        var runLength = 0
-        for (row in rows) {
-            val leadIndices = row.map { entry ->
-                previous.indices.firstOrNull { i -> previous[i].line.startMs == entry.line.startMs }
+        var previousRow = mutableListOf<Placed>()
+        var row = mutableListOf<Placed>()
+        for (entry in entries) {
+            if (row.isNotEmpty() && row.first().entry.row != entry.row) {
+                previousRow = row
+                row = mutableListOf()
             }
-            val stamped = row.all { it.hasLineStamp } && previous.all { it.hasLineStamp }
-            val follows = stamped && previous.isNotEmpty() && leadIndices.none { it == null } &&
-                leadIndices.distinct().size == leadIndices.size
-            runLength = if (follows) runLength + 1 else 1
-            val line = row.first().line
-            val lead = previous.firstOrNull()?.line
-            val indices = (paired.size until paired.size + row.size).toList()
-            if (runLength == 2 && lead != null && lead.text.isNotBlank() && line.text.isNotBlank() &&
-                (line.voice == null || line.voice == lead.voice)
+            val line = entry.line
+            val lead = previousRow.firstOrNull { it.entry.line.startMs == line.startMs }
+                ?.also(previousRow::remove)
+                ?.takeIf { entry.hasLineStamp && it.entry.hasLineStamp }
+            val runLength = (lead?.runLength ?: 0) + 1
+            val target = lead?.index
+            val leadLine = lead?.entry?.line
+            if (runLength == 2 && target != null && leadLine != null && leadLine.text.isNotBlank() &&
+                line.text.isNotBlank() && (line.voice == null || line.voice == leadLine.voice)
             ) {
-                row.zip(leadIndices) { entry, i ->
-                    val target = previousIndices[requireNotNull(i)]
-                    paired[target] = paired[target].copy(translation = LyricAdlib(sublineSegments(entry.line)))
-                }
+                paired[target] = paired[target].copy(translation = LyricAdlib(sublineSegments(line)))
+                row += Placed(entry, runLength, null)
             } else {
-                paired += row.map { it.line }
+                paired += line
+                row += Placed(entry, runLength, paired.lastIndex)
             }
-            previous = row
-            previousIndices = indices
         }
         return paired
     }

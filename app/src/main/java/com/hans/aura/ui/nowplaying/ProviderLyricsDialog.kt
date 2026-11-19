@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.Text
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.MusicSource
@@ -139,6 +140,7 @@ internal fun ProviderLyricsDialog(
                                 selectedIndex = index
                                 previewOpen = true
                             },
+                            scale = ButtonDefaults.scale(focusedScale = 1f),
                             modifier = Modifier.fillMaxWidth().then(
                                 if (index == selectedIndex) Modifier.focusRequester(matchFocus) else Modifier
                             )

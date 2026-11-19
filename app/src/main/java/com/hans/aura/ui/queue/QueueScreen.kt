@@ -157,7 +157,8 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
                                     index = i,
                                     size = queue.size,
                                     currentIndex = queueIndex,
-                                    track = track
+                                    track = track,
+                                    reorderable = !shuffle
                                 )
                             )
                         }

@@ -5,6 +5,7 @@ import org.xmlpull.v1.XmlPullParser
 import kotlin.math.roundToLong
 
 internal object TtmlLyrics {
+    private const val metadataNamespace = "http://www.w3.org/ns/ttml#metadata"
     private val whitespace = Regex("""\s+""")
 
     private fun normalize(text: String): String = text.replace(whitespace, " ").trim()
@@ -24,20 +25,41 @@ internal object TtmlLyrics {
         val parser = Xml.newPullParser()
         parser.setInput(raw.reader())
         val lines = mutableListOf<LyricLine>()
+        val agentTypes = mutableMapOf<String, String>()
+        val agentKinds = mutableMapOf<String, LyricVoice.Kind>()
+        fun voice(value: String?): LyricVoice? {
+            val ids = value?.trim()?.split(whitespace)?.filter { it.isNotEmpty() }.orEmpty()
+            if (ids.isEmpty()) return null
+            val kinds = ids.map { id ->
+                agentKinds.getOrPut(id) {
+                    if (agentTypes[id] == "group") LyricVoice.Kind.GROUP
+                    else if (agentKinds.values.count { it != LyricVoice.Kind.GROUP } % 2 == 0) LyricVoice.Kind.PRIMARY
+                    else LyricVoice.Kind.SECONDARY
+                }
+            }
+            return LyricVoice(ids.joinToString(" "), if (ids.size > 1) LyricVoice.Kind.GROUP else kinds.single())
+        }
         var lineDepth = -1
         var skipDepth = -1
         var wordDepth = -1
         var lineStart: Long? = null
         var wordStart: Long? = null
+        var lineAgent: String? = null
         val text = StringBuilder()
         val wordText = StringBuilder()
         var words = mutableListOf<TimedWord>()
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
             when (parser.eventType) {
                 XmlPullParser.START_TAG -> {
+                    if (parser.name == "agent" && parser.namespace == metadataNamespace) {
+                        parser.getAttributeValue("http://www.w3.org/XML/1998/namespace", "id")?.let {
+                            agentTypes[it] = parser.getAttributeValue(null, "type").orEmpty()
+                        }
+                    }
                     if (parser.name == "p") {
                         lineDepth = parser.depth
                         lineStart = timeMs(parser.getAttributeValue(null, "begin"))
+                        lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
                         text.clear()
                         words = mutableListOf()
                     }
@@ -45,11 +67,16 @@ internal object TtmlLyrics {
                         val role = (0 until parser.attributeCount).firstOrNull { parser.getAttributeName(it) == "role" }
                             ?.let { parser.getAttributeValue(it) }
                         if (role == "x-bg" || role == "x-translation") skipDepth = parser.depth
-                        else if (parser.name == "span" && wordDepth < 0) {
-                            timeMs(parser.getAttributeValue(null, "begin"))?.let {
-                                wordDepth = parser.depth
-                                wordStart = it
-                                wordText.clear()
+                        else if (parser.name == "span") {
+                            if (lineAgent == null) {
+                                lineAgent = parser.getAttributeValue(metadataNamespace, "agent")?.takeIf { it.isNotBlank() }
+                            }
+                            if (wordDepth < 0) {
+                                timeMs(parser.getAttributeValue(null, "begin"))?.let {
+                                    wordDepth = parser.depth
+                                    wordStart = it
+                                    wordText.clear()
+                                }
                             }
                         } else if (parser.name == "br") text.append(' ')
                     }
@@ -73,7 +100,7 @@ internal object TtmlLyrics {
                         if (paragraphStart != null && words.isNotEmpty() && words.all { it.startMs < paragraphStart }) {
                             words = words.map { it.copy(startMs = it.startMs + paragraphStart) }.toMutableList()
                         }
-                        if (line.isNotEmpty()) lines += LyricLine(start ?: 0L, line, start != null, words)
+                        if (line.isNotEmpty()) lines += LyricLine(start ?: 0L, line, start != null, words, voice(lineAgent))
                         lineDepth = -1
                     }
                 }

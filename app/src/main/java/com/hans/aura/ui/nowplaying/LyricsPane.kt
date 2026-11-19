@@ -54,6 +54,7 @@ import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Lrclib
 import com.hans.aura.data.LyricLine
+import com.hans.aura.data.LyricVoice
 import com.hans.aura.data.LyricsStore
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
@@ -73,6 +74,29 @@ import com.hans.aura.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
+import kotlin.math.max
+import kotlin.math.min
+
+internal fun lyricVoiceStyle(voice: LyricVoice?, multipleVoices: Boolean, highlight: Color): Pair<TextAlign, Color> {
+    if (!multipleVoices) return TextAlign.Center to highlight
+    return when (voice?.kind) {
+        LyricVoice.Kind.PRIMARY -> TextAlign.Start to highlight
+        LyricVoice.Kind.SECONDARY -> {
+            val high = max(highlight.red, max(highlight.green, highlight.blue))
+            val low = min(highlight.red, min(highlight.green, highlight.blue))
+            val delta = high - low
+            val hue = when {
+                delta == 0f -> 0f
+                high == highlight.red -> 60f * ((highlight.green - highlight.blue) / delta % 6f)
+                high == highlight.green -> 60f * ((highlight.blue - highlight.red) / delta + 2f)
+                else -> 60f * ((highlight.red - highlight.green) / delta + 4f)
+            }
+            TextAlign.End to Color.hsv((hue + 490f) % 360f,
+                (if (high == 0f) 0f else delta / high).coerceIn(0.35f, 0.7f), high.coerceAtLeast(0.85f), highlight.alpha)
+        }
+        else -> TextAlign.Center to highlight
+    }
+}
 
 /**
  * Line-synced lyrics, top-anchored: the current line sits near the top with
@@ -138,7 +162,7 @@ fun LyricsPane(
         webFound = sourceWeb == true
         if (!timed.isNullOrEmpty()) {
             timedLines = timed
-            lines = timed.map { LyricLine(startMs = it.startMs, text = it.text, isSynced = true) }
+            lines = timed.map { LyricLine(startMs = it.startMs, text = it.text, isSynced = true, words = it.words, voice = it.voice) }
             android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")
             return@LaunchedEffect
         }
@@ -146,7 +170,7 @@ fun LyricsPane(
         if (local.isNotEmpty()) {
             lines = local
             if (local.any { it.words.isNotEmpty() }) {
-                timedLines = local.map { TimedLyricLine(it.startMs, it.text, words = it.words) }
+                timedLines = local.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice) }
             }
             return@LaunchedEffect
         }
@@ -160,7 +184,7 @@ fun LyricsPane(
         webFound = remote.isNotEmpty()
         lines = remote
         if (remote.any { it.words.isNotEmpty() }) {
-            timedLines = remote.map { TimedLyricLine(it.startMs, it.text, words = it.words) }
+            timedLines = remote.map { TimedLyricLine(it.startMs, it.text, words = it.words, voice = it.voice) }
         }
     }
 
@@ -255,6 +279,7 @@ fun LyricsPane(
             }
     ) {
         val loadedLines = lines
+        val multipleVoices = loadedLines.orEmpty().mapNotNull { it.voice?.id }.distinct().size >= 2
         when {
             loadedLines == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 androidx.tv.material3.Text(
@@ -281,30 +306,35 @@ fun LyricsPane(
                 item { Spacer(Modifier.height(AuraSpacing.screenHorizontal)) }
                 items(loadedLines.size) { i ->
                     val line = loadedLines[i]
+                    val (alignment, lineHighlight) = lyricVoiceStyle(line.voice, multipleVoices, highlightColor)
                     val isCurrent = i == currentLineIndex
                     // Line-only timestamps do not carry karaoke word timing.
                     val timed = timedLines?.getOrNull(i)?.takeIf { isCurrent && it.words.isNotEmpty() }
                     val text = if (timed != null) {
-                        karaokeLine(timed, effectivePosition, highlightColor)
+                        karaokeLine(timed, effectivePosition, lineHighlight)
                     } else {
                         AnnotatedString(line.text.ifBlank { "\u00A0" })
                     }
                     Box(
                         Modifier
                             .fillMaxWidth()
+                            .then(if (multipleVoices && isCurrent) {
+                                Modifier.background(lineHighlight.copy(alpha = 0.13f))
+                            } else Modifier)
                             .clickable(enabled = line.isSynced) {
                                 player.seekTo(line.startMs)
                                 followPaused = false
                                 onUserInteraction()
                             }
                             .padding(vertical = AuraSpacing.lyricLineVertical)
+                            .then(if (multipleVoices) Modifier.padding(horizontal = AuraSpacing.screenHorizontal) else Modifier)
                     ) {
                         androidx.tv.material3.Text(
                             text,
                             color = TextPrimary,
                             fontSize = if (isCurrent) AuraTypography.headline else AuraTypography.title,
                             fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
-                            textAlign = TextAlign.Center,
+                            textAlign = alignment,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

@@ -161,6 +161,7 @@ internal object TtmlLyrics {
         var lineBegin: Double? = null
         var legacyWordTimes = false
         var lineAgent: String? = null
+        var part = 0
         var itunesMetadataDepth = -1
         var songwritersDepth = -1
         var songwriterDepth = -1
@@ -203,6 +204,7 @@ internal object TtmlLyrics {
                             agentTypes[it] = parser.getAttributeValue(null, "type").orEmpty()
                         }
                     }
+                    if (parser.name == "div") part++
                     if (parser.name == "p") {
                         lineDepth = parser.depth
                         lineBegin = begin
@@ -277,7 +279,7 @@ internal object TtmlLyrics {
                         val start = if (begin != null) interval.start.roundToLong()
                             else timedWords.firstOrNull()?.startMs ?: interval.start.roundToLong().takeIf { interval.timed }
                         if (line.isNotEmpty() && interval.start < interval.end) {
-                            lines += LyricLine(start ?: 0L, line, start != null, timedWords, voice(lineAgent), background.toAdlib())
+                            lines += LyricLine(start ?: 0L, line, start != null, timedWords, voice(lineAgent), background.toAdlib(), part = part)
                         }
                         lineDepth = -1
                     }

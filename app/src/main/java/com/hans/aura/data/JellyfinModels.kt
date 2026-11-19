@@ -138,7 +138,7 @@ data class LyricsResponse(
 @Serializable
 data class LyricLineDto(
     @SerialName("Text") val text: String = "",
-    @SerialName("Start") val start: Long = 0L,
+    @SerialName("Start") val start: Long? = null,
     @SerialName("Cues") val cues: List<LyricCueDto>? = null
 )
 

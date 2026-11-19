@@ -449,6 +449,30 @@ class SourceQueriesTest {
     }
 
     @Test
+    fun `jellyfin distinguishes explicit zero and single timed lines from plain lyrics`() = runTest {
+        val source = MusicSources.current!!
+        body = """{"Metadata":{},"Lyrics":[{"Text":"One line","Start":50000000,"Cues":[]}]}"""
+        assertEquals(listOf(TimedLyricLine(5000, "One line")), source.lyricsTimed("single"))
+        body = """{"Metadata":{},"Lyrics":[{"Text":"At the start","Start":0,"Cues":[]}]}"""
+        assertEquals(listOf(TimedLyricLine(0, "At the start")), source.lyricsTimed("zero"))
+        body = """{"Metadata":{},"Lyrics":[{"Text":"Plain line"}]}"""
+        assertNull(source.lyricsTimed("plain-structured"))
+        assertEquals(listOf(LyricLine(0, "Plain line", isSynced = false)),
+            LyricsStore.fetchPreferred(client.api, "plain-structured"))
+    }
+
+    @Test
+    fun `jellyfin repeats raw inline word tags unchanged across line stamps`() = runTest {
+        body = """{"Metadata":{},"Lyrics":[{"Text":"v1: <00:06.00>One <00:07.00>two","Start":60000000,"Cues":[]},{"Text":"v1: <00:06.00>One <00:07.00>two","Start":100000000,"Cues":[]}]}"""
+        val lines = MusicSources.current!!.lyricsTimed("multi")!!
+        assertEquals(listOf(6000L, 10000L), lines.map { it.startMs })
+        assertEquals(listOf(TimedWord(6000, "One"), TimedWord(7000, "two")), lines[0].words)
+        assertEquals(listOf(TimedWord(10000, "One"), TimedWord(11000, "two")), lines[1].words)
+        assertTrue(lines.all { it.text == "One two" && it.voice == LyricVoice("v1", LyricVoice.Kind.PRIMARY) })
+        assertEquals(listOf(KaraokeSpan("One", true), KaraokeSpan(" two", false)), karaokeSpans(lines[1], 10500))
+    }
+
+    @Test
     fun `jellyfin cues and inline tags reach timed words`() = runTest {
         body = """{"Lyrics":[{"Text":"Hello world","Start":120000000,"Cues":[{"Position":0,"EndPosition":5,"Start":120000000,"End":125000000},{"Position":6,"EndPosition":11,"Start":125000000,"End":130000000},{"Position":-1,"EndPosition":999,"Start":0}]}]}"""
         val line = MusicSources.current!!.lyricsTimed("cues")!!.single()

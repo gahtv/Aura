@@ -18,14 +18,12 @@ class LyricCreditsFooterTest {
 
     @Test
     fun showsEachCreditWithItsOwnRoleAndHidesMissingCredits() {
-        val credits = mutableStateOf(LyricCredits(listOf("Ada Lane", "Ren Park"), listOf("Sam Ford"), "Performer"))
+        val credits = mutableStateOf(LyricCredits(listOf("Ada Lane", "Ren Park"), listOf("Sam Ford")))
         compose.setContent { AuraTheme { LyricCreditsFooter(credits.value) } }
 
         compose.onNodeWithText("Written by: Ada Lane, Ren Park").assertIsDisplayed()
         compose.onNodeWithText("Lyrics transcribed by: Sam Ford").assertIsDisplayed()
-        compose.onNodeWithText("Performer", substring = true).assertDoesNotExist()
-
-        compose.runOnIdle { credits.value = LyricCredits(artist = "Another Performer") }
+        compose.runOnIdle { credits.value = LyricCredits() }
         compose.onNodeWithText("Written by:", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Lyrics transcribed by:", substring = true).assertDoesNotExist()
     }

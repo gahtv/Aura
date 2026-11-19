@@ -141,8 +141,7 @@ data class LyricMetadataDto(
     @SerialName("Offset") val offset: Long? = null,
     @SerialName("Author") val author: String? = null,
     @SerialName("Lyricist") val lyricist: String? = null,
-    @SerialName("By") val by: String? = null,
-    @SerialName("Artist") val artist: String? = null
+    @SerialName("By") val by: String? = null
 )
 
 @Serializable

@@ -11,13 +11,11 @@ data class LyricLine(
 
 data class LyricCredits(
     val writers: List<String> = emptyList(),
-    val transcribers: List<String> = emptyList(),
-    val artist: String? = null
+    val transcribers: List<String> = emptyList()
 ) {
     internal operator fun plus(other: LyricCredits) = LyricCredits(
         writers = (writers + other.writers).distinct(),
-        transcribers = (transcribers + other.transcribers).distinct(),
-        artist = artist ?: other.artist
+        transcribers = (transcribers + other.transcribers).distinct()
     )
 }
 
@@ -46,8 +44,7 @@ object LyricsStore {
         fun values(tag: String) = tags[tag].orEmpty().filter { it.isNotEmpty() }
         return LyricCredits(
             writers = (values("au") + values("lr")).distinct(),
-            transcribers = values("by").distinct(),
-            artist = values("ar").firstOrNull()
+            transcribers = values("by").distinct()
         )
     }
 
@@ -74,8 +71,7 @@ object LyricsStore {
         val metadata = resp.metadata
         val serverCredits = LyricCredits(
             writers = listOfNotNull(metadata?.author, metadata?.lyricist).map(::normalize).filter { it.isNotEmpty() }.distinct(),
-            transcribers = listOfNotNull(metadata?.by?.let(::normalize)?.takeIf { it.isNotEmpty() }),
-            artist = metadata?.artist?.let(::normalize)?.takeIf { it.isNotEmpty() }
+            transcribers = listOfNotNull(metadata?.by?.let(::normalize)?.takeIf { it.isNotEmpty() })
         )
 
         // 1) Structured synced/plain lines

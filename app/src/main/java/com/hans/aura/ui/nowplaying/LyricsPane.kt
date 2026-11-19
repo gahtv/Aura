@@ -346,14 +346,10 @@ fun LyricsPane(
                 }
                 val credits = loadedLines.first().credits
                 if (credits.writers.isNotEmpty() || credits.transcribers.isNotEmpty()) {
-                    item {
-                        LyricCreditsFooter(credits)
-                        Spacer(Modifier.fillParentMaxHeight(0.55f))
-                    }
-                } else {
-                    // Enough trailing scroll range for the final line to reach the anchor.
-                    item { Spacer(Modifier.height(AuraSizes.lyricsTailSpace)) }
+                    item { LyricCreditsFooter(credits) }
                 }
+                // Enough trailing scroll range for the final line to reach the anchor.
+                item { Spacer(Modifier.height(AuraSizes.lyricsTailSpace)) }
             }
         }
 

@@ -17,7 +17,7 @@ class LyricsStoreTest {
         )
         assertEquals(listOf("Hello", "World [au:not a header]"), lines.map { it.text })
         assertEquals(
-            LyricCredits(listOf("Ada Lane", "Ren Park"), listOf("Sam Ford"), "Performer"),
+            LyricCredits(listOf("Ada Lane", "Ren Park"), listOf("Sam Ford")),
             lines.first().credits
         )
         assertEquals(lines.first().credits, lines.last().credits)
@@ -30,12 +30,12 @@ class LyricsStoreTest {
             """"LyricText":"[au:Ada Lane][lr:Ren Park]\n[by:Sam Ford]\nHello""""
         )) {
             val response = Json.decodeFromString<LyricsResponse>(
-                """{"Metadata":{"Author":" Ada Lane ","Lyricist":"Jay Poe","By":" ","Artist":"Performer"},$lyrics}"""
+                """{"Metadata":{"Author":" Ada Lane ","Lyricist":"Jay Poe","By":" "},$lyrics}"""
             )
             val line = LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track").single()
             assertEquals("Hello", line.text)
             assertEquals(
-                LyricCredits(listOf("Ada Lane", "Jay Poe", "Ren Park"), listOf("Sam Ford"), "Performer"),
+                LyricCredits(listOf("Ada Lane", "Jay Poe", "Ren Park"), listOf("Sam Ford")),
                 line.credits
             )
         }

@@ -477,9 +477,10 @@ class SourceQueriesTest {
         body = """{"Lyrics":[{"Text":"Hello world","Start":120000000,"Cues":[{"Position":0,"EndPosition":5,"Start":120000000,"End":125000000},{"Position":6,"EndPosition":11,"Start":125000000,"End":130000000},{"Position":-1,"EndPosition":999,"Start":0}]}]}"""
         val line = MusicSources.current!!.lyricsTimed("cues")!!.single()
         assertEquals("Hello world", line.text)
-        assertEquals(listOf(TimedWord(12000, "Hello"), TimedWord(12500, "world")), line.words)
+        assertEquals(listOf(TimedWord(12000, "Hello", 12500), TimedWord(12500, "world", 13000)), line.words)
         body = """{"Lyrics":[{"Text":"<00:12>Hello <00:12.50>world<00:13>","Start":120000000}]}"""
-        assertEquals(line, MusicSources.current!!.lyricsTimed("inline")!!.single())
+        assertEquals(line.copy(words = line.words.map { it.copy(endMs = null) }),
+            MusicSources.current!!.lyricsTimed("inline")!!.single())
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.hans.aura.ui.nowplaying
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,14 +26,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -41,12 +47,12 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.ResolvedTextDirection
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
@@ -59,7 +65,7 @@ import com.hans.aura.data.LyricsStore
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
 import com.hans.aura.data.TimedLyricLine
-import com.hans.aura.data.karaokeSpans
+import com.hans.aura.data.karaokeFills
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
@@ -123,6 +129,8 @@ fun LyricsPane(
 ) {
     val item by player.current.collectAsState()
     val position by player.positionMs.collectAsState()
+    val playing by player.isPlaying.collectAsState()
+    val positionAnchor = remember(position, playing) { SystemClock.uptimeMillis() }
     val trackId = item?.id.orEmpty()
 
     var lines by remember(item?.id) { mutableStateOf<List<LyricLine>?>(null) }
@@ -310,11 +318,6 @@ fun LyricsPane(
                     val isCurrent = i == currentLineIndex
                     // Line-only timestamps do not carry karaoke word timing.
                     val timed = timedLines?.getOrNull(i)?.takeIf { isCurrent && it.words.isNotEmpty() }
-                    val text = if (timed != null) {
-                        karaokeLine(timed, effectivePosition, lineHighlight)
-                    } else {
-                        AnnotatedString(line.text.ifBlank { "\u00A0" })
-                    }
                     Box(
                         Modifier
                             .fillMaxWidth()
@@ -329,14 +332,19 @@ fun LyricsPane(
                             .padding(vertical = AuraSpacing.lyricLineVertical)
                             .then(if (multipleVoices) Modifier.padding(horizontal = AuraSpacing.screenHorizontal) else Modifier)
                     ) {
-                        androidx.tv.material3.Text(
-                            text,
-                            color = TextPrimary,
-                            fontSize = if (isCurrent) AuraTypography.headline else AuraTypography.title,
-                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
-                            textAlign = alignment,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        if (timed != null) {
+                            KaraokeLine(timed, effectivePosition, loadedLines.getOrNull(i + 1)?.startMs,
+                                playing, positionAnchor, lineHighlight, alignment)
+                        } else {
+                            androidx.tv.material3.Text(
+                                AnnotatedString(line.text.ifBlank { "\u00A0" }),
+                                color = TextPrimary,
+                                fontSize = if (isCurrent) AuraTypography.headline else AuraTypography.title,
+                                fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                                textAlign = alignment,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                 }
                 // Enough trailing scroll range that the FINAL line can reach the
@@ -482,18 +490,50 @@ fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
     return idx
 }
 
-/**
- * One word-timed line with the sung part in [accent] and the rest muted.
- *
- * The split is [karaokeSpans]' job (pure, JVM-tested); this only turns the runs
- * into spans, so the highlight follows the same 500 ms position ticker the line
- * jump uses — no extra clock and no per-word animation.
- */
-private fun karaokeLine(line: TimedLyricLine, positionMs: Long, accent: Color): AnnotatedString =
-    buildAnnotatedString {
-        karaokeSpans(line, positionMs).forEach { span ->
-            withStyle(SpanStyle(color = if (span.sung) accent else TextSecondary)) {
-                append(span.text)
-            }
+@Composable
+private fun KaraokeLine(
+    line: TimedLyricLine,
+    positionMs: Long,
+    nextLineStartMs: Long?,
+    playing: Boolean,
+    anchorMs: Long,
+    accent: Color,
+    alignment: TextAlign
+) {
+    val elapsed = remember(line, positionMs, playing) { mutableLongStateOf(0L) }
+    var layout by remember(line) { mutableStateOf<TextLayoutResult?>(null) }
+    LaunchedEffect(line, positionMs, playing, anchorMs) {
+        elapsed.longValue = 0L
+        if (playing) while (true) {
+            withFrameMillis { elapsed.longValue = (SystemClock.uptimeMillis() - anchorMs).coerceAtLeast(0L) }
         }
     }
+    androidx.tv.material3.Text(
+        line.text,
+        color = TextSecondary,
+        fontSize = AuraTypography.headline,
+        fontWeight = FontWeight.SemiBold,
+        textAlign = alignment,
+        onTextLayout = { layout = it },
+        modifier = Modifier.fillMaxWidth().drawWithContent {
+            drawContent()
+            val result = layout ?: return@drawWithContent
+            val path = Path()
+            karaokeFills(line, positionMs + elapsed.longValue, nextLineStartMs).forEach { fill ->
+                val glyphs = (fill.start until fill.end).map { offset ->
+                    result.getBoundingBox(offset) to result.getBidiRunDirection(offset)
+                }.distinct()
+                var remaining = glyphs.sumOf { it.first.width.toDouble() }.toFloat() * fill.fraction
+                glyphs.forEach { (box, direction) ->
+                    val width = remaining.coerceIn(0f, box.width.coerceAtLeast(0f))
+                    if (width > 0f) {
+                        path.addRect(if (direction == ResolvedTextDirection.Rtl) box.copy(left = box.right - width)
+                            else box.copy(right = box.left + width))
+                    }
+                    remaining -= box.width
+                }
+            }
+            clipPath(path) { drawText(result, color = accent) }
+        }
+    )
+}

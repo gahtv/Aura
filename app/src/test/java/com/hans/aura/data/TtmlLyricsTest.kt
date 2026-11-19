@@ -10,6 +10,14 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class TtmlLyricsTest {
     @Test
+    fun `word end and duration survive absolute and relative timing`() {
+        val lines = parse("""<p begin="1s"><span begin="1s" end="2s" dur="5s">End</span> <span begin="2s" dur="500ms">Duration</span></p>
+            <p begin="10s"><span begin="0s" end="500ms">Relative</span> <span begin="500ms" dur="250ms">duration</span></p>""")
+        assertEquals(listOf(TimedWord(1000, "End", 2000), TimedWord(2000, "Duration", 2500)), lines[0].words)
+        assertEquals(listOf(TimedWord(10000, "Relative", 10500), TimedWord(10500, "duration", 10750)), lines[1].words)
+    }
+
+    @Test
     fun `agents retain ids with first use ordering and group types`() {
         val lines = LyricsStore.parseLyricsText("""<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
             <head><metadata><ttm:agent xml:id="bob" type="character"/><ttm:agent xml:id="choir" type="group"/><ttm:agent xml:id="alice" type="person"/><ttm:agent xml:id="chris" type="person"/></metadata></head>

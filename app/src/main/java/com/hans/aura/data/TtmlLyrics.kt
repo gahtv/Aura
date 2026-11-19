@@ -44,6 +44,7 @@ internal object TtmlLyrics {
         var wordDepth = -1
         var lineStart: Long? = null
         var wordStart: Long? = null
+        var wordEnd: Long? = null
         var lineAgent: String? = null
         val text = StringBuilder()
         val wordText = StringBuilder()
@@ -75,6 +76,8 @@ internal object TtmlLyrics {
                                 timeMs(parser.getAttributeValue(null, "begin"))?.let {
                                     wordDepth = parser.depth
                                     wordStart = it
+                                    wordEnd = timeMs(parser.getAttributeValue(null, "end"))
+                                        ?: timeMs(parser.getAttributeValue(null, "dur"))?.let { duration -> it + duration }
                                     wordText.clear()
                                 }
                             }
@@ -88,7 +91,7 @@ internal object TtmlLyrics {
                 XmlPullParser.END_TAG -> {
                     if (parser.depth == wordDepth) {
                         normalize(wordText.toString()).takeIf { it.isNotEmpty() }?.let {
-                            words += TimedWord(wordStart!!, it)
+                            words += TimedWord(wordStart!!, it, wordEnd)
                         }
                         wordDepth = -1
                     }
@@ -98,7 +101,8 @@ internal object TtmlLyrics {
                         val start = lineStart ?: words.firstOrNull()?.startMs
                         val paragraphStart = lineStart
                         if (paragraphStart != null && words.isNotEmpty() && words.all { it.startMs < paragraphStart }) {
-                            words = words.map { it.copy(startMs = it.startMs + paragraphStart) }.toMutableList()
+                            words = words.map { it.copy(startMs = it.startMs + paragraphStart,
+                                endMs = it.endMs?.plus(paragraphStart)) }.toMutableList()
                         }
                         if (line.isNotEmpty()) lines += LyricLine(start ?: 0L, line, start != null, words, voice(lineAgent))
                         lineDepth = -1

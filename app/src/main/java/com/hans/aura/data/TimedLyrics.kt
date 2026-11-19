@@ -4,12 +4,12 @@ package com.hans.aura.data
  * One word inside a word-timed lyric line.
  *
  * [startMs] is on the playback clock, so the karaoke highlight is a pure
- * comparison against the position the player is already publishing — no extra
- * clock, no animation driver.
+ * comparison against the playback position.
  */
 data class TimedWord(
     val startMs: Long,
-    val text: String
+    val text: String,
+    val endMs: Long? = null
 )
 
 /**
@@ -33,6 +33,32 @@ data class KaraokeSpan(
     val text: String,
     val sung: Boolean
 )
+
+data class KaraokeFill(val start: Int, val end: Int, val fraction: Float)
+
+fun wordFillFraction(word: TimedWord, endMs: Long, positionMs: Long): Float = when {
+    positionMs < word.startMs -> 0f
+    endMs <= word.startMs -> 1f
+    else -> ((positionMs.toDouble() - word.startMs) / (endMs.toDouble() - word.startMs)).toFloat().coerceIn(0f, 1f)
+}
+
+fun karaokeFills(line: TimedLyricLine, positionMs: Long, nextLineStartMs: Long? = null): List<KaraokeFill> {
+    val words = line.words.filter { it.text.isNotBlank() }
+    fun fallback() = listOf(KaraokeFill(0, line.text.length,
+        if (positionMs >= (words.firstOrNull()?.startMs ?: line.startMs)) 1f else 0f))
+    if (words.isEmpty()) return fallback()
+    val offsets = line.text.indices.filter { !line.text[it].isWhitespace() }
+    val rebuilt = words.joinToString("") { it.text }.filterNot { it.isWhitespace() }
+    if (!rebuilt.equals(offsets.map { line.text[it] }.joinToString(""), ignoreCase = true)) return fallback()
+    var cursor = 0
+    return words.mapIndexed { index, word ->
+        val length = word.text.count { !it.isWhitespace() }
+        val start = offsets[cursor]
+        cursor += length
+        val end = word.endMs ?: words.getOrNull(index + 1)?.startMs ?: nextLineStartMs ?: (word.startMs + 1000L)
+        KaraokeFill(start, offsets[cursor - 1] + 1, wordFillFraction(word, end, positionMs))
+    }
+}
 
 /**
  * Splits [line] into runs that share a highlight state at [positionMs].

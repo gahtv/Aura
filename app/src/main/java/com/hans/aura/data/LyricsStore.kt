@@ -55,7 +55,7 @@ object LyricsStore {
                     val end = cue.endPosition
                     if (cue.position < 0 || end <= start || end > it.text.length) null else {
                         normalize(it.text.substring(start, end)).takeIf { word -> word.isNotEmpty() }
-                            ?.let { word -> TimedWord(cue.start / 10_000L, word) }
+                            ?.let { word -> TimedWord(cue.start / 10_000L, word, cue.end?.div(10_000L)) }
                     }
                 }?.takeIf { words -> words.isNotEmpty() } ?: if (hasInlineTags) {
                     // Jellyfin expands repeated line stamps but leaves their inline word stamps unchanged.

@@ -16,7 +16,7 @@ class FakeJellyfinApi(
     private val views: List<JellyfinItem> = emptyList(),
     /** Parents whose query fails, to prove one bad library cannot kill a screen. */
     private val failingParents: Set<String?> = emptySet(),
-    private val lyrics: LyricsResponse? = null
+    private val lyricsResponse: LyricsResponse? = null
 ) : JellyfinApi {
 
     /** Every (includeItemTypes, parentId) the data layer actually asked for. */
@@ -167,7 +167,7 @@ class FakeJellyfinApi(
     override suspend fun unmarkFavorite(itemId: String, userId: String): retrofit2.Response<UserData> =
         nope("unmarkFavorite")
 
-    override suspend fun getLyrics(itemId: String): LyricsResponse = lyrics ?: nope("getLyrics")
+    override suspend fun getLyrics(itemId: String): LyricsResponse = lyricsResponse ?: nope("getLyrics")
     override suspend fun setCapabilities(body: CapabilitiesDto): retrofit2.Response<Unit> =
         nope("setCapabilities")
 

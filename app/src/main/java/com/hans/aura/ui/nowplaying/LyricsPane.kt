@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -61,14 +62,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LyricBreak
+import com.hans.aura.data.KaraokeSpan
 import com.hans.aura.data.Lrclib
+import com.hans.aura.data.LyricBreak
+import com.hans.aura.data.LyricAdlib
+import com.hans.aura.data.LyricCredits
 import com.hans.aura.data.LyricLine
 import com.hans.aura.data.LyricVoice
+import com.hans.aura.data.LyricsResult
 import com.hans.aura.data.LyricsStore
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
@@ -76,7 +83,7 @@ import com.hans.aura.data.TimedLyricLine
 import com.hans.aura.data.karaokeSpans
 import com.hans.aura.data.lyricBreaks
 import com.hans.aura.data.toLyricLine
-import com.hans.aura.data.toTimed
+import com.hans.aura.data.toTimedLyricLine
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
@@ -140,7 +147,8 @@ fun LyricsPane(
     onUserInteraction: () -> Unit = {}
 ) {
     val item by player.current.collectAsState()
-    val position by player.positionMs.collectAsState()
+    val position = player.positionMs.collectAsState()
+    val isPlaying by player.isPlaying.collectAsState()
     val trackId = item?.id.orEmpty()
 
     var lines by remember(item?.id) { mutableStateOf<List<LyricLine>?>(null) }
@@ -151,6 +159,7 @@ fun LyricsPane(
     // produced anything — drives the hint under the empty state.
     var webChecked by remember(item?.id) { mutableStateOf(false) }
     var webFound by remember(item?.id) { mutableStateOf(false) }
+    var instrumental by remember(item?.id) { mutableStateOf(false) }
     // Fresh scroll state per track: without keying on the item id, a track
     // change keeps the previous song's scroll offset until the new song's
     // first line fires a scroll, so the pane lingers at the old end position.
@@ -170,6 +179,7 @@ fun LyricsPane(
         timedLines = null
         webChecked = false
         webFound = false
+        instrumental = false
         // Word-timed lyrics first: they carry the same lines plus per-word
         // timestamps, so the pane can highlight as the line is sung. A source
         // that has none (or fails to) answers null and nothing changes.
@@ -188,7 +198,7 @@ fun LyricsPane(
         if (local.isNotEmpty()) {
             lines = local
             if (local.any { it.words.isNotEmpty() }) {
-                timedLines = local.map { it.toTimed() }
+                timedLines = local.map { it.toTimedLyricLine() }
             }
             return@LaunchedEffect
         }
@@ -197,17 +207,19 @@ fun LyricsPane(
             return@LaunchedEffect
         }
         // In-process cache inside Lrclib: re-entering the pane does not re-query.
-        val remote = Lrclib.lookup(cur)
+        val result = Lrclib.lookupResult(cur)
+        val remote = result.lines
+        instrumental = result == LyricsResult.Instrumental
         webChecked = true
         webFound = remote.isNotEmpty()
         lines = remote
         if (remote.any { it.words.isNotEmpty() }) {
-            timedLines = remote.map { it.toTimed() }
+            timedLines = remote.map { it.toTimedLyricLine() }
         }
     }
 
     // +offset = the highlighted line is one step EARLIER than the audio clock.
-    val effectivePosition = (position + offsetMs).coerceAtLeast(0L)
+    val effectivePosition = (position.value + offsetMs).coerceAtLeast(0L)
     val currentLineIndex = remember(lines, effectivePosition) {
         computeCurrentLine(lines, effectivePosition)
     }
@@ -217,11 +229,21 @@ fun LyricsPane(
     // During a break the dots take the current line's anchor slot.
     val followRow = activeBreak?.let { rows.indexOf(LyricRow.Break(it)) }
         ?: rows.indexOf(LyricRow.Line(currentLineIndex.coerceAtLeast(0)))
+    val hasTimedAdlibs = remember(lines) { lines.orEmpty().any { it.adlib?.isTimed == true } }
+    val adlibPosition = remember(trackId) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(player, adlibPosition, hasTimedAdlibs, isPlaying) {
+        adlibPosition.value = null
+        if (hasTimedAdlibs && isPlaying) {
+            // The regular progress ticker can skip several short syllables.
+            while (true) {
+                adlibPosition.value = player.currentPositionMs()
+                delay(50L)
+            }
+        }
+    }
 
-    // Anchor offset: the current line lands ~3 line-heights below the top, so
-    // exactly the previous three lines stay visible above it.
-    // Line box (26/22sp text + 20dp vertical padding) measures ~69dp pitch on
-    // TV; 3*70 leaves a small margin so the third previous line never clips.
+    // Anchor about three standard line heights from the top; wrapped lyrics
+    // and adlibs can take up more of the space above the current line.
     val anchorOffsetPx = with(LocalDensity.current) { (3 * AuraSizes.lyricLinePitch.value).dp.roundToPx() }
 
     fun pauseFollow() {
@@ -256,15 +278,14 @@ fun LyricsPane(
         if (lines.isNullOrEmpty() || followPaused) return@LaunchedEffect
         // Before the first synced line's timestamp (currentLineIndex == -1)
         // anchor the FIRST line, or the intro dots, instead.
-        val target = followRow
         listState.animateScrollToItem(
-            index = target + 1, // +1: head spacer item
+            index = followRow + 1, // +1: head spacer item
             scrollOffset = -anchorOffsetPx
         )
         // Second snap: the first pass positions with ESTIMATED offsets for
         // unmeasured items, so the current line can land a line or two low.
         // A second call re-anchors with the now-measured sizes.
-        listState.scrollToItem(index = target + 1, scrollOffset = -anchorOffsetPx)
+        listState.scrollToItem(index = followRow + 1, scrollOffset = -anchorOffsetPx)
     }
 
     Box(
@@ -316,7 +337,8 @@ fun LyricsPane(
                 accent = highlightColor,
                 webChecked = webChecked,
                 webFound = webFound,
-                webEnabled = Prefs.lyricsWebFallback
+                webEnabled = Prefs.lyricsWebFallback,
+                instrumental = instrumental
             )
             else -> LazyColumn(
                 state = listState,
@@ -353,11 +375,11 @@ fun LyricsPane(
                     // Line-only timestamps do not carry karaoke word timing.
                     val timed = timedLines?.getOrNull(i)?.takeIf { isCurrent && it.words.isNotEmpty() }
                     val text = if (timed != null) {
-                        karaokeLine(timed, effectivePosition, lineHighlight)
+                        karaokeText(karaokeSpans(timed, effectivePosition), lineHighlight)
                     } else {
                         AnnotatedString(line.text.ifBlank { "\u00A0" })
                     }
-                    Box(
+                    Column(
                         Modifier
                             .fillMaxWidth()
                             .then(if (multipleVoices && isCurrent) {
@@ -379,10 +401,17 @@ fun LyricsPane(
                             textAlign = alignment,
                             modifier = Modifier.fillMaxWidth()
                         )
+                        val adlib = line.adlib
+                        if (adlib != null && adlib.text.isNotBlank()) {
+                            AdlibText(adlib, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight)
+                        }
                     }
                 }
-                // Enough trailing scroll range that the FINAL line can reach the
-                // top anchor (the bottom-left chip may overlap it — accepted).
+                val credits = loadedLines.first().credits
+                if (credits.writers.isNotEmpty() || credits.transcribers.isNotEmpty()) {
+                    item { LyricCreditsFooter(credits) }
+                }
+                // Enough trailing scroll range for the final line to reach the anchor.
                 item { Spacer(Modifier.height(AuraSizes.lyricsTailSpace)) }
             }
         }
@@ -412,6 +441,35 @@ fun LyricsPane(
     }
 }
 
+@Composable
+internal fun LyricCreditsFooter(credits: LyricCredits) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(
+            start = AuraSpacing.screenHorizontal,
+            end = AuraSpacing.screenHorizontal,
+            top = AuraSpacing.lg
+        ),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (credits.writers.isNotEmpty()) {
+            Text(
+                text = "Written by: ${credits.writers.joinToString()}",
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
+        }
+        if (credits.transcribers.isNotEmpty()) {
+            Text(
+                text = "Lyrics transcribed by: ${credits.transcribers.joinToString()}",
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
 /**
  * Empty state that reads as a real screen: the track's own metadata card plus
  * an explicit "no synced lyrics" line, and — when the online lookup is on and
@@ -424,7 +482,8 @@ private fun NoLyricsState(
     accent: Color,
     webChecked: Boolean,
     webFound: Boolean,
-    webEnabled: Boolean
+    webEnabled: Boolean,
+    instrumental: Boolean
 ) {
     Column(
         Modifier
@@ -438,13 +497,14 @@ private fun NoLyricsState(
             Spacer(Modifier.height(AuraSpacing.lg))
         }
         androidx.tv.material3.Text(
-            "No synced lyrics for this track",
+            if (instrumental) "Instrumental" else "No synced lyrics for this track",
             color = TextPrimary,
             fontSize = AuraTypography.title
         )
         Spacer(Modifier.height(AuraSpacing.xs))
         androidx.tv.material3.Text(
             when {
+                instrumental -> "This track has no vocals."
                 !webEnabled ->
                     "Turn on \u201CLook up lyrics online\u201D in Settings to search LRCLIB for lyrics."
                 webChecked && !webFound ->
@@ -597,16 +657,34 @@ fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
     return idx
 }
 
-/**
- * One word-timed line with the sung part in [accent] and the rest muted.
- *
- * The split is [karaokeSpans]' job (pure, JVM-tested); this only turns the runs
- * into spans, so the highlight follows the same 500 ms position ticker the line
- * jump uses — no extra clock and no per-word animation.
- */
-private fun karaokeLine(line: TimedLyricLine, positionMs: Long, accent: Color): AnnotatedString =
+@Composable
+private fun AdlibText(
+    adlib: LyricAdlib,
+    adlibPosition: State<Long?>,
+    playbackPosition: State<Long>,
+    offsetMs: Long,
+    leadIsCurrent: Boolean,
+    alignment: TextAlign,
+    accent: Color
+) {
+    val text = if (adlib.isTimed) {
+        val positionMs = ((adlibPosition.value ?: playbackPosition.value) + offsetMs).coerceAtLeast(0L)
+        karaokeText(adlib.karaokeSpans(positionMs, leadIsCurrent), accent)
+    } else {
+        AnnotatedString(adlib.text)
+    }
+    androidx.tv.material3.Text(
+        text,
+        color = TextSecondary,
+        fontSize = AuraTypography.body,
+        textAlign = alignment,
+        modifier = Modifier.fillMaxWidth().padding(top = AuraSpacing.xxs)
+    )
+}
+
+private fun karaokeText(spans: List<KaraokeSpan>, accent: Color): AnnotatedString =
     buildAnnotatedString {
-        karaokeSpans(line, positionMs).forEach { span ->
+        spans.forEach { span ->
             withStyle(SpanStyle(color = if (span.sung) accent else TextSecondary)) {
                 append(span.text)
             }

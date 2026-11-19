@@ -132,7 +132,16 @@ data class MediaStream(
 @Serializable
 data class LyricsResponse(
     @SerialName("Lyrics") val lyrics: List<LyricLineDto>? = null,
-    @SerialName("LyricText") val lyricText: String? = null
+    @SerialName("LyricText") val lyricText: String? = null,
+    @SerialName("Metadata") val metadata: LyricMetadataDto? = null
+)
+
+@Serializable
+data class LyricMetadataDto(
+    @SerialName("Offset") val offset: Long? = null,
+    @SerialName("Author") val author: String? = null,
+    @SerialName("Lyricist") val lyricist: String? = null,
+    @SerialName("By") val by: String? = null
 )
 
 @Serializable

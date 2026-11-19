@@ -34,8 +34,11 @@ fun lyricBreaks(lines: List<LyricLine>, minGapMs: Long = MIN_LYRIC_BREAK_MS): Li
     var sungUntil = Long.MIN_VALUE
     for (i in 0 until lines.lastIndex) {
         val next = lines[i + 1]
-        sungUntil = maxOf(sungUntil, lines[i].endMs ?: next.startMs)
+        sungUntil = maxOf(sungUntil, lines[i].sungUntil() ?: next.startMs)
         if (next.startMs - sungUntil >= minGapMs) breaks += LyricBreak(i, sungUntil, next.startMs)
     }
     return breaks
 }
+
+/** An adlib trailing past its lead line keeps the break from starting. */
+private fun LyricLine.sungUntil(): Long? = endMs?.let { maxOf(it, adlib?.endMs ?: it) }

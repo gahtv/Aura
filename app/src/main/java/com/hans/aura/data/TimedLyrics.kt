@@ -19,6 +19,8 @@ data class TimedWord(
  * [LyricLine] — an implementation maps its own payload onto this shape, and a
  * source that cannot time words simply never produces one (see
  * [MusicSource.lyricsTimed]).
+ *
+ * [adlib] is optional background-vocal text with independent timing.
  */
 data class TimedLyricLine(
     val startMs: Long,
@@ -26,20 +28,39 @@ data class TimedLyricLine(
     val translation: String? = null,
     val words: List<TimedWord> = emptyList(),
     val voice: LyricVoice? = null,
+    val adlib: LyricAdlib? = null,
+    val credits: LyricCredits = LyricCredits(),
     val endMs: Long? = null
 )
 
-internal fun LyricLine.toTimed(): TimedLyricLine =
-    TimedLyricLine(startMs, text, words = words, voice = voice, endMs = endMs)
+internal fun LyricLine.toTimedLyricLine() =
+    TimedLyricLine(startMs, text, words = words, voice = voice, adlib = adlib, credits = credits, endMs = endMs)
 
-internal fun TimedLyricLine.toLyricLine(): LyricLine =
-    LyricLine(startMs, text, isSynced = true, words = words, voice = voice, endMs = endMs)
+internal fun TimedLyricLine.toLyricLine() =
+    LyricLine(startMs, text, isSynced = true, words = words, voice = voice, adlib = adlib, credits = credits, endMs = endMs)
 
 /** A run of a lyric line, [sung] once the audio clock has passed its first word. */
 data class KaraokeSpan(
     val text: String,
     val sung: Boolean
 )
+
+/** Exact display text (including spacing), optionally timed to the playback clock. */
+data class AdlibSegment(val text: String, val startMs: Long? = null)
+
+data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null) {
+    val text: String = segments.joinToString("") { it.text }
+    private val startMs = segments.mapNotNull { it.startMs }.minOrNull()
+    val isTimed: Boolean get() = startMs != null
+
+    internal fun karaokeSpans(positionMs: Long, leadIsCurrent: Boolean): List<KaraokeSpan> {
+        val overlapping = endMs != null && startMs != null && positionMs in startMs until endMs
+        val active = leadIsCurrent || overlapping
+        return segments.map { segment ->
+            KaraokeSpan(segment.text, active && segment.startMs?.let { positionMs >= it } == true)
+        }
+    }
+}
 
 /**
  * Splits [line] into runs that share a highlight state at [positionMs].

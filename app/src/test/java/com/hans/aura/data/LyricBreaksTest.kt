@@ -29,6 +29,12 @@ class LyricBreaksTest {
     }
 
     @Test
+    fun `a trailing adlib holds off the break`() {
+        val withAdlib = line(0, 2_000).copy(adlib = LyricAdlib(emptyList(), endMs = 9_000))
+        assertTrue(lyricBreaks(listOf(withAdlib, line(12_000))).isEmpty())
+    }
+
+    @Test
     fun `unsynced lyrics have no breaks`() {
         assertTrue(lyricBreaks(listOf(LyricLine(0, "a", isSynced = false))).isEmpty())
         assertTrue(lyricBreaks(emptyList()).isEmpty())
@@ -64,7 +70,7 @@ class LyricBreaksTest {
 
     @Test
     fun `jellyfin cue ends and blank lines become line ends`() = runTest {
-        val api = FakeJellyfinApi(lyrics = LyricsResponse(lyrics = listOf(
+        val api = FakeJellyfinApi(lyricsResponse = LyricsResponse(lyrics = listOf(
             LyricLineDto("Hold this", 20_000_000, listOf(LyricCueDto(0, 5, 20_000_000, 30_000_000), LyricCueDto(5, 9, 30_000_000, 60_000_000))),
             LyricLineDto("Sung", 100_000_000),
             LyricLineDto("", 140_000_000),

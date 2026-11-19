@@ -1,5 +1,7 @@
 package com.hans.aura.data
 
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -7,6 +9,87 @@ import org.junit.Test
 
 /** LRC parsing: synced stamps, multi-stamp lines, and the plain-text fallback. */
 class LyricsStoreTest {
+    @Test
+    fun `LRC credits are retained separately from lyrics`() {
+        val lines = LyricsStore.parseLrcText(
+            "[ar:Performer][AU: Ada Lane ][au:Ada Lane][lr:Ren Park]\n[by: Sam Ford ][lr: ]\n" +
+                "[00:02]Hello\n[00:03]World [au:not a header]"
+        )
+        assertEquals(listOf("Hello", "World [au:not a header]"), lines.map { it.text })
+        assertEquals(
+            LyricCredits(listOf("Ada Lane", "Ren Park"), listOf("Sam Ford")),
+            lines.first().credits
+        )
+        assertEquals(lines.first().credits, lines.last().credits)
+    }
+
+    @Test
+    fun `Jellyfin credits merge with leaked headers in structured and raw lyrics`() = runBlocking {
+        for (lyrics in listOf(
+            """"Lyrics":[{"Text":"[au:Ada Lane][lr:Ren Park]"},{"Text":"[by:Sam Ford]"},{"Text":"Hello"}]""",
+            """"LyricText":"[au:Ada Lane][lr:Ren Park]\n[by:Sam Ford]\nHello""""
+        )) {
+            val response = Json.decodeFromString<LyricsResponse>(
+                """{"Metadata":{"Author":" Ada Lane ","Lyricist":"Jay Poe","By":" "},$lyrics}"""
+            )
+            val line = LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track").single()
+            assertEquals("Hello", line.text)
+            assertEquals(
+                LyricCredits(listOf("Ada Lane", "Jay Poe", "Ren Park"), listOf("Sam Ford")),
+                line.credits
+            )
+        }
+    }
+
+    @Test
+    fun `offset shifts lines and repeated inline words and clamps at zero`() {
+        for ((offset, starts, words) in listOf(
+            Triple("+1500", listOf(0L, 1500L), listOf(0L, 500L)),
+            Triple("-1500", listOf(2500L, 4500L), listOf(2500L, 3500L))
+        )) {
+            val lines = LyricsStore.parseLrcText("[00:01][00:03]<00:01>One <00:02>two\n[offset:$offset]")
+            assertEquals(starts, lines.map { it.startMs })
+            assertEquals(words, lines[0].words.map { it.startMs })
+            assertEquals(listOf(words[0] + if (offset.startsWith("+")) 1500L else 2000L, words[1] + 2000L),
+                lines[1].words.map { it.startMs })
+        }
+    }
+
+    @Test
+    fun `headers never become plain or synced lyrics`() {
+        val headers = "[ar:Artist][ti:Title]\n[al:Album]\n[au:Author]\n[by:Writer]\n[re:Editor]\n[ve:1]\n[TOOL:Editor]\n[length:03:00]\n[#:1]\n[offset:+1500]"
+        assertTrue(LyricsStore.parseLrcText(headers).isEmpty())
+        assertEquals(listOf("Hello"), LyricsStore.parseLrcText("$headers\nHello").map { it.text })
+        assertEquals(listOf("Hello"), LyricsStore.parseLrcText("$headers\n[00:02]Hello\n[00:03][ar:Artist]").map { it.text })
+        assertEquals(2000L, LyricsStore.parseLrcText("[offset:invalid]\n[00:02]Hello").single().startMs)
+    }
+
+    @Test
+    fun `section labels remain lyrics in raw and structured paths`() = runBlocking {
+        val labels = listOf("[Chorus: Drake]", "[Intro:Kendrick]")
+        assertEquals(labels, LyricsStore.parseLrcText(labels.joinToString("\n")).map { it.text })
+        assertEquals(labels, LyricsStore.parseLrcText(labels.joinToString("\n") { "[00:01]$it" }).map { it.text })
+        val response = LyricsResponse(lyrics = labels.map { LyricLineDto(it) })
+        assertEquals(labels, LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track").map { it.text })
+    }
+
+    @Test
+    fun `structured Jellyfin metadata offset uses ticks and filters leaked headers`() = runBlocking {
+        for ((offset, expected) in listOf(15000000L to 500L, -15000000L to 3500L, 0L to 2000L)) {
+            val response = Json { ignoreUnknownKeys = true }.decodeFromString<LyricsResponse>(
+                """{"Metadata":{"Offset":$offset},"Lyrics":[{"Text":"[ar:Artist]"},{"Text":"[offset:+1500]"},{"Text":"One","Start":20000000,"Cues":[{"Position":0,"EndPosition":3,"Start":10000000}]}]}"""
+            )
+            val line = LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = response), "track").single()
+            assertEquals(expected, line.startMs)
+            assertEquals((1000L - offset / 10000L).coerceAtLeast(0L), line.words.single().startMs)
+        }
+        val stock = LyricsResponse(lyrics = listOf(LyricLineDto("First", 10000000L)))
+        assertEquals(1000L, LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = stock), "track").single().startMs)
+        val plain = LyricsResponse(lyrics = listOf(LyricLineDto("[ti:Title]"), LyricLineDto("Hello")))
+        assertEquals(listOf("Hello"), LyricsStore.fetch(FakeJellyfinApi(lyricsResponse = plain), "track").map { it.text })
+        assertTrue(LyricsStore.fetch(FakeJellyfinApi(), "track").isEmpty())
+    }
+
     @Test
     fun `speaker tags are stripped and classified without inheritance`() {
         val tags = mapOf(

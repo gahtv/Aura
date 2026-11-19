@@ -299,6 +299,13 @@ fun CollectionScreen(
             }
         }
 
+        if (state.error != null && tracks != null) {
+            androidx.tv.material3.Text(
+                state.error.orEmpty(), color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
         // Tracklist
         // "Only Atmos" (Settings): an album's tracklist drops non-Atmos files.
         // Playlists are never filtered — that would hide tracks the user put there.
@@ -329,7 +336,9 @@ fun CollectionScreen(
             ) {
                 itemsIndexed(shownTracks) { i, track ->
                     val removeFromPlaylist: (() -> Unit)? = if (collection.type == "Playlist") {
-                        { viewModel.removeFromPlaylist(track.id) }
+                        track.playlistItemId?.takeIf { it.isNotBlank() }?.let { entryId ->
+                            { viewModel.removeFromPlaylist(entryId) }
+                        }
                     } else null
                     TrackRow(
                         index = i + 1,

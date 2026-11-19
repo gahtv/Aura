@@ -24,6 +24,9 @@ class JellyfinSource(
     private val lookupLyrics: suspend (JellyfinItem) -> List<LyricLine> = { Lrclib.lookup(it) }
 ) : MusicSource {
 
+    override suspend fun removeFromPlaylist(playlistId: String, entryId: String) =
+        media.removeFromPlaylist(playlistId, entryId)
+
     override val id: String = "jellyfin"
 
     override val displayName: String = "Jellyfin"

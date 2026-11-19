@@ -17,6 +17,11 @@ package com.hans.aura.data
  */
 interface MusicSource {
 
+    /** Remove one playlist occurrence; failures must propagate to the caller. */
+    suspend fun removeFromPlaylist(playlistId: String, entryId: String) {
+        throw UnsupportedOperationException("Playlist removal is not supported")
+    }
+
     /** Stable id for logs and diagnostics ("jellyfin", "local", …). */
     val id: String
 

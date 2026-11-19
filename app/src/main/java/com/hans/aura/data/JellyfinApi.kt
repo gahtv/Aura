@@ -193,7 +193,7 @@ interface JellyfinApi {
     @DELETE("Playlists/{playlistId}/Items")
     suspend fun removeFromPlaylist(
         @retrofit2.http.Path("playlistId") playlistId: String,
-        @Query("Ids") ids: String
+        @Query("entryIds") entryIds: String
     ): retrofit2.Response<Unit>
 
     @DELETE("Items/{itemId}")

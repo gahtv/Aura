@@ -63,15 +63,16 @@ class CollectionViewModel(
     /** A playlist mutation landed (remove / reorder): refetch the list. */
     fun refresh() = load(force = true)
 
-    fun removeFromPlaylist(trackId: String) {
+    fun removeFromPlaylist(entryId: String) {
         viewModelScope.launch {
             runCatching {
-                withContext(Dispatchers.IO) { app.jellyfin.api.removeFromPlaylist(itemId, trackId) }
+                SourceQueries.removeFromPlaylist(itemId, entryId)
             }.onSuccess {
                 LibraryCache.evict(DetailPresenter.collectionCacheKey(itemId))
                 load(force = true)
             }.onFailure {
-                Log.w(TAG, "remove item=$trackId from playlist=$itemId failed: ${it.message}")
+                Log.w(TAG, "remove entry=$entryId from playlist=$itemId failed: ${it.message}")
+                _state.update { state -> state.copy(error = "Couldn't remove from playlist: ${it.message}") }
             }
         }
     }

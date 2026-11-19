@@ -10,6 +10,10 @@ package com.hans.aura.data
  */
 object SourceQueries {
 
+    suspend fun removeFromPlaylist(playlistId: String, entryId: String) {
+        checkNotNull(source()) { "No music source available" }.removeFromPlaylist(playlistId, entryId)
+    }
+
     private fun source(): MusicSource? = MusicSources.current
 
     suspend fun recentlyPlayed(limit: Int = 20): List<JellyfinItem> =

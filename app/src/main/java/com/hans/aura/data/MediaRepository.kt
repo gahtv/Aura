@@ -28,6 +28,12 @@ class MediaRepository(
 
     private fun api(): JellyfinApi = jellyfin.api
 
+    suspend fun removeFromPlaylist(playlistId: String, entryId: String) = withContext(Dispatchers.IO) {
+        require(entryId.isNotBlank()) { "Missing playlist entry id" }
+        val response = api().removeFromPlaylist(playlistId, entryId)
+        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+    }
+
     private fun userId(): String? = sessionProvider()?.userId
 
     // ---- Browse ------------------------------------------------------------

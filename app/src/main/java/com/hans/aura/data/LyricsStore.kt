@@ -254,13 +254,7 @@ object LyricsStore {
      */
     suspend fun fetchPreferred(api: JellyfinApi, itemId: String): List<LyricLine> {
         (MusicSources.current as? JellyfinSource)?.let { return it.jellyfinLyrics(itemId) }
-        val fromSource = try {
-            MusicSources.current?.lyrics(itemId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
-        }
+        val fromSource = runCatching { MusicSources.current?.lyrics(itemId) }.getOrNull()
         if (!fromSource.isNullOrBlank()) {
             val parsed = withContext(Dispatchers.Default) { parseLyricsText(fromSource) }
             android.util.Log.i("AURA_LYRICS", "source item=$itemId chars=${fromSource.length} lines=${parsed.size}")

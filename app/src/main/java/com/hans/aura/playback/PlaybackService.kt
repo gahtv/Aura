@@ -47,6 +47,7 @@ class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var reporter: PlaybackReporter? = null
     private var remote: PlaybackRemote? = null
+    private var pausedAudioOutput: PausedAudioOutput? = null
 
     /**
      * Backends that keep their own play history (the index) are told once per
@@ -61,6 +62,9 @@ class PlaybackService : MediaSessionService() {
         val app = application as AuraApp
 
         val player = buildPlayer(app)
+        val audioOutput = PausedAudioOutput(player)
+        pausedAudioOutput = audioOutput
+        player.addListener(audioOutput)
         // Unity gain, always: downmixing/attenuating in the player would apply
         // digital volume to the E-AC-3 JOC bitstream before the AVR sees it.
         // Level belongs to the receiver, so re-assert it on every track change
@@ -101,7 +105,8 @@ class PlaybackService : MediaSessionService() {
         // without them gets neither, so nothing 404s on every tick and no
         // socket reconnect loop is ever started.
         if (app.container.source.reportsPlayState) {
-            reporter = PlaybackReporter(app.jellyfin, player).also { it.start() }
+            reporter = PlaybackReporter(app.jellyfin, player) { audioOutput.released }
+                .also { it.start() }
             // Insert remote items without interrupting playback; only start
             // playing if the queue was empty beforehand.
             fun enqueue(items: List<JellyfinItem>, at: Int) {
@@ -215,6 +220,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        pausedAudioOutput?.close()
+        pausedAudioOutput = null
         playScope.cancel()
         remote?.stop()
         remote = null
@@ -267,7 +274,8 @@ private class AuthDataSourceFactory(
  */
 internal class PlaybackReporter(
     private val jellyfin: com.hans.aura.data.JellyfinClient,
-    private val player: Player
+    private val player: Player,
+    private val isOutputReleased: () -> Boolean = { false }
 ) {
     private val scope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
@@ -287,7 +295,7 @@ internal class PlaybackReporter(
             override fun run() {
                 val p = player
                 val item = p.currentMediaItem
-                val idle = p.playbackState == Player.STATE_IDLE ||
+                val idle = (p.playbackState == Player.STATE_IDLE && !isOutputReleased()) ||
                     p.playbackState == Player.STATE_ENDED
                 if (item != null && (p.isPlaying || (!idle && !p.playWhenReady))) {
                     // Playing, or parked on a prepared-but-paused track.

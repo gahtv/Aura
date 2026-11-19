@@ -171,7 +171,10 @@ internal fun QueuePeekOverlay(
                 PeekRow(
                     track = track,
                     accent = accent,
-                    modifier = Modifier.focusRequester(rowFocus[i]).onFocusChanged {
+                    modifier = Modifier.focusRequester(rowFocus[i]).focusProperties {
+                        up = rowFocus.getOrNull(i - 1) ?: FocusRequester.Cancel
+                        down = rowFocus.getOrNull(i + 1) ?: FocusRequester.Cancel
+                    }.onFocusChanged {
                         if (it.isFocused) focusedRow = i
                     }
                 ) {

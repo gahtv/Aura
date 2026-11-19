@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 class JellyfinSource(
     private val client: JellyfinClient,
     private val media: MediaRepository,
-    private val fetchLyrics: suspend (String) -> List<LyricLine> = { LyricsStore.fetch(client.api, it) },
+    private val fetchLyrics: suspend (String) -> List<LyricLine>? = { LyricsStore.fetchCacheable(client.api, it) },
     private val lookupLyrics: suspend (JellyfinItem) -> List<LyricLine> = { Lrclib.lookup(it) }
 ) : MusicSource {
 
@@ -46,7 +46,7 @@ class JellyfinSource(
 
     internal suspend fun jellyfinLyrics(itemId: String): List<LyricLine> =
         serverLyrics[itemId] ?: fetchLyrics(itemId).let { fetched ->
-            if (fetched.isEmpty()) serverLyrics[itemId].orEmpty()
+            if (fetched == null) serverLyrics[itemId].orEmpty()
             else serverLyrics.putIfAbsent(itemId, fetched) ?: fetched
         }
 

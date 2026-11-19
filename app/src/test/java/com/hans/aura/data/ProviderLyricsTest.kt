@@ -11,6 +11,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
@@ -19,18 +20,104 @@ class ProviderLyricsTest {
     private val savePath = "$searchPath/LrcLib:42="
     private val latestLyrics = """{"Lyrics":[{"Start":12340000,"Text":"Saved line"}]}"""
     private val server = MockWebServer()
+    private lateinit var client: JellyfinClient
     private lateinit var source: JellyfinSource
 
     @Before
     fun startServer() {
         server.start()
-        val client = JellyfinClient(ApplicationProvider.getApplicationContext<Context>())
+        client = JellyfinClient(ApplicationProvider.getApplicationContext<Context>())
         client.auth.save(Session(server.url("/").toString(), "user", "test", "token", "device"))
         source = JellyfinSource(client, MediaRepository(client, { client.auth.session }))
     }
 
     @After
-    fun stopServer() = server.shutdown()
+    fun stopServer() {
+        Prefs.lyricsWebFallback = false
+        MusicSources.reset()
+        server.shutdown()
+    }
+
+    @Test
+    fun `absent lyrics are cached across pane calls and reentry`() = runTest {
+        assertAbsenceCached(404)
+    }
+
+    @Test
+    fun `successful response without lines is cached`() = runTest {
+        assertAbsenceCached(200)
+    }
+
+    private suspend fun assertAbsenceCached(status: Int) {
+        Prefs.lyricsWebFallback = false
+        MusicSources.install(source)
+        repeat(4) { reply(status) }
+        repeat(2) {
+            assertEquals(null, source.lyricsTimed("song"))
+            assertEquals(emptyList<LyricLine>(), LyricsStore.fetchPreferred(
+                client.api, "song"
+            ))
+        }
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `server and authorization errors are retried`() = runTest {
+        for (status in listOf(500, 401, 403)) {
+            reply(status)
+            reply(200, latestLyrics)
+            assertEquals(emptyList<LyricLine>(), source.jellyfinLyrics("song$status"))
+            assertEquals("Saved line", source.jellyfinLyrics("song$status").single().text)
+        }
+        assertEquals(6, server.requestCount)
+    }
+
+    @Test
+    fun `network errors are not cacheable and injected failures retry`() = runTest {
+        val api = object : JellyfinApi by FakeJellyfinApi() {
+            override suspend fun getLyrics(itemId: String): LyricsResponse = throw IOException("offline")
+        }
+        var calls = 0
+        val retrying = JellyfinSource(client, MediaRepository(client, { client.auth.session }),
+            fetchLyrics = {
+                calls++
+                LyricsStore.fetchCacheable(api, it)
+            })
+        repeat(2) { assertEquals(emptyList<LyricLine>(), retrying.jellyfinLyrics("song")) }
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun `saving lyrics replaces cached absence`() = runTest {
+        reply(404)
+        assertEquals(emptyList<LyricLine>(), source.jellyfinLyrics("song"))
+        reply(200, latestLyrics)
+        assertEquals(ProviderLyricsResult.Success(Unit), source.saveProviderLyrics("song", "LrcLib:42="))
+        assertEquals("Saved line", source.jellyfinLyrics("song").single().text)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `cached absence still allows web fallback`() = runTest {
+        Prefs.init(ApplicationProvider.getApplicationContext<Context>())
+        Prefs.lyricsWebFallback = true
+        var lookups = 0
+        val fallback = JellyfinSource(client, MediaRepository(client, { client.auth.session }),
+            lookupLyrics = {
+                lookups++
+                listOf(LyricLine(1234L, "Web line", true))
+            })
+        reply(404)
+        repeat(2) { reply(200, """{"Id":"song","Name":"Song"}""") }
+        repeat(2) {
+            assertEquals("Web line", fallback.lyricsTimed("song")?.single()?.text)
+            assertEquals(true, fallback.cachedWebLyricsFound("song"))
+        }
+        assertEquals(2, lookups)
+        assertRequest("GET", "/Audio/song/lyrics")
+        repeat(2) { assertRequest("GET", "/Items/song?userId=user") }
+        assertEquals(3, server.requestCount)
+    }
 
     @Test
     fun `search previews candidates without saving and selection replaces cached lyrics`() = runTest {

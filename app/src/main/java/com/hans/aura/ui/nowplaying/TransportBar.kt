@@ -61,6 +61,34 @@ import com.hans.aura.ui.theme.TextSecondary
  * playing, so the control simply is not drawn).
  */
 @Composable
+internal fun LiveTransportBar(
+    player: PlayerConnection,
+    isPlaying: Boolean,
+    playPauseFocus: FocusRequester,
+    accent: Color,
+    onOpenPeek: (FocusRequester) -> Boolean,
+    favorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null,
+    onRadio: (() -> Unit)? = null
+) {
+    TransportBarContent(
+        player = player,
+        isPlaying = isPlaying,
+        playPauseFocus = playPauseFocus,
+        accent = accent,
+        onOpenPeek = onOpenPeek,
+        favorite = favorite,
+        onToggleFavorite = onToggleFavorite,
+        onRadio = onRadio,
+        seekSection = {
+            val position by player.positionMs.collectAsState()
+            val duration by player.durationMs.collectAsState()
+            SeekSection(position, duration, isPlaying, accent, playPauseFocus, player::seekBy)
+        }
+    )
+}
+
+@Composable
 internal fun TransportBar(
     player: PlayerConnection,
     position: Long,
@@ -72,6 +100,64 @@ internal fun TransportBar(
     favorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
     onRadio: (() -> Unit)? = null
+) {
+    TransportBarContent(
+        player = player,
+        isPlaying = isPlaying,
+        playPauseFocus = playPauseFocus,
+        accent = accent,
+        onOpenPeek = onOpenPeek,
+        favorite = favorite,
+        onToggleFavorite = onToggleFavorite,
+        onRadio = onRadio,
+        seekSection = {
+            SeekSection(position, duration, isPlaying, accent, playPauseFocus, player::seekBy)
+        }
+    )
+}
+
+@Composable
+private fun SeekSection(
+    position: Long,
+    duration: Long,
+    isPlaying: Boolean,
+    accent: Color,
+    playPauseFocus: FocusRequester,
+    onSeek: (Long) -> Unit
+) {
+    WavySeekBar(
+        progress = if (duration > 0) position.toFloat() / duration else 0f,
+        isPlaying = isPlaying,
+        accent = accent,
+        modifier = Modifier.focusProperties { down = playPauseFocus },
+        onSeek = onSeek
+    )
+    Spacer(Modifier.height(AuraSpacing.xs))
+    Row(Modifier.fillMaxWidth()) {
+        androidx.tv.material3.Text(
+            formatDuration(position),
+            color = TextSecondary,
+            fontSize = AuraTypography.caption
+        )
+        Spacer(Modifier.weight(1f))
+        androidx.tv.material3.Text(
+            "-${formatDuration((duration - position).coerceAtLeast(0))}",
+            color = TextSecondary, fontSize = AuraTypography.caption
+        )
+    }
+}
+
+@Composable
+private fun TransportBarContent(
+    player: PlayerConnection,
+    isPlaying: Boolean,
+    playPauseFocus: FocusRequester,
+    accent: Color,
+    onOpenPeek: (FocusRequester) -> Boolean,
+    favorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null,
+    onRadio: (() -> Unit)? = null,
+    seekSection: @Composable () -> Unit
 ) {
     val shuffleEnabled by player.shuffleEnabled.collectAsState()
     val repeatMode by player.repeatMode.collectAsState()
@@ -86,26 +172,7 @@ internal fun TransportBar(
         }
 
     Column {
-        WavySeekBar(
-            progress = if (duration > 0) position.toFloat() / duration else 0f,
-            isPlaying = isPlaying,
-            accent = accent,
-            modifier = Modifier.focusProperties { down = playPauseFocus },
-            onSeek = player::seekBy
-        )
-        Spacer(Modifier.height(AuraSpacing.xs))
-        Row(Modifier.fillMaxWidth()) {
-            androidx.tv.material3.Text(
-                formatDuration(position),
-                color = TextSecondary,
-                fontSize = AuraTypography.caption
-            )
-            Spacer(Modifier.weight(1f))
-            androidx.tv.material3.Text(
-                "-${formatDuration((duration - position).coerceAtLeast(0))}",
-                color = TextSecondary, fontSize = AuraTypography.caption
-            )
-        }
+        seekSection()
         Spacer(Modifier.height(AuraSpacing.lg))
         Row(
             Modifier.fillMaxWidth(),
@@ -117,7 +184,7 @@ internal fun TransportBar(
             }
             Spacer(Modifier.width(AuraSpacing.md))
             TransportIconButton(R.drawable.ic_replay_10, "Back 10 seconds", accent = accent) {
-                player.seekTo((position - 10_000).coerceAtLeast(0))
+                player.seekTo((player.positionMs.value - 10_000).coerceAtLeast(0))
             }
             Spacer(Modifier.width(AuraSpacing.md))
             // Big emphasized play/pause.
@@ -135,7 +202,8 @@ internal fun TransportBar(
             }
             Spacer(Modifier.width(AuraSpacing.md))
             TransportIconButton(R.drawable.ic_forward_10, "Forward 10 seconds", accent = accent) {
-                player.seekTo((position + 10_000).coerceIn(0, duration.coerceAtLeast(1)))
+                val dur = player.durationMs.value.coerceAtLeast(1)
+                player.seekTo((player.positionMs.value + 10_000).coerceIn(0, dur))
             }
             Spacer(Modifier.width(AuraSpacing.md))
             TransportIconButton(R.drawable.ic_skip_next, "Next", accent = accent) {

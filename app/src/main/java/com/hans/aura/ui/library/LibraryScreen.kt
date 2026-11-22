@@ -311,7 +311,11 @@ fun LibraryScreen(
                         .focusRequester(contentFocus)
                         .focusRestorer()
                 ) {
-                    itemsIndexed(items) { i, track ->
+                    itemsIndexed(
+                        items = items,
+                        key = { _, track -> track.id },
+                        contentType = { _, _ -> "track" }
+                    ) { i, track ->
                         TrackRow(
                             index = i + 1,
                             track = track,
@@ -355,7 +359,11 @@ fun LibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    itemsIndexed(items, key = { _, item -> "${kind}_${item.id}" }) { index, item ->
+                    itemsIndexed(
+                        items = items,
+                        key = { _, item -> "${kind}_${item.id}" },
+                        contentType = { _, _ -> kind }
+                    ) { index, item ->
                         ArtworkCard(
                             item = item,
                             serverUrl = session.serverUrl,

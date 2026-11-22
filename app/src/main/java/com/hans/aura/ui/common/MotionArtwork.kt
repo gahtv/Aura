@@ -160,7 +160,7 @@ private fun MotionLoop(
     var videoWidth by remember(url) { mutableIntStateOf(0) }
     var videoHeight by remember(url) { mutableIntStateOf(0) }
 
-    val player = remember(url) { buildLoopPlayer(context, url) }
+    val player = remember(url) { MotionPlayerPool.acquire(context, url) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -188,8 +188,8 @@ private fun MotionLoop(
         player.addListener(listener)
         onDispose {
             player.removeListener(listener)
-            // Leaving composition (screen popped) is also what stops the loop.
-            player.release()
+            // Leaving composition (screen popped) returns the player to the pool.
+            MotionPlayerPool.release(player)
         }
     }
 
@@ -243,12 +243,35 @@ private fun MotionLoop(
     )
 }
 
-/** Muted, silent, looping: motion artwork is texture, never a second soundtrack. */
-private fun buildLoopPlayer(context: Context, url: String): ExoPlayer =
-    ExoPlayer.Builder(context.applicationContext).build().apply {
-        setMediaItem(MediaItem.fromUri(url))
-        repeatMode = Player.REPEAT_MODE_ONE
-        volume = 0f
-        playWhenReady = false
-        prepare()
+/**
+ * Small pool of muted looping ExoPlayers so scrolling browse tiles reuse
+ * decoders instead of cold-initializing a new MediaCodec per tile.
+ */
+private object MotionPlayerPool {
+    private const val MAX_POOLED = 3
+    private val idle = ArrayDeque<ExoPlayer>()
+
+    fun acquire(context: Context, url: String): ExoPlayer {
+        val player = synchronized(idle) { idle.removeFirstOrNull() }
+            ?: ExoPlayer.Builder(context.applicationContext).build()
+        return player.apply {
+            setMediaItem(MediaItem.fromUri(url))
+            repeatMode = Player.REPEAT_MODE_ONE
+            volume = 0f
+            playWhenReady = false
+            prepare()
+        }
     }
+
+    fun release(player: ExoPlayer) {
+        player.stop()
+        player.clearMediaItems()
+        val pooled = synchronized(idle) {
+            if (idle.size < MAX_POOLED) {
+                idle.addLast(player)
+                true
+            } else false
+        }
+        if (!pooled) player.release()
+    }
+}

@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.palette.graphics.Palette
 import coil.imageLoader
 import coil.request.ImageRequest
@@ -42,7 +43,14 @@ object PaletteCache {
 fun rememberDynamicColor(imageUrl: String?): Color? =
     rememberDynamicColors(imageUrl)?.primary
 
-data class DynamicColors(val primary: Color, val secondary: Color)
+data class DynamicColors(
+    val primary: Color,
+    val secondary: Color,
+    val surfaceContainer: Color = darken(primary, 0.72f),
+    val surfaceContainerHigh: Color = primary,
+    val onAccent: Color = readableOn(secondary),
+    val tertiary: Color = deriveTertiary(secondary)
+)
 
 /**
  * Two-color dynamic palette: the dominant color darkens into the background
@@ -175,3 +183,27 @@ private fun ensureReadable(c: Color): Color {
 /** Darkens a color for use as a background wash behind light text. */
 fun darken(c: Color, factor: Float = 0.38f): Color =
     Color(c.red * factor, c.green * factor, c.blue * factor, 1f)
+
+/** Picks dark or light ink with >= 4.5:1 WCAG contrast on [background]. */
+fun readableOn(background: Color): Color {
+    val bgLum = background.luminance()
+    val darkInk = Color(0xFF14100C)
+    val darkContrast = (maxOf(bgLum, darkInk.luminance()) + 0.05f) /
+        (minOf(bgLum, darkInk.luminance()) + 0.05f)
+    return if (darkContrast >= 4.5f) darkInk else Color.White
+}
+
+/** Shifts hue by +45° for a harmonious M3E tertiary highlight. */
+fun deriveTertiary(accent: Color): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.RGBToHSV(
+        (accent.red * 255f).toInt().coerceIn(0, 255),
+        (accent.green * 255f).toInt().coerceIn(0, 255),
+        (accent.blue * 255f).toInt().coerceIn(0, 255),
+        hsv
+    )
+    hsv[0] = (hsv[0] + 45f) % 360f
+    hsv[1] = hsv[1].coerceIn(0.25f, 0.65f)
+    hsv[2] = hsv[2].coerceAtLeast(0.75f)
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}

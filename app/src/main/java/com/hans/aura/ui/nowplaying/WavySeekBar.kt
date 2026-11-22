@@ -48,6 +48,7 @@ internal fun WavySeekBar(
     val fraction = if (progress.isNaN()) 0f else progress.coerceIn(0f, 1f)
     var focused by remember { mutableStateOf(false) }
     var phase by remember { mutableFloatStateOf(0f) }
+    val wavePath = remember { Path() }
     val amplitude by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0f,
         animationSpec = tween(500, easing = FastOutSlowInEasing),
@@ -96,16 +97,16 @@ internal fun WavySeekBar(
         val waveHeight = AuraSizes.seekAmplitude.toPx() * amplitude
         val activeEnd = if (focused) point - gap - stroke else point
         if (activeEnd > start) {
-            val path = Path()
+            wavePath.rewind()
             var x = start
             while (true) {
                 val taper = ((x - start) / (wavelength / 2)).coerceIn(0f, 1f)
                 val y = centerY + sin(((x - start) / wavelength - phase) * 2 * PI).toFloat() * waveHeight * taper
-                if (x == start) path.moveTo(x, y) else path.lineTo(x, y)
+                if (x == start) wavePath.moveTo(x, y) else wavePath.lineTo(x, y)
                 if (x >= activeEnd) break
-                x = min(x + 1f, activeEnd)
+                x = min(x + 4f, activeEnd)
             }
-            drawPath(path, accent, style = Stroke(stroke, cap = StrokeCap.Round))
+            drawPath(wavePath, accent, style = Stroke(stroke, cap = StrokeCap.Round))
         }
         val inactiveStart = point + gap + stroke
         if (inactiveStart < end) {

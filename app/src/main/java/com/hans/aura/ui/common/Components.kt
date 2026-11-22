@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -21,6 +22,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -59,6 +63,8 @@ import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 
+private val CardFocusedShape = RoundedCornerShape(AuraShapes.cardRadius - AuraSizes.focusBorder)
+
 /** D-pad-focusable square artwork card, Spotify-grid style. */
 @Composable
 fun ArtworkCard(
@@ -94,7 +100,7 @@ fun ArtworkCard(
     Column(
         modifier = Modifier
             .width(size)
-            .zIndex(if (focused) 2f else if (scale > 1f) 1f else 0f)
+            .zIndex(if (focused) 2f else 0f)
             .then(
                 if (focusKeeper != null) {
                     Modifier.focusRequester(focusKeeper.requesterFor(item.id))
@@ -113,7 +119,6 @@ fun ArtworkCard(
             }
     ) {
         val bg by animateColorAsState(if (focused) SurfaceHigh else Surface, label = "card")
-        val focusedShape = RoundedCornerShape(AuraShapes.cardRadius - AuraSizes.focusBorder)
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
@@ -122,10 +127,10 @@ fun ArtworkCard(
                 .padding(if (focused) AuraSizes.focusBorder else 0.dp)
                 .then(
                     // Unmistakable focus outline: accent ring on the artwork.
-                    if (focused) Modifier.clip(focusedShape).border(
+                    if (focused) Modifier.clip(CardFocusedShape).border(
                         width = AuraSizes.focusBorderLoud,
                         color = accent,
-                        shape = focusedShape
+                        shape = CardFocusedShape
                     ) else Modifier
                 )
         ) {
@@ -368,7 +373,7 @@ fun ItemShelf(
     // "Only Atmos" (Settings) filters shelves without a second request: artists
     // pass through, albums/tracks must be in the Atmos catalog.
     val shown = items?.let { list -> list.filter { com.hans.aura.data.AtmosFilter.keep(it) } }
-    val scroll = rememberScrollState()
+    val listState = rememberLazyListState()
     when {
         items == null -> {
             if (showLoading) {
@@ -387,36 +392,34 @@ fun ItemShelf(
             )
             Spacer(Modifier.height(AuraSpacing.sm))
 
-            val stepPx = with(LocalDensity.current) {
-                size.toPx() + AuraSpacing.md.toPx()
-            }
-            var viewportPx by remember { mutableStateOf(0) }
-            // derivedStateOf, not a plain read: scroll.value changes on every
-            // scrolled pixel, but this only changes when a whole card passes.
-            val animatableRange by remember(scroll, stepPx, animate) {
+            // derivedStateOf: only updates when visible item indices change.
+            val animatableRange by remember(listState, animate) {
                 derivedStateOf {
-                    if (!animate || stepPx <= 0f || viewportPx <= 0) {
+                    if (!animate) {
                         IntRange.EMPTY
                     } else {
-                        val first = (scroll.value / stepPx).toInt()
-                        // One screen of covers plus two: the lookahead that lets
-                        // the next card start before it is fully scrolled in.
-                        val count = (viewportPx / stepPx).toInt() + 2
-                        first..(first + count)
+                        val visible = listState.layoutInfo.visibleItemsInfo
+                        if (visible.isEmpty()) IntRange.EMPTY
+                        else visible.first().index..(visible.last().index + 2)
                     }
                 }
             }
-            Row(
-                modifier
+            LazyRow(
+                state = listState,
+                modifier = modifier
                     .fillMaxWidth()
-                    .onGloballyPositioned { viewportPx = it.size.width }
-                    .horizontalScroll(scroll)
-                    .padding(vertical = AuraMotion.artworkFocusInset(size))
                     .focusRestorer(),
+                contentPadding = PaddingValues(
+                    horizontal = AuraSizes.shelfEdgeSpacer,
+                    vertical = AuraMotion.artworkFocusInset(size)
+                ),
                 horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md)
             ) {
-                Spacer(Modifier.width(AuraSizes.shelfEdgeSpacer))
-                shown.forEachIndexed { idx, item ->
+                itemsIndexed(
+                    items = shown,
+                    key = { _, item -> item.id },
+                    contentType = { _, item -> item.type }
+                ) { idx, item ->
                     ArtworkCard(
                         item = item,
                         serverUrl = serverUrl,
@@ -433,7 +436,6 @@ fun ItemShelf(
                         onOpen(item, idx)
                     }
                 }
-                Spacer(Modifier.width(AuraSizes.shelfEdgeSpacer))
             }
             Spacer(Modifier.height(AuraSpacing.md))
         }

@@ -360,7 +360,15 @@ fun LyricsPane(
                 // Small head spacer so the first line never glues to the top
                 // edge; the anchor then shows the previous lines above current.
                 item { Spacer(Modifier.height(AuraSpacing.screenHorizontal)) }
-                items(rows.size) { r ->
+                items(
+                    count = rows.size,
+                    key = { r ->
+                        when (val row = rows[r]) {
+                            is LyricRow.Line -> "line_${row.index}"
+                            is LyricRow.Break -> "break_${row.gap.afterLine}"
+                        }
+                    }
+                ) { r ->
                     val row = rows[r]
                     if (row is LyricRow.Break) {
                         val next = loadedLines.getOrNull(row.gap.afterLine + 1)
@@ -696,6 +704,14 @@ private fun KaraokeLine(
 ) {
     val elapsed = remember(line, positionMs, playing) { mutableLongStateOf(0L) }
     var layout by remember(line) { mutableStateOf<TextLayoutResult?>(null) }
+    val clipPath = remember { Path() }
+    val offsetBoxes = remember(layout, line) {
+        val res = layout ?: return@remember emptyList<Pair<androidx.compose.ui.geometry.Rect, ResolvedTextDirection>>()
+        val len = line.text.length
+        List(len) { offset ->
+            res.getBoundingBox(offset) to res.getBidiRunDirection(offset)
+        }
+    }
     LaunchedEffect(line, positionMs, playing, anchorMs) {
         elapsed.longValue = 0L
         if (playing) while (true) {
@@ -712,22 +728,22 @@ private fun KaraokeLine(
         modifier = modifier.fillMaxWidth().drawWithContent {
             drawContent()
             val result = layout ?: return@drawWithContent
-            val path = Path()
+            clipPath.rewind()
             fills(positionMs + elapsed.longValue).forEach { fill ->
-                val glyphs = (fill.start until fill.end).map { offset ->
-                    result.getBoundingBox(offset) to result.getBidiRunDirection(offset)
-                }.distinct()
+                val start = fill.start.coerceIn(0, offsetBoxes.size)
+                val end = fill.end.coerceIn(start, offsetBoxes.size)
+                val glyphs = offsetBoxes.subList(start, end).distinct()
                 var remaining = glyphs.sumOf { it.first.width.toDouble() }.toFloat() * fill.fraction
                 glyphs.forEach { (box, direction) ->
                     val width = remaining.coerceIn(0f, box.width.coerceAtLeast(0f))
                     if (width > 0f) {
-                        path.addRect(if (direction == ResolvedTextDirection.Rtl) box.copy(left = box.right - width)
+                        clipPath.addRect(if (direction == ResolvedTextDirection.Rtl) box.copy(left = box.right - width)
                             else box.copy(right = box.left + width))
                     }
                     remaining -= box.width
                 }
             }
-            clipPath(path) { drawText(result, color = accent) }
+            clipPath(clipPath) { drawText(result, color = accent) }
         }
     )
 }

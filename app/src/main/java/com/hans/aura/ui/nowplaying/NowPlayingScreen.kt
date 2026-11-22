@@ -80,8 +80,6 @@ fun NowPlayingScreen(
     val session = app.jellyfin.auth.session ?: return
     val item by player.current.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
-    val position by player.positionMs.collectAsState()
-    val duration by player.durationMs.collectAsState()
     var showLyrics by remember { mutableStateOf(false) }
     // Own scope for the heart toggle (a favourite write is fire-and-forget).
     val npScope = rememberCoroutineScope()
@@ -294,8 +292,10 @@ fun NowPlayingScreen(
                             }
                         }
                         Spacer(Modifier.height(AuraSpacing.xl))
-                        TransportBar(
-                            player, position, duration, isPlaying, playPauseFocus,
+                        LiveTransportBar(
+                            player = player,
+                            isPlaying = isPlaying,
+                            playPauseFocus = playPauseFocus,
                             accent = dynAccent,
                             favorite = currentItem?.let { Favorites.isFavorite(it) } == true,
                             onToggleFavorite = currentItem?.let { cur ->

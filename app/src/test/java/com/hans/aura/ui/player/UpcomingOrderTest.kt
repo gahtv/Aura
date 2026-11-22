@@ -5,7 +5,7 @@ import org.junit.Test
 import kotlin.random.Random
 
 class UpcomingOrderTest {
-    @Test fun restoredOrderKeepsSavedSurvivorsThenAddedEntries() {
+    @Test fun restoredOrderKeepsSavedSurvivorsThenNewEntries() {
         assertEquals(listOf("b", "a", "new2", "new1"), restoredUpcomingOrder(
             listOf("b", "gone", "a"), listOf("a", "new2", "b", "new1")))
     }

@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import com.hans.aura.ui.AppIntents
 import com.hans.aura.ui.AppRoot
 import com.hans.aura.ui.DebugNav
 import com.hans.aura.ui.MirrorLink
@@ -19,6 +20,7 @@ class MainActivity : ComponentActivity() {
         MirrorLink.bind(this)
         // Debug deep links: adb am start --es aura_debug_screen <name>
         handleDebugIntent(intent)
+        AppIntents.postFromIntent(intent)
         setContent {
             AuraTheme {
                 AppRoot()
@@ -32,6 +34,7 @@ class MainActivity : ComponentActivity() {
         // (am start without force-stop delivers onNewIntent, not onCreate).
         intent = newIntent
         handleDebugIntent(newIntent)
+        AppIntents.postFromIntent(newIntent)
     }
 
     /** Deferred debug extras, debuggable builds only (see ui/DebugNav.kt). */

@@ -4,15 +4,19 @@ package com.hans.aura.ui.login
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -234,7 +238,52 @@ fun LoginScreen(
                 fontSize = AuraTypography.body,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(AuraSpacing.xxl))
+            val savedProfiles = remember(serverUrl) {
+                app.jellyfin.auth.profilesForServer(serverUrl)
+            }
+            if (savedProfiles.isNotEmpty()) {
+                Spacer(Modifier.height(AuraSpacing.lg))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    savedProfiles.forEach { profile ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clip(AuraShapes.control)
+                                .clickable {
+                                    app.jellyfin.auth.save(profile)
+                                    onSignedIn()
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(com.hans.aura.ui.theme.Accent),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = profile.userName.take(1).uppercase(),
+                                    color = AuraColors.OnAccent,
+                                    fontSize = AuraTypography.title
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = profile.userName,
+                                color = com.hans.aura.ui.theme.TextPrimary,
+                                fontSize = AuraTypography.caption
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(AuraSpacing.lg))
+            } else {
+                Spacer(Modifier.height(AuraSpacing.xxl))
+            }
 
             AuraTextField(
                 value = serverUrl,

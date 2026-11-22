@@ -131,6 +131,13 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
         loadJob = viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) { fetchMissing(uid) }
+                val channelItems = (_state.value.atmosAlbums.orEmpty() + _state.value.recentAlbums.orEmpty())
+                val serverUrl = app.jellyfin.auth.session?.serverUrl.orEmpty()
+                if (channelItems.isNotEmpty() && serverUrl.isNotBlank()) {
+                    withContext(Dispatchers.IO) {
+                        com.hans.aura.tvchannel.HomeChannelPublisher.publish(app, channelItems, serverUrl)
+                    }
+                }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.w(TAG, "shelf load failed: ${e.message}")

@@ -62,6 +62,7 @@ fun SettingsScreen(
     onChangeServer: () -> Unit,
     onSignOut: () -> Unit,
     onLibrariesChanged: () -> Unit = {},
+    onSwitchProfile: (com.hans.aura.data.Session) -> Unit = {},
     // Optional so the existing call site keeps compiling; AppRoot wires it.
     // Without a player the Playback section still shows the autoplay toggle
     // (a plain preference) and hides the sleep-timer row.
@@ -300,6 +301,33 @@ fun SettingsScreen(
                         android.util.Log.i("AURA_LYRICS", "web fallback=$webLyrics")
                     }
                 )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
+            }
+
+            item {
+                androidx.tv.material3.Text("Profiles", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+                androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                val profiles = remember(session.serverUrl, session.userId) {
+                    app.jellyfin.auth.profilesForServer(session.serverUrl)
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    profiles.forEach { profile ->
+                        val active = profile.userId == session.userId
+                        androidx.tv.material3.Button(
+                            onClick = { if (!active) onSwitchProfile(profile) }
+                        ) {
+                            androidx.tv.material3.Text(
+                                if (active) "\u2713 ${profile.userName}" else profile.userName
+                            )
+                        }
+                    }
+                    androidx.tv.material3.Button(onClick = { confirm = "again" }) {
+                        androidx.tv.material3.Text("Add account")
+                    }
+                }
                 androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
             }
 

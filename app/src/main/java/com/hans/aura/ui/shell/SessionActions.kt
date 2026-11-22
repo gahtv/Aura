@@ -5,6 +5,8 @@ import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.PagedLibrary
+import com.hans.aura.data.Session
+import com.hans.aura.tvchannel.HomeChannelPublisher
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.PaletteCache
 
@@ -37,6 +39,7 @@ internal fun endSession(
     PagedLibrary.clear()
     AtmosCatalog.clear()
     PaletteCache.clear()
+    HomeChannelPublisher.clear(app)
     if (forgetServer) app.jellyfin.auth.clearServer() else app.jellyfin.auth.clearSession()
     val evicted = "evicted library=$library paged=$paged atmos=$atmos " +
         "palette=$palette playerItems=$playerItems"
@@ -52,4 +55,24 @@ internal fun endSession(
         }
     )
     onSignedOut()
+}
+
+/** Switch to another saved household profile on the same server. */
+internal fun switchSession(
+    app: AuraApp,
+    player: PlayerConnection,
+    target: Session,
+    onSwitched: () -> Unit
+) {
+    player.teardown()
+    LibraryCache.clear()
+    PagedLibrary.clear()
+    AtmosCatalog.clear()
+    PaletteCache.clear()
+    app.jellyfin.auth.save(target)
+    android.util.Log.i(
+        "AURA_AUTH",
+        "switch profile: server=${AuthStore.host(target.serverUrl)} user=${target.userName}"
+    )
+    onSwitched()
 }

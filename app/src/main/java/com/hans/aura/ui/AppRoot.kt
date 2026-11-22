@@ -9,6 +9,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,6 +41,7 @@ import com.hans.aura.ui.shell.DebugWiring
 import com.hans.aura.ui.shell.MirrorWiring
 import com.hans.aura.ui.shell.TopBar
 import com.hans.aura.ui.shell.endSession
+import com.hans.aura.ui.shell.switchSession
 import com.hans.aura.ui.theme.Canvas
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -53,12 +56,14 @@ import kotlinx.coroutines.launch
 fun AppRoot() {
     val app = LocalContext.current.applicationContext as AuraApp
     var signedIn by remember { mutableStateOf(app.jellyfin.auth.isSignedIn) }
+    var sessionGeneration by remember { mutableIntStateOf(0) }
 
     if (!signedIn) {
         SignedOutGate(app) { signedIn = true }
         return
     }
 
+    key(sessionGeneration) {
     val player = remember { PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session } }
     val nav = rememberNavState()
     val actions = nav.actions
@@ -67,9 +72,39 @@ fun AppRoot() {
     val exitSession: (String, Boolean) -> Unit = { action, forgetServer ->
         endSession(app, player, action, forgetServer, onSignedOut)
     }
+    val onSwitchProfile: (com.hans.aura.data.Session) -> Unit = { target ->
+        switchSession(app, player, target) { sessionGeneration++ }
+    }
 
     MirrorWiring(app = app, player = player, nav = nav)
     DebugWiring(app = app, player = player, nav = nav, endSession = exitSession)
+
+    // System intents: Android TV Global Search + Home Screen Channel deep links.
+    LaunchedEffect(Unit) {
+        AppIntents.request.collect { req ->
+            if (req == null) return@collect
+            AppIntents.request.value = null
+            when (req) {
+                is AppIntentRequest.OpenSearch -> nav.openSearch()
+                is AppIntentRequest.OpenItem -> {
+                    if (req.type == "Home") {
+                        nav.resetToHome()
+                        return@collect
+                    }
+                    val uid = app.jellyfin.auth.session?.userId ?: return@collect
+                    runCatching { app.jellyfin.api.getItem(itemId = req.itemId, userId = uid) }
+                        .onSuccess { item ->
+                            when (item.type) {
+                                "MusicArtist" -> nav.jumpTo(Screen.Artist(item), bumpFocus = true)
+                                "Audio" -> player.playQueue(listOf(item), 0, resume = false)
+                                else -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                            }
+                        }
+                        .onFailure { android.util.Log.w("AURA_NAV", "intent open failed: ${it.message}") }
+                }
+            }
+        }
+    }
 
     // Nav breadcrumb: logcat `adb logcat -s AURA_NAV` shows exactly which
     // screen is up, so adb-driven verification doesn't need screenshots.
@@ -154,6 +189,7 @@ fun AppRoot() {
                         player = player,
                         nav = nav,
                         endSession = exitSession,
+                        onSwitchProfile = onSwitchProfile,
                         refreshKey = refreshKey,
                         onRefreshKey = { refreshKey++ }
                     )
@@ -166,6 +202,7 @@ fun AppRoot() {
         // Pairing consent (USB-debugging style): drawn last so nothing can sit
         // over it, and it owns focus while it is up.
         MirrorPairingHost()
+    }
     }
 }
 
@@ -207,6 +244,7 @@ private fun DestinationHost(
     player: PlayerConnection,
     nav: com.hans.aura.ui.nav.NavState,
     endSession: (String, Boolean) -> Unit,
+    onSwitchProfile: (com.hans.aura.data.Session) -> Unit,
     refreshKey: Int,
     onRefreshKey: () -> Unit
 ) {
@@ -251,7 +289,8 @@ private fun DestinationHost(
             onSignInAgain = { endSession("sign in again", false) },
             onChangeServer = { endSession("change server", true) },
             onSignOut = { endSession("sign out", true) },
-            onLibrariesChanged = onRefreshKey
+            onLibrariesChanged = onRefreshKey,
+            onSwitchProfile = onSwitchProfile
         )
 
         Screen.Search -> SearchScreen(

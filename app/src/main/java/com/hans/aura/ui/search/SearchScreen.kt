@@ -105,6 +105,13 @@ fun SearchScreen(
     // every catalog branch below disappears.
     val canImportCatalog = app.container.source.supportsCatalogImport
 
+    LaunchedEffect(Unit) {
+        com.hans.aura.ui.AppIntents.consumeSearchQuery()?.let { incoming ->
+            viewModel.onQueryChange(incoming)
+            viewModel.submit()
+        }
+    }
+
     // An import reached "ready": the ViewModel has dropped the source caches, so
     // the navigation host only has to re-read the library screens.
     LaunchedEffect(state.catalog.libraryChangedTick) {

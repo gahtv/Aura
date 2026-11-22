@@ -36,6 +36,7 @@ object Prefs {
     private const val KEY_AMBIENT_NP = "ambient_now_playing"
     private const val KEY_NP_DIM_MODE = "now_playing_dim_mode"
     private const val KEY_SEARCH_TIP_DISMISSED = "search_remote_tip_dismissed"
+    private const val KEY_TV_CHANNEL_ID = "tv_channel_id"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -120,6 +121,13 @@ object Prefs {
         get() = p()?.getBoolean(KEY_SEARCH_TIP_DISMISSED, false) ?: false
         set(value) {
             p()?.edit()?.putBoolean(KEY_SEARCH_TIP_DISMISSED, value)?.apply()
+        }
+
+    /** Android TV Home Screen Channel id (-1L when not yet published). */
+    var tvChannelId: Long
+        get() = p()?.getLong(KEY_TV_CHANNEL_ID, -1L) ?: -1L
+        set(value) {
+            p()?.edit()?.putLong(KEY_TV_CHANNEL_ID, value)?.apply()
         }
 
     // ---- Atmos filter ------------------------------------------------------

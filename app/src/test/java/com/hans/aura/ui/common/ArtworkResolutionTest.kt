@@ -10,7 +10,7 @@ class ArtworkResolutionTest {
     private val server = "http://jellyfin"
 
     @Test
-    fun `own primary image takes precedence over album art`() {
+    fun `own primary image takes priority over album art`() {
         val track = JellyfinItem(
             id = "track",
             albumId = "album",

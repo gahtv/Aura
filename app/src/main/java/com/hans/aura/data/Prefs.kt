@@ -35,6 +35,7 @@ object Prefs {
     private const val KEY_AUTOPLAY = "autoplay_music"
     private const val KEY_AMBIENT_NP = "ambient_now_playing"
     private const val KEY_NP_DIM_MODE = "now_playing_dim_mode"
+    private const val KEY_SEARCH_TIP_DISMISSED = "search_remote_tip_dismissed"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -112,6 +113,13 @@ object Prefs {
         get() = p()?.getBoolean(KEY_NP_DIM_MODE, false) ?: false
         set(value) {
             p()?.edit()?.putBoolean(KEY_NP_DIM_MODE, value)?.apply()
+        }
+
+    /** Whether the Aura Remote search tip coachmark was dismissed. */
+    var searchRemoteTipDismissed: Boolean
+        get() = p()?.getBoolean(KEY_SEARCH_TIP_DISMISSED, false) ?: false
+        set(value) {
+            p()?.edit()?.putBoolean(KEY_SEARCH_TIP_DISMISSED, value)?.apply()
         }
 
     // ---- Atmos filter ------------------------------------------------------

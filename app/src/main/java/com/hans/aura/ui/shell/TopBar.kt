@@ -75,8 +75,10 @@ internal fun TopBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         NavSpec.tabs.forEach { tab ->
-            val selected = tab::class == current::class
-            TabButton(label = NavSpec.tabLabel(tab), selected = selected) { onSelect(tab) }
+            val isLibTab = tab == Screen.Albums
+            val selected = if (isLibTab) NavSpec.isLibraryScreen(current) else tab::class == current::class
+            val label = if (isLibTab) "Library" else NavSpec.tabLabel(tab)
+            TabButton(label = label, selected = selected) { onSelect(tab) }
             Spacer(Modifier.width(10.dp))
         }
         Spacer(Modifier.weight(1f))
@@ -143,7 +145,7 @@ private fun NowPlayingPill(player: PlayerConnection, current: Screen, onOpen: ()
                 text = playing.name,
                 // Upper bound only; the row hands out whatever is left, so the
                 // pill can never push Search/Settings off the top bar.
-                widthCap = 200.dp,
+                widthCap = 260.dp,
                 sizes = listOf(14.sp, 13.sp, 12.sp),
                 color = TextPrimary
             )

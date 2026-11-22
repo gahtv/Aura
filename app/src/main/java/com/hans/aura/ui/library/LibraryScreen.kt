@@ -66,7 +66,7 @@ import com.hans.aura.ui.theme.AuraShapes
  * restores the exact loaded pages, sort and filters.
  */
 @Composable
-fun LibraryScreen(
+internal fun LibraryScreen(
     app: AuraApp,
     kind: String, // "Artists" | "Albums" | "Tracks" | "Playlists"
     player: PlayerConnection,
@@ -77,6 +77,7 @@ fun LibraryScreen(
     // Genres live behind a pill INSIDE the Albums tab: a sixth top-bar tab does
     // not fit 960dp next to five tabs, the pill and two icon buttons.
     onOpenGenres: (() -> Unit)? = null,
+    onSwitchCategory: (com.hans.aura.ui.nav.Screen) -> Unit = {},
     viewModel: LibraryViewModel = viewModel(
         // AppRoot's manual back-stack keeps LocalViewModelStoreOwner at the
         // Activity, so every tab needs its own key (and a new user needs a new
@@ -161,12 +162,35 @@ fun LibraryScreen(
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
 
     Column(Modifier.fillMaxSize()) {
+        // Unified Library category filter pills: Albums · Artists · Tracks · Playlists · Genres
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 32.dp, end = 32.dp, top = 6.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val categories = listOf(
+                "Albums" to com.hans.aura.ui.nav.Screen.Albums,
+                "Artists" to com.hans.aura.ui.nav.Screen.Artists,
+                "Tracks" to com.hans.aura.ui.nav.Screen.Tracks,
+                "Playlists" to com.hans.aura.ui.nav.Screen.Playlists,
+                "Genres" to com.hans.aura.ui.nav.Screen.Genres
+            )
+            categories.forEach { (label, screen) ->
+                SortPill(
+                    label = label,
+                    selected = kind == label,
+                    onClick = { onSwitchCategory(screen) }
+                )
+            }
+        }
         // Sort pills: UP from the grid reaches them; the ACTIVE pill toggles
         // its direction on click (Random has no direction).
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 32.dp, end = 32.dp, top = 6.dp, bottom = 2.dp),
+                .padding(start = 32.dp, end = 32.dp, top = 4.dp, bottom = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -190,16 +214,6 @@ fun LibraryScreen(
                     onClick = { viewModel.toggleLiked() }
                 )
                 Spacer(Modifier.width(18.dp))
-            }
-            // Genres pill (Albums only): opens the genre grid, which owns its
-            // own screen in the back-stack so BACK returns here.
-            if (kind == "Albums" && onOpenGenres != null) {
-                SortPill(
-                    label = "Genres",
-                    leadingIcon = com.hans.aura.R.drawable.ic_category,
-                    selected = false,
-                    onClick = { onOpenGenres() }
-                )
             }
             sortModesFor(kind).forEach { mode ->
                 val active = mode == state.sort

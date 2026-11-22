@@ -244,6 +244,15 @@ fun SearchScreen(
                 modifier = Modifier.padding(horizontal = 56.dp, vertical = 6.dp)
             )
         }
+        var tipDismissed by remember { mutableStateOf(com.hans.aura.data.Prefs.searchRemoteTipDismissed) }
+        if (!tipDismissed) {
+            RemoteSearchTipBanner(
+                onDismiss = {
+                    tipDismissed = true
+                    com.hans.aura.data.Prefs.searchRemoteTipDismissed = true
+                }
+            )
+        }
         Spacer(Modifier.height(8.dp))
 
         // Recent searches: only while the field is empty, so the chips never
@@ -400,6 +409,48 @@ private fun RecentQueryChip(
 }
 
 /** Mic beside the query field; same focus language as the chips. */
+/** Dismissible coachmark reminding users they can type searches from Aura Remote. */
+@Composable
+internal fun RemoteSearchTipBanner(onDismiss: () -> Unit) {
+    var dismissFocused by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 56.dp, vertical = 8.dp)
+            .clip(AuraShapes.control)
+            .background(SurfaceHigh.copy(alpha = 0.7f))
+            .border(1.dp, Border, AuraShapes.control)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "Tip: Search faster from your phone with Aura Remote",
+            color = TextSecondary,
+            fontSize = 13.sp,
+            modifier = Modifier.weight(1f)
+        )
+        Box(
+            modifier = Modifier
+                .clip(AuraShapes.pill)
+                .background(if (dismissFocused) Accent else SurfaceHigh)
+                .border(
+                    width = if (dismissFocused) 2.dp else 1.dp,
+                    color = if (dismissFocused) TextPrimary else Border,
+                    shape = AuraShapes.pill
+                )
+                .onFocusChanged { dismissFocused = it.isFocused }
+                .clickable { onDismiss() }
+                .padding(horizontal = 14.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = "Dismiss",
+                color = if (dismissFocused) com.hans.aura.ui.theme.AuraColors.OnAccent else TextPrimary,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
+
 @Composable
 private fun VoiceSearchButton(onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }

@@ -50,6 +50,30 @@ data class HomeUiState(
     val fullyCached: Boolean
         get() = recentAlbums != null && atmosAlbums != null && artists != null && playlists != null &&
             (!historyShelves || (recentlyPlayed != null && recentArtists != null))
+
+    /** Up to 8 distinct shortcut items for the 2x4 Home Quick-Access grid. */
+    val quickAccess: List<JellyfinItem>
+        get() = buildList {
+            val seen = HashSet<String>()
+            fun addUpTo(source: List<JellyfinItem>?, maxToAdd: Int) {
+                var added = 0
+                source?.forEach { item ->
+                    if (size < 8 && added < maxToAdd && seen.add(item.id)) {
+                        add(item)
+                        added++
+                    }
+                }
+            }
+            addUpTo(recentAlbums, 3)
+            addUpTo(playlists, 2)
+            addUpTo(atmosAlbums, 2)
+            addUpTo(recentlyPlayed, 2)
+            listOf(recentAlbums, atmosAlbums, playlists, recentlyPlayed, artists).forEach { shelf ->
+                shelf?.forEach { item ->
+                    if (size < 8 && seen.add(item.id)) add(item)
+                }
+            }
+        }
 }
 
 /**

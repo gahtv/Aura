@@ -2,6 +2,7 @@
 
 package com.hans.aura.ui.genres
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,7 +15,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -34,7 +37,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,7 +49,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.tv.material3.MaterialTheme
+import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
+import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Mixes
 import com.hans.aura.ui.common.ArtworkCard
@@ -82,7 +91,8 @@ fun GenresScreen(
         factory = viewModelFactory { initializer { GenresViewModel(app) } }
     )
 ) {
-    app.jellyfin.auth.session ?: return
+    val session = app.jellyfin.auth.session ?: return
+    val serverUrl = session.serverUrl
     val state by viewModel.state.collectAsState()
 
     val contentFocus = remember { FocusRequester() }
@@ -118,11 +128,17 @@ fun GenresScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(genres, key = { "genre_${it.id}" }) { genre ->
+                    val artUrl = genre.albumId?.let { aid ->
+                        genre.albumPrimaryImageTag?.let { tag ->
+                            AuthStore.imageUrl(serverUrl, aid, tag, maxWidth = 200)
+                        }
+                    }
                     GenreTile(
                         name = genre.name,
+                        id = genre.id,
+                        artworkUrl = artUrl,
                         focusKeeper = focusKeeper,
                         onFocused = { focusedId = it },
-                        id = genre.id,
                         onClick = { onOpenGenre(genre.name) }
                     )
                 }
@@ -296,22 +312,50 @@ private fun ScreenHeader(title: String, onBack: () -> Unit) {
     }
 }
 
-/** Genre tile: no artwork exists for genres, so it is a text plate. Focus is a
- *  thick amber ring + lifted fill so the cursor is never ambiguous. */
+private val GenrePalette = listOf(
+    Color(0xFF4A2545), // plum
+    Color(0xFF1E3A5F), // deep navy
+    Color(0xFF2E4A36), // forest
+    Color(0xFF5C2B29), // crimson
+    Color(0xFF3E3356), // indigo
+    Color(0xFF5A3D1E), // amber-umber
+    Color(0xFF1F4E5F), // teal
+    Color(0xFF4C392B), // espresso
+    Color(0xFF2D4356), // slate blue
+    Color(0xFF543344), // berry
+    Color(0xFF2B4C3F), // pine
+    Color(0xFF4B3D1F)  // ochre
+)
+
+internal fun genreCardColor(name: String): Color =
+    GenrePalette[(name.hashCode() and Int.MAX_VALUE) % GenrePalette.size]
+
+/** Visual genre card: deterministic rich gradient + rotated cover thumbnail. */
 @Composable
 private fun GenreTile(
     name: String,
     id: String,
+    artworkUrl: String?,
     focusKeeper: com.hans.aura.ui.common.FocusKeeper,
     onFocused: (String) -> Unit,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = AuraShapes.card
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.04f else 1f,
+        animationSpec = AuraMotion.spatialFast,
+        label = "genreScale"
+    )
+    val base = remember(name) { genreCardColor(name) }
+    val shape = AuraShapes.cardHero
     Box(
         Modifier
-            .height(96.dp)
+            .height(128.dp)
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .focusRequester(focusKeeper.requesterFor(id))
             // onFocusChanged BEFORE clickable, or the flag never flips.
             .onFocusChanged {
@@ -320,17 +364,40 @@ private fun GenreTile(
             }
             .clickable { onClick() }
             .clip(shape)
-            .background(if (focused) SurfaceHigh else Surface)
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        if (focused) base.copy(alpha = 0.95f) else base,
+                        Color(0xFF14110E)
+                    )
+                )
+            )
             .then(if (focused) Modifier.border(3.dp, Accent, shape) else Modifier)
-            .padding(horizontal = 18.dp),
-        contentAlignment = Alignment.CenterStart
     ) {
+        if (artworkUrl != null) {
+            AsyncImage(
+                model = artworkUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 10.dp, y = 10.dp)
+                    .size(76.dp)
+                    .graphicsLayer { rotationZ = 12f }
+                    .clip(AuraShapes.card)
+                    .background(SurfaceHigh)
+            )
+        }
         androidx.tv.material3.Text(
-            name,
-            color = if (focused) TextPrimary else TextSecondary,
+            text = name,
+            color = TextPrimary,
             fontSize = 20.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 18.dp, top = 16.dp, end = 72.dp)
         )
     }
 }

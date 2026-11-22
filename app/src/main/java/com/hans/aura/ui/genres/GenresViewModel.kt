@@ -167,7 +167,7 @@ class GenreAlbumsViewModel(
  * produces is guaranteed to have music behind it.
  */
 private suspend fun scanGenres(api: com.hans.aura.data.JellyfinApi, userId: String): List<JellyfinItem> {
-    val names = LinkedHashSet<String>()
+    val genreArt = LinkedHashMap<String, Pair<String?, String?>>()
     var start = 0
     var total = Int.MAX_VALUE
     var pages = 0
@@ -185,8 +185,12 @@ private suspend fun scanGenres(api: com.hans.aura.data.JellyfinApi, userId: Stri
             )
         }.getOrNull() ?: break
         result.items.forEach { item ->
+            val artPair = (item.albumId ?: item.id) to (item.albumPrimaryImageTag ?: item.primaryImageTag)
             item.genres.orEmpty().forEach { g ->
-                g.trim().takeIf { it.isNotBlank() }?.let(names::add)
+                val clean = g.trim()
+                if (clean.isNotBlank() && !genreArt.containsKey(clean)) {
+                    genreArt[clean] = if (artPair.second != null) artPair else (null to null)
+                }
             }
         }
         if (result.items.isEmpty()) break
@@ -194,10 +198,15 @@ private suspend fun scanGenres(api: com.hans.aura.data.JellyfinApi, userId: Stri
         start += result.items.size
         pages++
     }
-    Log.i("AURA_GENRES", "scanned=$start distinct=${names.size} pages=$pages")
-    return names.sortedBy { it.lowercase() }.map { name ->
-        // A synthetic item: the grid only needs a stable id and a label, and
-        // the real id would collide with a library item's.
-        JellyfinItem(id = "genre:$name", name = name, type = "MusicGenre")
+    Log.i("AURA_GENRES", "scanned=$start distinct=${genreArt.size} pages=$pages")
+    return genreArt.entries.sortedBy { it.key.lowercase() }.map { (name, art) ->
+        // A synthetic item: the grid only needs a stable id, label, and optional cover art.
+        JellyfinItem(
+            id = "genre:$name",
+            name = name,
+            type = "MusicGenre",
+            albumId = art.first,
+            albumPrimaryImageTag = art.second
+        )
     }
 }

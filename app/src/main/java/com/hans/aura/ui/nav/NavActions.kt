@@ -16,6 +16,7 @@ import com.hans.aura.data.JellyfinItem
 internal interface NavActions {
     fun onBack()
     fun onSelectTab(tab: Screen)
+    fun onSwitchLibraryCategory(target: Screen)
     fun onOpenSearch()
     fun onOpenSettings()
     fun onOpenNowPlaying()
@@ -47,6 +48,9 @@ internal class NavState {
     var focusTick by mutableStateOf(0)
         private set
 
+    var lastLibraryTab: Screen = Screen.Albums
+        private set
+
     fun push(screen: Screen) {
         pendingFocus = true
         stack = stack + screen
@@ -62,9 +66,27 @@ internal class NavState {
 
     /** Tab switch resets the stack to that tab. */
     fun selectTab(tab: Screen) {
-        if (tab::class != top::class) {
+        val target = if (tab == Screen.Albums) lastLibraryTab else tab
+        if (target::class != top::class) {
             pendingFocus = false
-            stack = listOf(tab)
+            stack = listOf(target)
+        }
+    }
+
+    /** Switch between Library categories (Albums/Artists/Tracks/Playlists/Genres). */
+    fun switchLibraryCategory(target: Screen) {
+        if (target == Screen.Genres) {
+            push(Screen.Genres)
+            return
+        }
+        if (target == Screen.Albums || target == Screen.Artists ||
+            target == Screen.Tracks || target == Screen.Playlists
+        ) {
+            lastLibraryTab = target
+            if (target::class != top::class) {
+                pendingFocus = false
+                stack = listOf(target)
+            }
         }
     }
 
@@ -109,6 +131,7 @@ internal class NavState {
     val actions: NavActions = object : NavActions {
         override fun onBack() = pop()
         override fun onSelectTab(tab: Screen) = selectTab(tab)
+        override fun onSwitchLibraryCategory(target: Screen) = switchLibraryCategory(target)
         override fun onOpenSearch() = openSearch()
         override fun onOpenSettings() = openSettings()
         override fun onOpenNowPlaying() = openNowPlaying()

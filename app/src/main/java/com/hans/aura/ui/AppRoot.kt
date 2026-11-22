@@ -227,7 +227,7 @@ private fun DestinationHost(
             focusTick = focusTick
         )
 
-        // Library tabs differ only by kind; Genres hang off the Albums tab.
+        // Library tabs share the unified Library top-bar tab + category pills.
         Screen.Artists, Screen.Albums, Screen.Tracks, Screen.Playlists -> LibraryScreen(
             // Every arm above declares a libraryKind; tabLabel is the safe fallback.
             app = app, kind = NavSpec.libraryKind(top) ?: NavSpec.tabLabel(top), player = player,
@@ -235,7 +235,8 @@ private fun DestinationHost(
             focusTick = focusTick,
             onOpenCollection = actions::onOpenCollection,
             onOpenArtist = actions::onOpenArtist,
-            onOpenGenres = if (top == Screen.Albums) actions::onOpenGenres else null
+            onOpenGenres = if (top == Screen.Albums) actions::onOpenGenres else null,
+            onSwitchCategory = actions::onSwitchLibraryCategory
         )
 
         Screen.Settings -> SettingsScreen(

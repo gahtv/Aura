@@ -113,8 +113,13 @@ internal object NavSpec {
 
     /** Root tabs shown in the top bar (Search/Settings are icon buttons). */
     val tabs: List<Screen> = listOf(
-        Screen.Home, Screen.Artists, Screen.Albums, Screen.Tracks, Screen.Playlists
+        Screen.Home, Screen.Albums
     )
+
+    fun isLibraryScreen(screen: Screen): Boolean =
+        screen is Screen.Albums || screen is Screen.Artists ||
+            screen is Screen.Tracks || screen is Screen.Playlists ||
+            screen is Screen.Genres || screen is Screen.Genre
 
     /** Remote routes that replace the stack instead of pushing onto it. */
     private val rootRoutes = setOf(

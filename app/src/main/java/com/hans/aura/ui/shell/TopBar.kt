@@ -1,8 +1,15 @@
 package com.hans.aura.ui.shell
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,8 +17,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -23,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -39,6 +50,7 @@ import com.hans.aura.ui.nav.NavSpec
 import com.hans.aura.ui.nav.Screen
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
@@ -84,10 +96,11 @@ internal fun TopBar(
     }
 }
 
-/** Compact now-playing pill: art, title, artist. Opens the full Now Playing view. */
+/** Compact now-playing pill: art, title, artist, equalizer/paused state. Opens Now Playing. */
 @Composable
 private fun NowPlayingPill(player: PlayerConnection, current: Screen, onOpen: () -> Unit) {
     val item by player.current.collectAsState()
+    val isPlaying by player.isPlaying.collectAsState()
     val app = LocalContext.current.applicationContext as AuraApp
     val serverUrl = app.jellyfin.auth.session?.serverUrl ?: return
     val playing = item ?: return
@@ -97,7 +110,7 @@ private fun NowPlayingPill(player: PlayerConnection, current: Screen, onOpen: ()
     Row(
         Modifier
             .clip(shape)
-            .background(if (focused) SurfaceHigh else Color(0xFF221D18))
+            .background(if (focused) SurfaceHigh else AuraColors.PillBackground)
             .then(
                 if (focused) Modifier.border(3.dp, Accent, shape) else Modifier
             )
@@ -140,6 +153,63 @@ private fun NowPlayingPill(player: PlayerConnection, current: Screen, onOpen: ()
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
         }
+        Spacer(Modifier.width(10.dp))
+        PlayingEqualizerIndicator(isPlaying = isPlaying, tint = Accent)
+    }
+}
+
+@Composable
+internal fun PlayingEqualizerIndicator(
+    isPlaying: Boolean,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    if (!isPlaying) {
+        androidx.compose.material3.Icon(
+            painter = painterResource(R.drawable.ic_play_arrow),
+            contentDescription = "Paused",
+            tint = TextSecondary,
+            modifier = modifier.size(16.dp)
+        )
+        return
+    }
+    val transition = rememberInfiniteTransition(label = "eqBars")
+    val bar1 by transition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(tween(420, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "eq1"
+    )
+    val bar2 by transition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 0.30f,
+        animationSpec = infiniteRepeatable(tween(530, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "eq2"
+    )
+    val bar3 by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0.90f,
+        animationSpec = infiniteRepeatable(tween(370, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "eq3"
+    )
+    Row(
+        modifier = modifier.height(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        listOf(bar1, bar2, bar3).forEach { level ->
+            Box(
+                Modifier
+                    .width(3.dp)
+                    .height(14.dp)
+                    .graphicsLayer {
+                        scaleY = level
+                        transformOrigin = TransformOrigin(0.5f, 1f)
+                    }
+                    .clip(RoundedCornerShape(1.5.dp))
+                    .background(tint)
+            )
+        }
     }
 }
 
@@ -158,15 +228,15 @@ private fun IconNavButton(
             .clip(shape)
             .background(
                 when {
-                    active -> Color(0x33E8A44C)
-                    focused -> Color(0xFF3E362D)
-                    else -> Color(0xFF221D18)
+                    active -> AuraColors.ActiveTint
+                    focused -> AuraColors.FocusedFill
+                    else -> AuraColors.PillBackground
                 }
             )
             .then(
                 // Same grey cursor ring as the tabs, so the whole bar reads
                 // consistently: grey = cursor, amber = current.
-                if (focused) Modifier.border(2.dp, Color(0xFFD6CCBE), shape) else Modifier
+                if (focused) Modifier.border(2.dp, AuraColors.CursorRing, shape) else Modifier
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
@@ -191,9 +261,9 @@ private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
     // cursor now gets a light GREY ring plus a lifted fill so it separates from
     // both the bar and the amber selection.
     val bg = when {
-        selected && focused -> Color(0x66E8A44C)
-        selected -> Color(0xFFE8A44C)
-        focused -> Color(0xFF3E362D)
+        selected && focused -> AuraColors.SelectedFocusedAccent
+        selected -> Accent
+        focused -> AuraColors.FocusedFill
         else -> Color.Transparent
     }
     Box(
@@ -202,7 +272,7 @@ private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
             .background(bg)
             .then(
                 if (focused) Modifier.border(
-                    2.dp, if (selected) Color(0xFFF2EDE6) else Color(0xFFD6CCBE), shape
+                    2.dp, if (selected) TextPrimary else AuraColors.CursorRing, shape
                 ) else Modifier
             )
             // Without this the `focused` flag never flips and NONE of the focus
@@ -215,7 +285,7 @@ private fun TabButton(label: String, selected: Boolean, onClick: () -> Unit) {
     ) {
         androidx.tv.material3.Text(
             label,
-            color = if (selected) Color(0xFF14100C) else TextPrimary,
+            color = if (selected) AuraColors.OnAccent else TextPrimary,
             fontSize = 17.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
         )

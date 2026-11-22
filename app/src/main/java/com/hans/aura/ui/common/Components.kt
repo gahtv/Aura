@@ -2,8 +2,11 @@
 
 package com.hans.aura.ui.common
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,6 +49,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -65,7 +70,7 @@ import com.hans.aura.ui.theme.TextSecondary
 
 private val CardFocusedShape = RoundedCornerShape(AuraShapes.cardRadius - AuraSizes.focusBorder)
 
-/** D-pad-focusable square artwork card, Spotify-grid style. */
+/** D-pad-focusable artwork card, circular for artists and rounded-square for albums/playlists. */
 @Composable
 fun ArtworkCard(
     item: JellyfinItem,
@@ -89,6 +94,7 @@ fun ArtworkCard(
     animate: Boolean = false,
     // Rank used by the budget to prefer on-screen rows over prefetch rows.
     motionPriority: Int = 0,
+    circular: Boolean = item.type == "MusicArtist",
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -98,6 +104,7 @@ fun ArtworkCard(
         label = "artworkFocusScale"
     )
     Column(
+        horizontalAlignment = if (circular) Alignment.CenterHorizontally else Alignment.Start,
         modifier = Modifier
             .width(size)
             .zIndex(if (focused) 2f else 0f)
@@ -119,18 +126,20 @@ fun ArtworkCard(
             }
     ) {
         val bg by animateColorAsState(if (focused) SurfaceHigh else Surface, label = "card")
+        val outerShape = if (circular) CircleShape else AuraShapes.card
+        val innerShape = if (circular) CircleShape else CardFocusedShape
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .clip(AuraShapes.card)
+                .clip(outerShape)
                 .background(bg)
                 .padding(if (focused) AuraSizes.focusBorder else 0.dp)
                 .then(
                     // Unmistakable focus outline: accent ring on the artwork.
-                    if (focused) Modifier.clip(CardFocusedShape).border(
+                    if (focused) Modifier.clip(innerShape).border(
                         width = AuraSizes.focusBorderLoud,
                         color = accent,
-                        shape = CardFocusedShape
+                        shape = innerShape
                     ) else Modifier
                 )
         ) {
@@ -206,14 +215,17 @@ fun ArtworkCard(
             fontSize = AuraTypography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = AuraSpacing.xs)
+            textAlign = if (circular) TextAlign.Center else TextAlign.Start,
+            modifier = Modifier.fillMaxWidth().padding(top = AuraSpacing.xs)
         )
         androidx.tv.material3.Text(
             subtitleOf(item),
             color = TextSecondary,
             fontSize = AuraTypography.caption,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            textAlign = if (circular) TextAlign.Center else TextAlign.Start,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
@@ -313,6 +325,38 @@ fun TrackRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+        }
+        // Focus-revealed inline action hints (strictly non-focusable so D-pad
+        // focus stays on the row itself).
+        AnimatedVisibility(
+            visible = focused && (favorite != null || onToggleFavorite != null || onLongPress != null),
+            enter = fadeIn(AuraMotion.effectsFast),
+            exit = fadeOut(AuraMotion.effectsFast)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AuraSpacing.xs),
+                modifier = Modifier.padding(start = AuraSpacing.sm)
+            ) {
+                if (favorite != null || onToggleFavorite != null) {
+                    androidx.tv.material3.Text(
+                        text = "\u2665",
+                        color = if (favorite == true) accent else TextSecondary,
+                        fontSize = AuraTypography.label
+                    )
+                }
+                if (onLongPress != null) {
+                    androidx.tv.material3.Text(
+                        text = "\u2022\u2022\u2022",
+                        color = TextSecondary,
+                        fontSize = AuraTypography.label,
+                        modifier = Modifier
+                            .clip(AuraShapes.badge)
+                            .background(AuraColors.FocusedFillSubtle)
+                            .padding(horizontal = AuraSpacing.xs, vertical = 2.dp)
+                    )
+                }
             }
         }
         androidx.tv.material3.Text(

@@ -33,6 +33,8 @@ object Prefs {
     private const val KEY_LIBRARIES = "known_libraries"
     private const val KEY_LIBRARIES_AT = "known_libraries_at_ms"
     private const val KEY_AUTOPLAY = "autoplay_music"
+    private const val KEY_AMBIENT_NP = "ambient_now_playing"
+    private const val KEY_NP_DIM_MODE = "now_playing_dim_mode"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -96,6 +98,20 @@ object Prefs {
         get() = p()?.getBoolean(KEY_AUTOPLAY, true) ?: true
         set(value) {
             p()?.edit()?.putBoolean(KEY_AUTOPLAY, value)?.apply()
+        }
+
+    /** Fade out Now Playing chrome after ~6s of D-pad inactivity while playing. */
+    var ambientNowPlaying: Boolean
+        get() = p()?.getBoolean(KEY_AMBIENT_NP, true) ?: true
+        set(value) {
+            p()?.edit()?.putBoolean(KEY_AMBIENT_NP, value)?.apply()
+        }
+
+    /** Drop dynamic color wash to near-black (#0E0C0A) in Now Playing. */
+    var nowPlayingDimMode: Boolean
+        get() = p()?.getBoolean(KEY_NP_DIM_MODE, false) ?: false
+        set(value) {
+            p()?.edit()?.putBoolean(KEY_NP_DIM_MODE, value)?.apply()
         }
 
     // ---- Atmos filter ------------------------------------------------------

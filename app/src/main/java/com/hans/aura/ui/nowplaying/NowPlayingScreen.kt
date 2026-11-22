@@ -3,6 +3,9 @@
 package com.hans.aura.ui.nowplaying
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,12 +39,19 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import com.hans.aura.AuraApp
 import com.hans.aura.data.Favorites
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Mixes
 import com.hans.aura.data.MusicSources
+import com.hans.aura.data.Prefs
 import com.hans.aura.ui.MirrorLink
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.common.InitialFocusOnPush
@@ -49,6 +59,7 @@ import com.hans.aura.ui.common.MotionArtwork
 import com.hans.aura.ui.common.resolveArtwork
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
@@ -118,6 +129,17 @@ fun NowPlayingScreen(
     val dyn = rememberDynamicColors(dynArtUrl)
     val dynBg = dyn?.primary ?: Surface
     val dynAccent = dyn?.secondary ?: Accent
+
+    var dimMode by remember { mutableStateOf(Prefs.nowPlayingDimMode) }
+    val bgTop by animateColorAsState(
+        targetValue = if (dimMode) Canvas else dynBg,
+        animationSpec = spring(stiffness = 300f),
+        label = "npDimBg"
+    )
+
+    val ambientEnabled = remember { Prefs.ambientNowPlaying }
+    var hudInteractionTick by remember { mutableIntStateOf(0) }
+    var ambientHidden by remember { mutableStateOf(false) }
 
     // BACK on the lyrics view returns to the regular now-playing view; only
     // BACK on the track view continues up the stack (pop via onBack).
@@ -197,11 +219,40 @@ fun NowPlayingScreen(
     // The lyrics view has no transport row, so a peek cannot survive into it.
     LaunchedEffect(showLyrics) { if (showLyrics && peekSize > 0) closePeek() }
 
-    Box(Modifier.fillMaxSize()) {
+    LaunchedEffect(ambientEnabled, isPlaying, showLyrics, peekSize, findLyricsOpen, hudInteractionTick) {
+        ambientHidden = false
+        if (ambientEnabled && isPlaying && !showLyrics && peekSize == 0 && !findLyricsOpen) {
+            delay(6_000L)
+            ambientHidden = true
+            android.util.Log.d("AURA_NP", "ambient=on")
+        }
+    }
+    val hudAlpha by animateFloatAsState(
+        targetValue = if (ambientHidden) 0f else 1f,
+        animationSpec = AuraMotion.effectsDefault,
+        label = "npAmbientHudAlpha"
+    )
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) {
+                    hudInteractionTick++
+                    if (ambientHidden) {
+                        ambientHidden = false
+                        android.util.Log.d("AURA_NP", "ambient=off")
+                        runCatching { playPauseFocus.requestFocus() }
+                        if (event.key != Key.Back) return@onPreviewKeyEvent true
+                    }
+                }
+                false
+            }
+    ) {
         Column(
             Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(dynBg, Canvas)))
+                .background(Brush.verticalGradient(listOf(bgTop, Canvas)))
                 // Lyrics view is full-bleed edge to edge; the track view keeps the
                 // standard screen insets.
                 .padding(
@@ -220,19 +271,21 @@ fun NowPlayingScreen(
             }
             if (!showLyrics) controlsVisible = true
 
-            NowPlayingTopRow(
-                visible = controlsVisible || !showLyrics,
-                lyricsMode = showLyrics,
-                item = currentItem,
-                queue = queueState,
-                accent = dynAccent,
-                onBack = onBack,
-                onOpenQueue = onOpenQueue,
-                onFindLyrics = if (providerSource != null && currentItem != null) {
-                    { findLyricsOpen = true }
-                } else null,
-                onToggleLyrics = { showLyrics = !showLyrics }
-            )
+            Box(Modifier.graphicsLayer { alpha = if (showLyrics) 1f else hudAlpha }) {
+                NowPlayingTopRow(
+                    visible = controlsVisible || !showLyrics,
+                    lyricsMode = showLyrics,
+                    item = currentItem,
+                    queue = queueState,
+                    accent = dynAccent,
+                    onBack = onBack,
+                    onOpenQueue = onOpenQueue,
+                    onFindLyrics = if (providerSource != null && currentItem != null) {
+                        { findLyricsOpen = true }
+                    } else null,
+                    onToggleLyrics = { showLyrics = !showLyrics }
+                )
+            }
 
             if (showLyrics) {
                 Box(Modifier.fillMaxSize()) {
@@ -269,6 +322,7 @@ fun NowPlayingScreen(
                         Modifier
                             .weight(1f)
                             .padding(start = AuraSpacing.xxl, top = AuraSpacing.npTitleTop)
+                            .graphicsLayer { alpha = hudAlpha }
                     ) {
                         // Big title: shrink to fit, then marquee. Available width
                         // comes from the row's weight(1f) column.
@@ -321,10 +375,24 @@ fun NowPlayingScreen(
                                         )
                                     }
                                 }
+                            },
+                            dimMode = dimMode,
+                            onToggleDimMode = {
+                                dimMode = !dimMode
+                                Prefs.nowPlayingDimMode = dimMode
                             }
                         )
                     }
                 }
+            }
+        }
+        if (!showLyrics && hudAlpha < 0.99f) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = 1f - hudAlpha }
+            ) {
+                NowPlayingChip(currentItem, artwork?.url(session.serverUrl, maxWidth = 200))
             }
         }
         // Queue peek (B14): the LAST child of the screen-root Box, so it draws

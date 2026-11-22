@@ -270,6 +270,17 @@ fun SettingsScreen(
                     }
                 )
                 androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                var ambientNp by remember { mutableStateOf(Prefs.ambientNowPlaying) }
+                SettingsToggleRow(
+                    title = "Ambient mode in Now Playing",
+                    subtitle = "Fade out controls after 6 seconds of inactivity while playing.",
+                    checked = ambientNp,
+                    onToggle = {
+                        ambientNp = !ambientNp
+                        Prefs.ambientNowPlaying = ambientNp
+                    }
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
                 player?.let { p -> SleepTimerRow(p) }
                 androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
             }

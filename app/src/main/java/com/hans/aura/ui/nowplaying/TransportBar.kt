@@ -3,7 +3,9 @@
 package com.hans.aura.ui.nowplaying
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -69,7 +72,9 @@ internal fun LiveTransportBar(
     onOpenPeek: (FocusRequester) -> Boolean,
     favorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
-    onRadio: (() -> Unit)? = null
+    onRadio: (() -> Unit)? = null,
+    dimMode: Boolean = false,
+    onToggleDimMode: (() -> Unit)? = null
 ) {
     TransportBarContent(
         player = player,
@@ -80,6 +85,8 @@ internal fun LiveTransportBar(
         favorite = favorite,
         onToggleFavorite = onToggleFavorite,
         onRadio = onRadio,
+        dimMode = dimMode,
+        onToggleDimMode = onToggleDimMode,
         seekSection = {
             val position by player.positionMs.collectAsState()
             val duration by player.durationMs.collectAsState()
@@ -99,7 +106,9 @@ internal fun TransportBar(
     onOpenPeek: (FocusRequester) -> Boolean,
     favorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
-    onRadio: (() -> Unit)? = null
+    onRadio: (() -> Unit)? = null,
+    dimMode: Boolean = false,
+    onToggleDimMode: (() -> Unit)? = null
 ) {
     TransportBarContent(
         player = player,
@@ -110,6 +119,8 @@ internal fun TransportBar(
         favorite = favorite,
         onToggleFavorite = onToggleFavorite,
         onRadio = onRadio,
+        dimMode = dimMode,
+        onToggleDimMode = onToggleDimMode,
         seekSection = {
             SeekSection(position, duration, isPlaying, accent, playPauseFocus, player::seekBy)
         }
@@ -157,6 +168,8 @@ private fun TransportBarContent(
     favorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
     onRadio: (() -> Unit)? = null,
+    dimMode: Boolean = false,
+    onToggleDimMode: (() -> Unit)? = null,
     seekSection: @Composable () -> Unit
 ) {
     val shuffleEnabled by player.shuffleEnabled.collectAsState()
@@ -194,6 +207,7 @@ private fun TransportBarContent(
                 accent = accent,
                 iconSize = AuraSizes.transportIconLarge,
                 filled = true,
+                squircle = isPlaying,
                 modifier = Modifier
                     .focusRequester(playPauseFocus)
                     .focusProperties { down = shuffleFocus }
@@ -256,6 +270,17 @@ private fun TransportBarContent(
                 // toggle.
                 NpControlButton(label = "Radio", onClick = radio)
             }
+            onToggleDimMode?.let { toggleDim ->
+                Spacer(Modifier.width(AuraSpacing.lg))
+                TransportIconButton(
+                    icon = R.drawable.ic_bedtime,
+                    label = "Dim mode",
+                    accent = accent,
+                    active = dimMode
+                ) {
+                    toggleDim()
+                }
+            }
         }
     }
 }
@@ -272,6 +297,7 @@ private fun TransportIconButton(
     iconSize: Dp = AuraSizes.transportIcon,
     filled: Boolean = false,
     active: Boolean = false,
+    squircle: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -293,6 +319,12 @@ private fun TransportIconButton(
     // Focus grows the glyph (~15%) as well as ringing it: on a dark 10-foot
     // screen a 3dp accent ring alone was too easy to miss.
     val grow by animateFloatAsState(if (focused) 1.15f else 1f, label = "transportGrow")
+    val corner by animateDpAsState(
+        targetValue = if (squircle) 18.dp else 40.dp,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 380f),
+        label = "transportCorner"
+    )
+    val buttonShape = if (filled) RoundedCornerShape(corner) else CircleShape
     Box(
         modifier
             .size(iconSize + AuraSizes.transportPlateExtra)
@@ -300,12 +332,12 @@ private fun TransportIconButton(
                 scaleX = grow
                 scaleY = grow
             }
-            .clip(CircleShape)
+            .clip(buttonShape)
             .background(plate)
             .border(
                 width = if (focused) AuraSizes.focusBorderLoud else 0.dp,
                 color = if (focused) AuraColors.CursorRing else Color.Transparent,
-                shape = CircleShape
+                shape = buttonShape
             )
             // onFocusChanged must sit BEFORE the focus target (clickable):
             // placed after it, it observes the un-focusable layout child and

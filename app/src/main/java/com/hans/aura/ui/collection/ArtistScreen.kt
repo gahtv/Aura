@@ -157,10 +157,18 @@ fun ArtistScreen(
         ArtistTab.POPULAR -> visibleTracks.isNotEmpty()
         ArtistTab.SIMILAR -> similarArtists.isNotEmpty()
     }
-    if (!initialFocus) {
-        com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper, ready = contentReady)
+    val tabLoaded = when (activeTab) {
+        ArtistTab.DISCOGRAPHY -> state.albums != null
+        ArtistTab.POPULAR -> state.topTracks != null
+        ArtistTab.SIMILAR -> state.similar != null
     }
-    com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, contentFocus, ready = contentReady)
+    val emptyResult = !contentReady && (tabLoaded || state.error != null)
+    if (!initialFocus) {
+        com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper,
+            ready = contentReady, cancelled = emptyResult)
+    }
+    com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, contentFocus,
+        ready = contentReady, cancelled = emptyResult)
 
     Box(
         Modifier

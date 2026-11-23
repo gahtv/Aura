@@ -22,6 +22,7 @@ import com.hans.aura.AuraApp
 import com.hans.aura.ui.collection.ArtistScreen
 import com.hans.aura.ui.collection.CollectionScreen
 import com.hans.aura.ui.common.ContextMenuHosts
+import com.hans.aura.ui.common.FocusHandoffHost
 import com.hans.aura.ui.common.NavRequests
 import com.hans.aura.ui.common.OverlayVisibility
 import com.hans.aura.ui.genres.GenreScreen
@@ -166,7 +167,7 @@ fun AppRoot() {
     // index never inherits an older screen's state.
     val stateHolder = rememberSaveableStateHolder()
 
-    Box(Modifier.fillMaxSize().background(Canvas)) {
+    FocusHandoffHost(Modifier.fillMaxSize().background(Canvas)) {
         Column(Modifier.fillMaxSize()) {
             // Now Playing is an immersive view (lyrics/transport fill the
             // screen); the top bar comes back on any other screen. Any open

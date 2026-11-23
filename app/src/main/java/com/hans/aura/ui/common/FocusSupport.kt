@@ -1,13 +1,43 @@
 package com.hans.aura.ui.common
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+
+private val LocalFocusNavigationTick = compositionLocalOf { 0 }
+
+/** Pending handoffs yield to subsequent remote navigation, including in the top bar. */
+@Composable
+fun FocusHandoffHost(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+    var navigationTick by remember { mutableIntStateOf(0) }
+    Box(modifier.onPreviewKeyEvent { event ->
+        if (event.type == KeyEventType.KeyDown) {
+            when (event.key) {
+                Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight,
+                Key.DirectionCenter, Key.Enter, Key.Tab, Key.Back -> navigationTick++
+            }
+        }
+        false
+    }) {
+        CompositionLocalProvider(LocalFocusNavigationTick provides navigationTick) { content() }
+    }
+}
 
 /**
  * Tries now, then on up to eight frames. This allows restored lazy scroll state
@@ -57,6 +87,8 @@ class FocusKeeper {
  * to the content group after allowing lazy layout to attach the saved item.
  * [ready] must describe focusable content, not just an attached container.
  * Readiness changes after a completed handoff do not repeat it for this tick.
+ * [cancelled] abandons this tick, e.g. a completed empty/error result. Later
+ * navigation through [FocusHandoffHost] also abandons pending work.
  */
 @Composable
 fun RestoreFocusOnBack(
@@ -64,10 +96,14 @@ fun RestoreFocusOnBack(
     containerRequester: FocusRequester,
     focusedId: String? = null,
     keeper: FocusKeeper? = null,
-    ready: Boolean = true
+    ready: Boolean = true,
+    cancelled: Boolean = false
 ) {
+    val navigationTick = LocalFocusNavigationTick.current
+    val entryNavigationTick = remember(focusTick) { navigationTick }
     var requested by remember(focusTick) { mutableStateOf(false) }
-    LaunchedEffect(focusTick, ready) {
+    LaunchedEffect(focusTick, ready, cancelled, navigationTick) {
+        if (cancelled || navigationTick != entryNavigationTick) requested = true
         if (focusTick <= 0 || !ready || requested) return@LaunchedEffect
         val target = focusedId?.let { id -> keeper?.requesterFor(id) }
         if (target?.requestFocusOnFrame() != true) containerRequester.requestFocusOnFrame()
@@ -81,11 +117,20 @@ fun RestoreFocusOnBack(
  * found by accident. Runs once per screen entry.
  * [ready] gates that one handoff until focusable content is composed; subsequent
  * refreshes do not reclaim focus. Use [shouldFocus] for entry, not loading state.
+ * [cancelled] or subsequent remote navigation abandons this entry's handoff.
  */
 @Composable
-fun InitialFocusOnPush(shouldFocus: Boolean, requester: FocusRequester, ready: Boolean = true) {
+fun InitialFocusOnPush(
+    shouldFocus: Boolean,
+    requester: FocusRequester,
+    ready: Boolean = true,
+    cancelled: Boolean = false
+) {
+    val navigationTick = LocalFocusNavigationTick.current
+    val entryNavigationTick = remember(shouldFocus) { navigationTick }
     var requested by remember(shouldFocus) { mutableStateOf(false) }
-    LaunchedEffect(shouldFocus, ready) {
+    LaunchedEffect(shouldFocus, ready, cancelled, navigationTick) {
+        if (cancelled || navigationTick != entryNavigationTick) requested = true
         if (!shouldFocus || !ready || requested) return@LaunchedEffect
         requester.requestFocusOnFrame()
         requested = true

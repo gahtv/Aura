@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+
 package com.hans.aura.ui.common
 
 import androidx.activity.ComponentActivity
@@ -6,15 +8,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -84,6 +90,76 @@ class FocusSupportTest {
 
     @Test
     fun backFallsBackToContainerWhenKeeperItemIsMissing() = restoreBack(false)
+
+    @Test
+    fun completedEmptyEntryDoesNotFocusLaterRefresh() {
+        compose.mainClock.autoAdvance = false
+        val outside = FocusRequester()
+        val content = FocusRequester()
+        val ready = mutableStateOf(false)
+        compose.setContent {
+            Column {
+                Box(Modifier.size(40.dp).testTag("outside").focusRequester(outside).focusable())
+                if (ready.value) Box(Modifier.size(40.dp).testTag("later").focusRequester(content).focusable())
+            }
+            LaunchedEffect(Unit) { outside.requestFocus() }
+            InitialFocusOnPush(true, content, ready = ready.value, cancelled = !ready.value)
+        }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.runOnIdle { ready.value = true }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("outside").assertIsFocused()
+    }
+
+    @Test
+    fun completedEmptyBackDoesNotFocusLaterRefresh() {
+        compose.mainClock.autoAdvance = false
+        val outside = FocusRequester()
+        val content = FocusRequester()
+        val ready = mutableStateOf(false)
+        compose.setContent {
+            Column {
+                Box(Modifier.size(40.dp).testTag("outside").focusRequester(outside).focusable())
+                if (ready.value) Box(Modifier.size(40.dp).testTag("later").focusRequester(content).focusable())
+            }
+            LaunchedEffect(Unit) { outside.requestFocus() }
+            RestoreFocusOnBack(1, content, ready = ready.value, cancelled = !ready.value)
+        }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.runOnIdle { ready.value = true }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("outside").assertIsFocused()
+    }
+
+    @Test
+    fun navigationCancelsWaitingHandoffButNewPickCanFocus() {
+        compose.mainClock.autoAdvance = false
+        val first = FocusRequester()
+        val content = FocusRequester()
+        val ready = mutableStateOf(false)
+        val pick = mutableStateOf(0)
+        compose.setContent {
+            FocusHandoffHost {
+                Column {
+                    Box(Modifier.size(40.dp).testTag("first").focusRequester(first).focusable())
+                    Box(Modifier.size(40.dp).testTag("second").focusable())
+                    if (ready.value) Box(Modifier.size(40.dp).testTag("loaded").focusRequester(content).focusable())
+                }
+                LaunchedEffect(Unit) { first.requestFocus() }
+                key(pick.value) { InitialFocusOnPush(true, content, ready = ready.value) }
+            }
+        }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("first").performKeyInput { pressKey(Key.DirectionDown) }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("second").assertIsFocused()
+        compose.runOnIdle { ready.value = true }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("second").assertIsFocused()
+        compose.runOnIdle { pick.value++ }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("loaded").assertIsFocused()
+    }
 
     @Test
     fun entryWaitsForChildOfAttachedGroupAfterDelayedLoad() = delayedEntry(true)

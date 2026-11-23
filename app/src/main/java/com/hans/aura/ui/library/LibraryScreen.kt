@@ -160,15 +160,13 @@ internal fun LibraryScreen(
     val railFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val backFocusKey = remember(focusTick) { state.cacheKey }
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper,
-        ready = items.isNotEmpty())
-    var pendingGridFocus by remember { mutableStateOf(false) }
-    LaunchedEffect(pendingGridFocus, items.isNotEmpty()) {
-        if (pendingGridFocus && items.isNotEmpty()) {
-            contentFocus.requestFocusOnFrame()
-            pendingGridFocus = false
-        }
-    }
+        ready = items.isNotEmpty(),
+        cancelled = state.cacheKey != backFocusKey ||
+            (state.initialized && !state.loading && items.isEmpty()))
+    var pendingGridFocus by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    LibraryGridFocus(pendingGridFocus, state, contentFocus)
 
     Column(Modifier.fillMaxSize()) {
         // Unified Library category filter pills: Albums · Artists · Tracks · Playlists · Genres
@@ -271,7 +269,7 @@ internal fun LibraryScreen(
                     onClick = {
                         azOpen = false
                         viewModel.clearLetter(null)
-                        pendingGridFocus = true
+                        pendingGridFocus = viewModel.state.value.let { it.jumpTick to it.cacheKey }
                     }
                 )
                 AZ_LETTERS.forEach { candidate ->
@@ -286,7 +284,7 @@ internal fun LibraryScreen(
                             viewModel.selectLetter(candidate)
                             // The rail disappears when a letter is taken; hand
                             // focus to the grid or the selector is stranded.
-                            pendingGridFocus = true
+                            pendingGridFocus = viewModel.state.value.let { it.jumpTick to it.cacheKey }
                         }
                     )
                 }
@@ -492,6 +490,23 @@ private fun SortPill(
                 )
             }
         }
+    }
+}
+
+@Composable
+internal fun LibraryGridFocus(
+    pick: Pair<Int, String>?,
+    state: LibraryUiState,
+    requester: androidx.compose.ui.focus.FocusRequester
+) {
+    androidx.compose.runtime.key(pick) {
+        com.hans.aura.ui.common.InitialFocusOnPush(
+            shouldFocus = pick != null,
+            requester = requester,
+            ready = state.items.isNotEmpty(),
+            cancelled = pick != (state.jumpTick to state.cacheKey) ||
+                (state.initialized && !state.loading && state.items.isEmpty())
+        )
     }
 }
 

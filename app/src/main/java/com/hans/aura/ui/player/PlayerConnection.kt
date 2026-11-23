@@ -82,6 +82,7 @@ class PlayerConnection(
     private val _currentItem = MutableStateFlow<JellyfinItem?>(null)
     private val _isPlaying = MutableStateFlow(false)
     private val _queue = MutableStateFlow<List<JellyfinItem>>(emptyList())
+    private val _queueReady = MutableStateFlow(false)
     private val _queueIndex = MutableStateFlow(0)
     private val _upcoming = MutableStateFlow<List<IndexedValue<JellyfinItem>>>(emptyList())
     private val _playOrder = MutableStateFlow<List<IndexedValue<JellyfinItem>>>(emptyList())
@@ -97,6 +98,7 @@ class PlayerConnection(
     val positionMs: StateFlow<Long> = playback.positionMs
     val durationMs: StateFlow<Long> = playback.durationMs
     val queue: StateFlow<List<JellyfinItem>> = _queue
+    val queueReady: StateFlow<Boolean> = _queueReady
     val queueIndex: StateFlow<Int> = _queueIndex
     val upcoming: StateFlow<List<IndexedValue<JellyfinItem>>> = _upcoming
     val playOrder: StateFlow<List<IndexedValue<JellyfinItem>>> = _playOrder
@@ -200,6 +202,7 @@ class PlayerConnection(
         _repeatMode.value = c.repeatMode
         readUpcoming(c)
         // Fetch any items the UI doesn't know yet (remote cast items).
+        _queueReady.value = missing.isEmpty()
         if (missing.isNotEmpty()) {
             scope.launch {
                 val session = sessionProvider() ?: return@launch
@@ -210,6 +213,7 @@ class PlayerConnection(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
+                    _queueReady.value = true
                     return@launch
                 }
                 readQueue(c)

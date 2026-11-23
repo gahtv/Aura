@@ -152,7 +152,9 @@ fun HomeScreen(
         ready = (quickAccessItems.isNotEmpty() || itemsById.values.any { AtmosFilter.keep(it) }) &&
             (focusedCardId == null ||
                 itemsById[focusedCardId?.removePrefix("qa:")]?.let { AtmosFilter.keep(it) } == true ||
-                !state.loading))
+                !state.loading),
+        cancelled = !state.loading && quickAccessItems.isEmpty() &&
+            itemsById.values.none { AtmosFilter.keep(it) })
     val listState = rememberLazyListState()
     val motionWindow by remember(listState) {
         derivedStateOf { listMotionWindow(listState.layoutInfo) }

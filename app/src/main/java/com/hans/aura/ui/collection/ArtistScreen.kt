@@ -63,7 +63,10 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Track
 import com.hans.aura.data.Mixes
 import com.hans.aura.data.artistArtwork
 import com.hans.aura.ui.common.ArtworkCard
@@ -93,13 +96,13 @@ private enum class ArtistTab(val label: String) {
 @Composable
 fun ArtistScreen(
     app: AuraApp,
-    artist: JellyfinItem,
+    artist: Artist,
     player: PlayerConnection,
     onBack: () -> Unit,
     focusTick: Int = 0,
     initialFocus: Boolean = false,
-    onOpenCollection: (JellyfinItem) -> Unit,
-    onOpenArtist: (JellyfinItem) -> Unit = {},
+    onOpenCollection: (CollectionItem) -> Unit,
+    onOpenArtist: (Artist) -> Unit = {},
     viewModel: ArtistViewModel = viewModel(
         key = "artist:${artist.id}:${app.jellyfin.auth.session?.userId ?: "anon"}",
         factory = viewModelFactory { initializer { ArtistViewModel(app, artist.id) } }
@@ -108,8 +111,8 @@ fun ArtistScreen(
     val session = app.jellyfin.auth.session ?: return
     val state by viewModel.state.collectAsState()
     val shownArtist = state.shown(artist)
-    val artUrl = shownArtist.primaryImageTag?.let {
-        AuthStore.imageUrl(session.serverUrl, shownArtist.id, it, maxWidth = 480)
+    val artUrl = shownArtist.artwork?.let { art ->
+        AuthStore.imageUrl(session.serverUrl, art.itemId, art.tag, maxWidth = 480)
     }
     AuraDynamicTheme(artUrl) {
         ArtistContent(
@@ -123,13 +126,13 @@ fun ArtistScreen(
 @Composable
 private fun ArtistContent(
     app: AuraApp,
-    artist: JellyfinItem,
+    artist: Artist,
     player: PlayerConnection,
     onBack: () -> Unit,
     focusTick: Int,
     initialFocus: Boolean,
-    onOpenCollection: (JellyfinItem) -> Unit,
-    onOpenArtist: (JellyfinItem) -> Unit,
+    onOpenCollection: (CollectionItem) -> Unit,
+    onOpenArtist: (Artist) -> Unit,
     viewModel: ArtistViewModel,
     state: ArtistUiState,
     artUrl: String?
@@ -283,8 +286,7 @@ private fun ArtistContent(
                         onClick = {
                             scope.launch {
                                 Mixes.playMix(
-                                    api = app.jellyfin.api,
-                                    userId = session.userId,
+                                    media = app.container.media,
                                     player = player,
                                     kind = Mixes.Kind.ARTIST,
                                     seed = shownArtist

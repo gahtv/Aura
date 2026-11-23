@@ -6,7 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Artist as MediaArtist
+import com.hans.aura.model.CollectionItem
 
 /**
  * The navigation surface screens get. Implemented over a back stack today
@@ -20,8 +21,8 @@ internal interface NavActions {
     fun onOpenNowPlaying()
     fun onOpenQueue()
     fun onOpenGenre(name: String)
-    fun onOpenCollection(item: JellyfinItem)
-    fun onOpenArtist(item: JellyfinItem)
+    fun onOpenCollection(item: CollectionItem)
+    fun onOpenArtist(item: MediaArtist)
 }
 
 /**
@@ -123,8 +124,8 @@ internal class NavState {
         override fun onOpenNowPlaying() = openNowPlaying()
         override fun onOpenQueue() = push(Screen.Queue)
         override fun onOpenGenre(name: String) = push(Screen.Genre(name))
-        override fun onOpenCollection(item: JellyfinItem) = push(Screen.Collection(item))
-        override fun onOpenArtist(item: JellyfinItem) = push(Screen.Artist(item))
+        override fun onOpenCollection(item: CollectionItem) = push(Screen.Collection(item))
+        override fun onOpenArtist(item: MediaArtist) = push(Screen.Artist(item))
     }
 }
 

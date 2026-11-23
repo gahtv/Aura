@@ -1,6 +1,8 @@
 package com.hans.aura.ui.nav
 
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Artist as MediaArtist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.MediaItem
 
 /**
  * Every destination the app can show. Screens carry only their payload; all
@@ -58,11 +60,11 @@ internal sealed interface Screen {
         override val meta = ScreenMeta.GENRE
     }
 
-    data class Collection(val item: JellyfinItem) : Screen {
+    data class Collection(val item: CollectionItem) : Screen {
         override val meta = ScreenMeta.COLLECTION
     }
 
-    data class Artist(val item: JellyfinItem) : Screen {
+    data class Artist(val item: MediaArtist) : Screen {
         override val meta = ScreenMeta.ARTIST
     }
 }
@@ -79,7 +81,7 @@ internal sealed interface Screen {
  *  - [routeName]    the route a remote may navigate TO (null = not addressable).
  *  - [debugAlias]   the name accepted by `--es aura_debug_screen` (null = none).
  *  - [libraryKind]  LibraryScreen kind when this screen lists a library.
- *  - [takesItem]    the screen wraps a JellyfinItem that must be resolved first.
+ *  - [takesItem]    the screen wraps a domain item that must be resolved first.
  */
 internal enum class ScreenMeta(
     val keyPrefix: String,
@@ -152,7 +154,7 @@ internal object NavSpec {
         route != null && ScreenMeta.entries.any { it.routeName == route && it.takesItem }
 
     /** Screen for a remote route; item screens need [resolvedItem] for [itemId]. */
-    fun fromMirrorRoute(route: String?, itemId: String?, resolvedItem: JellyfinItem?): Screen? {
+    fun fromMirrorRoute(route: String?, itemId: String?, resolvedItem: MediaItem?): Screen? {
         if (route == null) return null
         val meta = ScreenMeta.entries.firstOrNull { it.routeName == route } ?: return null
         if (!meta.takesItem) return meta.resolve(null)
@@ -168,9 +170,9 @@ internal object NavSpec {
         return meta.resolve(null)
     }
 
-    private fun ScreenMeta.resolve(item: JellyfinItem?): Screen? = when (this) {
-        ScreenMeta.COLLECTION -> item?.let { Screen.Collection(it) }
-        ScreenMeta.ARTIST -> item?.let { Screen.Artist(it) }
+    private fun ScreenMeta.resolve(item: MediaItem?): Screen? = when (this) {
+        ScreenMeta.COLLECTION -> (item as? CollectionItem)?.let { Screen.Collection(it) }
+        ScreenMeta.ARTIST -> (item as? MediaArtist)?.let { Screen.Artist(it) }
         else -> simpleScreens.firstOrNull { it.meta == this }
     }
 }

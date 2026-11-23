@@ -52,11 +52,14 @@ import androidx.tv.material3.MaterialTheme
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Genre
 import com.hans.aura.data.Mixes
 import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
+import com.hans.aura.ui.common.url
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraMotion
@@ -131,11 +134,7 @@ fun GenresScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(genres, key = { "genre_${it.id}" }) { genre ->
-                    val artUrl = genre.albumId?.let { aid ->
-                        genre.albumPrimaryImageTag?.let { tag ->
-                            AuthStore.imageUrl(serverUrl, aid, tag, maxWidth = 200)
-                        }
-                    }
+                    val artUrl = genre.artwork?.url(serverUrl, maxWidth = 200)
                     GenreTile(
                         name = genre.name,
                         id = genre.id,
@@ -164,7 +163,7 @@ fun GenreScreen(
     player: PlayerConnection,
     genreName: String,
     onBack: () -> Unit,
-    onOpenCollection: (JellyfinItem) -> Unit,
+    onOpenCollection: (CollectionItem) -> Unit,
     focusTick: Int = 0,
     initialFocus: Boolean = false,
     viewModel: GenreAlbumsViewModel = viewModel(
@@ -179,7 +178,7 @@ fun GenreScreen(
     val current by player.current.collectAsState()
     // Atmos badges on the genre page cost no extra scan: the catalog is a
     // session-wide result already warmed by Home's "Your Atmos" shelf.
-    val atmosAlbumIds = com.hans.aura.ui.common.rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
+    val atmosAlbumIds = com.hans.aura.ui.common.rememberAtmosAlbumIds(session.userId)
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val contentFocus = remember { FocusRequester() }
@@ -219,13 +218,12 @@ fun GenreScreen(
                     radioBusy = true
                     scope.launch {
                         Mixes.playMix(
-                            api = app.jellyfin.api,
-                            userId = session.userId,
+                            media = app.container.media,
                             player = player,
                             kind = Mixes.Kind.GENRE,
                             // The seed carries the genre NAME; the endpoint is
                             // /MusicGenres/{name}/InstantMix.
-                            seed = JellyfinItem(id = "", name = genreName, type = "MusicGenre")
+                            seed = Genre(id = "", name = genreName)
                         )
                         radioBusy = false
                     }

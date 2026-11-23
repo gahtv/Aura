@@ -88,7 +88,7 @@ fun SettingsScreen(
         libsLoading = true
         libsError = null
         runCatching {
-            LibraryFilter.refreshLibraryList(app.jellyfin.api, session.userId)
+            app.container.media.refreshLibraryList()
         }.onSuccess {
             libraries = it
             hidden = Prefs.hiddenLibraries

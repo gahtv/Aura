@@ -3,8 +3,11 @@ package com.hans.aura.ui.common
 import android.util.Log
 import com.hans.aura.AuraApp
 import com.hans.aura.R
-import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LibraryCache
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 import com.hans.aura.data.Mixes
 import com.hans.aura.ui.player.PlayerConnection
 import kotlinx.coroutines.CoroutineScope
@@ -38,7 +41,7 @@ object ContextMenus {
         index: Int,
         size: Int,
         currentIndex: Int,
-        track: JellyfinItem,
+        track: Track,
         reorderable: Boolean
     ): ContextMenuSpec {
         val actions = mutableListOf<ContextAction>()
@@ -77,9 +80,9 @@ object ContextMenus {
         app: AuraApp,
         player: PlayerConnection,
         scope: CoroutineScope,
-        track: JellyfinItem,
-        onOpenArtist: ((JellyfinItem) -> Unit)?,
-        onOpenCollection: ((JellyfinItem) -> Unit)?,
+        track: Track,
+        onOpenArtist: ((Artist) -> Unit)?,
+        onOpenCollection: ((CollectionItem) -> Unit)?,
         onRemoveFromPlaylist: (() -> Unit)? = null,
         playlistMove: PlaylistMove? = null
     ): ContextMenuSpec {
@@ -101,8 +104,7 @@ object ContextMenus {
                 } else {
                     scope.launch {
                         Mixes.playMix(
-                            api = app.jellyfin.api,
-                            userId = userId,
+                            media = app.container.media,
                             player = player,
                             kind = Mixes.Kind.TRACK,
                             seed = track
@@ -122,20 +124,15 @@ object ContextMenus {
                 actions.add(ContextAction("Move down", R.drawable.ic_arrow_downward) { movePlaylistItem(app, scope, pm, pm.index + 1) })
             }
         }
-        val artistId = track.artistItems?.firstOrNull()?.id
-            ?: track.albumArtists?.firstOrNull()?.id
+        val artistId = track.artists.firstOrNull()?.id
+            ?: track.albumArtists.firstOrNull()?.id
         if (onOpenArtist != null && artistId != null) {
             actions.add(
                 ContextAction("View artist", R.drawable.ic_person) {
-                    val userId = app.jellyfin.auth.session?.userId
-                    if (userId == null) {
-                        Log.w(TAG, "view artist skipped: no session")
-                    } else {
-                        scope.launch {
-                            runCatching { app.jellyfin.api.getItem(itemId = artistId, userId = userId) }
-                                .onSuccess { onOpenArtist(it) }
-                                .onFailure { Log.w(TAG, "view artist $artistId failed: ${it.message}") }
-                        }
+                    scope.launch {
+                        runCatching { SourceQueries.item(artistId) }
+                            .onSuccess { (it as? Artist)?.let(onOpenArtist) }
+                            .onFailure { Log.w(TAG, "view artist $artistId failed: ${it.message}") }
                     }
                 }
             )
@@ -144,15 +141,10 @@ object ContextMenus {
         if (onOpenCollection != null && albumId != null) {
             actions.add(
                 ContextAction("View album", R.drawable.ic_album) {
-                    val userId = app.jellyfin.auth.session?.userId
-                    if (userId == null) {
-                        Log.w(TAG, "view album skipped: no session")
-                    } else {
-                        scope.launch {
-                            runCatching { app.jellyfin.api.getItem(itemId = albumId, userId = userId) }
-                                .onSuccess { onOpenCollection(it) }
-                                .onFailure { Log.w(TAG, "view album $albumId failed: ${it.message}") }
-                        }
+                    scope.launch {
+                        runCatching { SourceQueries.item(albumId) }
+                            .onSuccess { (it as? CollectionItem)?.let(onOpenCollection) }
+                            .onFailure { Log.w(TAG, "view album $albumId failed: ${it.message}") }
                     }
                 }
             )
@@ -174,8 +166,8 @@ object ContextMenus {
         app: AuraApp,
         player: PlayerConnection,
         scope: CoroutineScope,
-        album: JellyfinItem,
-        onOpenArtist: ((JellyfinItem) -> Unit)?
+        album: CollectionItem,
+        onOpenArtist: ((Artist) -> Unit)?
     ): ContextMenuSpec {
         val actions = mutableListOf(
             ContextAction("Play next", R.drawable.ic_queue_play_next) {
@@ -196,26 +188,21 @@ object ContextMenus {
                 }
             }
         )
-        val artistId = album.albumArtists?.firstOrNull()?.id
+        val artistId = (album as? Album)?.artists?.firstOrNull()?.id
         if (onOpenArtist != null && artistId != null) {
             actions.add(
                 ContextAction("View artist", R.drawable.ic_person) {
-                    val userId = app.jellyfin.auth.session?.userId
-                    if (userId == null) {
-                        Log.w(TAG, "view artist skipped: no session")
-                    } else {
-                        scope.launch {
-                            runCatching { app.jellyfin.api.getItem(itemId = artistId, userId = userId) }
-                                .onSuccess { onOpenArtist(it) }
-                                .onFailure { Log.w(TAG, "view artist $artistId failed: ${it.message}") }
-                        }
+                    scope.launch {
+                        runCatching { SourceQueries.item(artistId) }
+                            .onSuccess { (it as? Artist)?.let(onOpenArtist) }
+                            .onFailure { Log.w(TAG, "view artist $artistId failed: ${it.message}") }
                     }
                 }
             )
         }
         return ContextMenuSpec(
             title = album.name,
-            subtitle = album.albumArtist ?: album.artistNames.ifBlank { null },
+            subtitle = (album as? Album)?.let { it.albumArtist ?: it.artistNames.ifBlank { null } },
             actions = listOf(favoriteAction(app, scope, album)) + actions
         )
     }
@@ -228,7 +215,7 @@ object ContextMenus {
     private fun favoriteAction(
         app: AuraApp,
         scope: CoroutineScope,
-        item: JellyfinItem
+        item: com.hans.aura.model.MediaItem
     ): ContextAction {
         val liked = com.hans.aura.data.Favorites.isFavorite(item)
         return ContextAction(
@@ -240,7 +227,7 @@ object ContextMenus {
                 if (userId == null) {
                     Log.w(TAG, "favourite toggle skipped: no session")
                 } else {
-                    com.hans.aura.data.Favorites.toggle(app.jellyfin.api, userId, item)
+                    app.container.media.toggleFavorite(item)
                 }
             }
         }
@@ -261,20 +248,13 @@ object ContextMenus {
     ) {
         scope.launch {
             runCatching {
-                app.jellyfin.api.movePlaylistItem(move.playlistId, move.itemId, newIndex)
-            }.onSuccess { resp ->
+                app.container.media.movePlaylistItem(move.playlistId, move.itemId, newIndex)
+            }.onSuccess {
                 android.util.Log.d(
                     "AURA_QUEUE",
-                    "playlist move playlist=${move.playlistId} item=${move.itemId} " +
-                        "newIndex=$newIndex -> code=${resp.code()}"
+                    "playlist move playlist=${move.playlistId} item=${move.itemId} newIndex=$newIndex"
                 )
-                if (resp.isSuccessful) {
-                    LibraryCache.evict("col:${move.playlistId}")
-                    LibraryCache.clearDiskLists()
-                    move.onMoved()
-                } else {
-                    Log.w(TAG, "playlist move rejected: HTTP ${resp.code()}")
-                }
+                move.onMoved()
             }.onFailure {
                 android.util.Log.w("AURA_QUEUE", "playlist move failed: ${it.message}")
             }
@@ -282,21 +262,21 @@ object ContextMenus {
     }
 
     /** All audio tracks of an album/playlist, newest last (play order). */
-    private suspend fun albumTracks(app: AuraApp, album: JellyfinItem): List<JellyfinItem>? {
+    private suspend fun albumTracks(app: AuraApp, album: CollectionItem): List<Track>? {
         val userId = app.jellyfin.auth.session?.userId
         if (userId == null) {
             Log.w(TAG, "album tracks ${album.id} skipped: no session")
             return null
         }
+        if (userId.isBlank()) return null
         return runCatching {
-            SourceQueries.items(
-                userId = userId,
+            SourceQueries.tracks(com.hans.aura.data.LibraryFilter.ItemsQuery(
                 parentId = album.id,
                 includeItemTypes = "Audio",
                 sortBy = "ParentIndexNumber,IndexNumber",
                 sortOrder = "Ascending",
                 limit = 500
-            ).items
+            )).items
         }.onFailure { Log.w(TAG, "album tracks ${album.id} failed: ${it.message}") }
             .getOrNull()
     }

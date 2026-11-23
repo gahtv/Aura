@@ -46,7 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import com.hans.aura.AuraApp
 import com.hans.aura.data.Favorites
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.Track
 import com.hans.aura.data.Mixes
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
@@ -57,8 +59,8 @@ import com.hans.aura.ui.common.MotionArtwork
 import com.hans.aura.ui.common.LocalArtworkTransition
 import com.hans.aura.ui.common.artworkRequest
 import com.hans.aura.ui.common.requestFocusOnFrame
-import com.hans.aura.ui.common.resolveAlbumArtwork
 import com.hans.aura.ui.common.sharedArtwork
+import com.hans.aura.ui.common.url
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraDynamicTheme
 import com.hans.aura.ui.theme.artworkWash
@@ -81,12 +83,12 @@ fun NowPlayingScreen(
     player: PlayerConnection,
     onBack: () -> Unit,
     onOpenQueue: () -> Unit,
-    onOpenAlbum: (JellyfinItem) -> Unit = {},
-    onOpenArtist: (JellyfinItem) -> Unit = {}
+    onOpenAlbum: (Album) -> Unit = {},
+    onOpenArtist: (Artist) -> Unit = {}
 ) {
     val session = app.jellyfin.auth.session ?: return
     val item by player.current.collectAsState()
-    val artUrl = item?.resolveAlbumArtwork()?.url(session.serverUrl, maxWidth = 480)
+    val artUrl = item?.albumArtwork?.url(session.serverUrl, maxWidth = 480)
     AuraDynamicTheme(artUrl) {
         NowPlayingContent(app, player, onBack, onOpenQueue, onOpenAlbum, onOpenArtist, item)
     }
@@ -98,9 +100,9 @@ private fun NowPlayingContent(
     player: PlayerConnection,
     onBack: () -> Unit,
     onOpenQueue: () -> Unit,
-    onOpenAlbum: (JellyfinItem) -> Unit,
-    onOpenArtist: (JellyfinItem) -> Unit,
-    item: JellyfinItem?
+    onOpenAlbum: (Album) -> Unit,
+    onOpenArtist: (Artist) -> Unit,
+    item: Track?
 ) {
     val session = app.jellyfin.auth.session ?: return
     val isPlaying by player.isPlaying.collectAsState()
@@ -118,7 +120,7 @@ private fun NowPlayingContent(
 
     // One stable local for the current track so nothing below has to force-unwrap.
     val currentItem = item
-    val artwork = currentItem?.resolveAlbumArtwork()
+    val artwork = currentItem?.albumArtwork
     val providerSource = MusicSources.current?.takeIf { it.supportsProviderLyrics }
     var findLyricsOpen by remember(currentItem?.id) { mutableStateOf(false) }
     var lyricsRevision by remember(currentItem?.id) { mutableIntStateOf(0) }
@@ -127,13 +129,13 @@ private fun NowPlayingContent(
     // artist screens refetch the full item by id on entry.
     val albumItem = currentItem?.let { cur ->
         cur.albumId?.let { aid ->
-            JellyfinItem(id = aid, name = cur.album ?: "", type = "MusicAlbum")
+            Album(id = aid, name = cur.album ?: "")
         }
     }
     val artistEntry = currentItem?.albumArtists?.firstOrNull()
-        ?: currentItem?.artistItems?.firstOrNull()
+        ?: currentItem?.artists?.firstOrNull()
     val artistItem = artistEntry?.let {
-        JellyfinItem(id = it.id, name = it.name, type = "MusicArtist")
+        Artist(id = it.id, name = it.name)
     }
 
     var dimMode by remember { mutableStateOf(Prefs.nowPlayingDimMode) }
@@ -358,7 +360,7 @@ private fun NowPlayingContent(
                             onToggleFavorite = currentItem?.let { cur ->
                                 {
                                     npScope.launch {
-                                        Favorites.toggle(app.jellyfin.api, session.userId, cur)
+                                        app.container.media.toggleFavorite(cur)
                                     }
                                 }
                             },
@@ -370,8 +372,7 @@ private fun NowPlayingContent(
                                 {
                                     npScope.launch {
                                         Mixes.playMix(
-                                            api = app.jellyfin.api,
-                                            userId = session.userId,
+                                            media = app.container.media,
                                             player = player,
                                             kind = Mixes.Kind.TRACK,
                                             seed = seed

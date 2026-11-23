@@ -138,8 +138,11 @@ internal fun LibraryScreen(
             viewModel.loadNextPage()
         }
     }
-    LaunchedEffect(nearListEnd, items.size) {
-        if (kind == "Tracks" && nearListEnd && state.initialized && items.isNotEmpty() && items.size < state.total) {
+    val canLoadLikedPage = !state.likedOnly || (!state.loading && state.error == null)
+    LaunchedEffect(nearListEnd, items.size, canLoadLikedPage) {
+        if (kind == "Tracks" && nearListEnd && canLoadLikedPage &&
+            state.initialized && items.isNotEmpty() && items.size < state.total
+        ) {
             viewModel.loadNextPage()
         }
     }

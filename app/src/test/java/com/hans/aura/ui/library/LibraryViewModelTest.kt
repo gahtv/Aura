@@ -238,6 +238,31 @@ class LibraryViewModelTest {
         }
     }
 
+    @Test
+    fun `refreshing Liked keeps the previously loaded range available for focus restoration`() = runBlocking {
+        MockWebServer().use { server ->
+            val userId = server.signIn()
+            val key = "lib_liked:$userId:SortName:false"
+            val tracks = List(65) { JellyfinItem(id = "track-$it") }
+            PagedLibrary.put(key, tracks, total = 90)
+            val model = model("Tracks", likedOnly = true)
+            assertEquals(tracks, model.state.value.items)
+
+            PagedLibrary.evictWhere { it == key }
+            model.refreshLikedIfEvicted()
+            assertEquals(tracks, model.state.value.items)
+            val request = server.takeRequest(5, TimeUnit.SECONDS)?.requestUrl
+            assertEquals("0", request?.queryParameter("StartIndex"))
+            assertEquals("65", request?.queryParameter("Limit"))
+
+            val remaining = tracks.drop(1) + JellyfinItem(id = "track-65")
+            val itemsJson = remaining.joinToString(",") { """{"Id":"${it.id}"}""" }
+            server.enqueue(MockResponse().setBody("""{"Items":[$itemsJson],"TotalRecordCount":89}"""))
+            val refreshed = withTimeout(5000) { model.state.first { !it.loading && it.total == 89 } }
+            assertEquals(remaining.map { it.id }, refreshed.items.map { it.id })
+        }
+    }
+
     private fun MockWebServer.signIn(): String = "user".also { userId ->
         app.jellyfin.auth.installSession(Session(url("/").toString(), userId, "Test", "token", "device"))
     }

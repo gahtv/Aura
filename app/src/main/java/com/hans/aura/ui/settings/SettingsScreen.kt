@@ -507,4 +507,4 @@ private fun LibraryToggleRow(
  */
 @Composable
 private fun appName(): String =
-    androidx.compose.ui.platform.LocalContext.current.getString(com.hans.aura.R.string.app_name)
+    androidx.compose.ui.res.stringResource(com.hans.aura.R.string.app_name)

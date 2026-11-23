@@ -93,6 +93,7 @@ import com.hans.aura.data.lyricBreaks
 import com.hans.aura.data.toLyricLine
 import com.hans.aura.data.toTimedLyricLine
 import com.hans.aura.ui.common.AutoFitMarqueeText
+import com.hans.aura.ui.common.AuraLoadingIndicator
 import com.hans.aura.ui.common.resolveArtwork
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
@@ -349,9 +350,7 @@ fun LyricsPane(
         val multipleVoices = loadedLines.orEmpty().mapNotNull { it.voice?.id }.distinct().size >= 2
         when {
             loadedLines == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                androidx.tv.material3.Text(
-                    "Loading lyrics\u2026", color = TextSecondary, fontSize = AuraTypography.body
-                )
+                AuraLoadingIndicator("Loading lyrics")
             }
             loadedLines.isEmpty() -> NoLyricsState(
                 app = app,

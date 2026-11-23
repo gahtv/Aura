@@ -5,7 +5,6 @@ package com.hans.aura.ui.home
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -402,7 +401,7 @@ private fun HomeLivePreviewHero(
     val dyn = rememberDynamicColors(art?.url(serverUrl, maxWidth = 240))
     val wash by animateColorAsState(
         targetValue = dyn?.primary ?: SurfaceHigh,
-        animationSpec = spring(stiffness = 800f),
+        animationSpec = AuraMotion.scheme.defaultEffectsSpec(),
         label = "heroWash"
     )
     val accent = dyn?.secondary ?: Accent
@@ -418,7 +417,10 @@ private fun HomeLivePreviewHero(
     ) {
         AnimatedContent(
             targetState = artUrl,
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            transitionSpec = {
+                fadeIn(AuraMotion.scheme.defaultEffectsSpec()) togetherWith
+                    fadeOut(AuraMotion.scheme.defaultEffectsSpec())
+            },
             label = "heroArt",
             modifier = Modifier
                 .align(Alignment.CenterEnd)
@@ -558,12 +560,12 @@ private fun QuickAccessTile(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.03f else 1f,
-        animationSpec = AuraMotion.spatialFast,
+        animationSpec = AuraMotion.scheme.fastSpatialSpec(),
         label = "quickTileScale"
     )
     val bg by animateColorAsState(
         targetValue = if (focused) SurfaceHigh else Surface,
-        animationSpec = spring(stiffness = 1600f),
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
         label = "quickTileBg"
     )
     val thumbShape = if (item.type == "MusicArtist") CircleShape else RoundedCornerShape(8.dp)

@@ -5,7 +5,6 @@ package com.hans.aura.ui.nowplaying
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -133,7 +132,7 @@ fun NowPlayingScreen(
     var dimMode by remember { mutableStateOf(Prefs.nowPlayingDimMode) }
     val bgTop by animateColorAsState(
         targetValue = if (dimMode) Canvas else dynBg,
-        animationSpec = spring(stiffness = 300f),
+        animationSpec = AuraMotion.scheme.slowEffectsSpec(),
         label = "npDimBg"
     )
 
@@ -213,7 +212,7 @@ fun NowPlayingScreen(
     }
     val hudAlpha by animateFloatAsState(
         targetValue = if (ambientHidden) 0f else 1f,
-        animationSpec = AuraMotion.effectsDefault,
+        animationSpec = AuraMotion.scheme.defaultEffectsSpec(),
         label = "npAmbientHudAlpha"
     )
     val wakeKeys = remember { mutableSetOf<Key>() }

@@ -28,13 +28,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(newIntent: Intent) {
-        super.onNewIntent(newIntent)
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
         // Debug deep links must also fire when the activity is already running
         // (am start without force-stop delivers onNewIntent, not onCreate).
-        intent = newIntent
-        handleDebugIntent(newIntent)
-        AppIntents.postFromIntent(newIntent)
+        this.intent = intent
+        handleDebugIntent(intent)
+        AppIntents.postFromIntent(intent)
     }
 
     /** Deferred debug extras, debuggable builds only (see ui/DebugNav.kt). */

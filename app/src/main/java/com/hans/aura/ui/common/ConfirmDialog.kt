@@ -3,6 +3,7 @@ package com.hans.aura.ui.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -85,7 +86,8 @@ fun ConfirmDialog(
                 .border(AuraSizes.hairline, Border, AuraShapes.dialog)
                 // Trap the cursor: without this DOWN escapes to the content
                 // behind the scrim and the user ends up in the settings list.
-                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusProperties { onExit = { cancelFocusChange() } }
+                .focusGroup()
                 .padding(AuraSpacing.xl)
         ) {
             androidx.tv.material3.Text(title, fontSize = AuraTypography.title, color = TextPrimary)

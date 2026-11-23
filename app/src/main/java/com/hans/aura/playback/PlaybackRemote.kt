@@ -28,6 +28,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -89,7 +90,7 @@ class PlaybackRemote(
                 "MediaBrowser Client=\"$APP_NAME\", Device=\"${com.hans.aura.data.DeviceNames.get()}\", " +
                     "DeviceId=\"$deviceId\", Version=\"$APP_VERSION\", Token=\"$token\""
             )
-            .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), body))
+            .post(body.toRequestBody("application/json".toMediaTypeOrNull()))
             .build()
         val http = client ?: return
         http.newCall(req).enqueue(object : okhttp3.Callback {

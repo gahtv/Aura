@@ -42,17 +42,15 @@ fun FocusHandoffHost(modifier: Modifier = Modifier, content: @Composable BoxScop
 /**
  * Tries now, then on up to eight frames. This allows restored lazy scroll state
  * and its next layout/composition passes to attach the item without a timed wait.
- * Compose 1.7's Unit-returning request can run before the owner's initial focus
- * assignment, so confirm an immediate request on the first frame as well.
- * A true result only means a request was issued without an attachment exception,
- * NOT that focus moved (Compose 1.7 returns Unit even for an empty group).
+ * An immediate request can precede the owner's initial focus assignment, so
+ * confirm it on the first frame as well. Returns true when a request is accepted;
+ * a rejected request or an unattached target consumes another frame of the budget.
  * Callers must wait for focusable content before requesting a group.
  */
 suspend fun FocusRequester.requestFocusOnFrame(maxFrames: Int = 8): Boolean {
     require(maxFrames >= 0)
     fun tryFocus(): Boolean = try {
         requestFocus()
-        true
     } catch (_: IllegalStateException) {
         false
     }

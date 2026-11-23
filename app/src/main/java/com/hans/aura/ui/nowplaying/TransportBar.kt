@@ -3,9 +3,7 @@
 package com.hans.aura.ui.nowplaying
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,7 +17,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.GenericShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toPath
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,6 +35,8 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -42,13 +45,14 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.Morph
 import androidx.media3.common.Player
 import com.hans.aura.R
 import com.hans.aura.ui.common.formatDuration
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.player.nextRepeatMode
 import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
@@ -302,29 +306,33 @@ private fun TransportIconButton(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val plate = when {
-        filled -> accent
-        focused -> accent.copy(alpha = 0.34f)
-        active -> accent.copy(alpha = 0.18f)
-        else -> Color.Transparent
-    }
+    val plate by animateColorAsState(
+        when {
+            filled -> accent
+            focused -> accent.copy(alpha = 0.34f)
+            active -> accent.copy(alpha = 0.18f)
+            else -> Color.Transparent
+        },
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
+        label = "transportPlate"
+    )
     val tint by animateColorAsState(
         when {
             filled -> AuraColors.OnAccent
             active || focused -> accent
             else -> TextPrimary
         },
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
         label = "transportTint"
     )
     // Focus grows the glyph (~15%) as well as ringing it: on a dark 10-foot
     // screen a 3dp accent ring alone was too easy to miss.
-    val grow by animateFloatAsState(if (focused) 1.15f else 1f, label = "transportGrow")
-    val corner by animateDpAsState(
-        targetValue = if (squircle) 18.dp else 40.dp,
-        animationSpec = spring(dampingRatio = 0.75f, stiffness = 380f),
-        label = "transportCorner"
+    val grow by animateFloatAsState(
+        if (focused) 1.15f else 1f,
+        animationSpec = AuraMotion.scheme.fastSpatialSpec(),
+        label = "transportGrow"
     )
-    val buttonShape = if (filled) RoundedCornerShape(corner) else CircleShape
+    val buttonShape = if (filled) playPauseShape(squircle) else CircleShape
     Box(
         modifier
             .size(iconSize + AuraSizes.transportPlateExtra)
@@ -334,10 +342,9 @@ private fun TransportIconButton(
             }
             .clip(buttonShape)
             .background(plate)
-            .border(
-                width = if (focused) AuraSizes.focusBorderLoud else 0.dp,
-                color = if (focused) AuraColors.CursorRing else Color.Transparent,
-                shape = buttonShape
+            .then(
+                if (focused) Modifier.border(AuraSizes.focusBorderLoud, AuraColors.CursorRing, buttonShape)
+                else Modifier
             )
             // onFocusChanged must sit BEFORE the focus target (clickable):
             // placed after it, it observes the un-focusable layout child and
@@ -355,6 +362,26 @@ private fun TransportIconButton(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+private val playPauseMorph by lazy { Morph(MaterialShapes.Circle, MaterialShapes.Square) }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun playPauseShape(playing: Boolean): Shape {
+    val progress by animateFloatAsState(
+        if (playing) 1f else 0f,
+        animationSpec = AuraMotion.scheme.defaultSpatialSpec(),
+        label = "playPauseShape"
+    )
+    val fraction = progress.coerceIn(0f, 1f)
+    return remember(fraction) {
+        GenericShape { size, _ ->
+            playPauseMorph.toPath(fraction, path = this)
+            transform(Matrix().apply { scale(size.width, size.height) })
+        }
+    }
+}
+
 /**
  * Heart variant of the transport button. Same plate/ring/scale language as
  * TransportIconButton, but the glyph is a text heart because there is no heart
@@ -363,16 +390,25 @@ private fun TransportIconButton(
 @Composable
 private fun TransportHeartButton(favorite: Boolean, accent: Color, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val plate = when {
-        focused -> accent.copy(alpha = 0.34f)
-        favorite -> accent.copy(alpha = 0.18f)
-        else -> Color.Transparent
-    }
+    val plate by animateColorAsState(
+        when {
+            focused -> accent.copy(alpha = 0.34f)
+            favorite -> accent.copy(alpha = 0.18f)
+            else -> Color.Transparent
+        },
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
+        label = "heartPlate"
+    )
     val tint by animateColorAsState(
         if (favorite || focused) accent else TextPrimary,
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
         label = "heartTint"
     )
-    val grow by animateFloatAsState(if (focused) 1.15f else 1f, label = "heartGrow")
+    val grow by animateFloatAsState(
+        if (focused) 1.15f else 1f,
+        animationSpec = AuraMotion.scheme.fastSpatialSpec(),
+        label = "heartGrow"
+    )
     val label = if (favorite) "Remove from favorites" else "Add to favorites"
     Box(
         Modifier
@@ -384,7 +420,7 @@ private fun TransportHeartButton(favorite: Boolean, accent: Color, onClick: () -
             .clip(CircleShape)
             .background(plate)
             .border(
-                width = if (focused) AuraSizes.focusBorderLoud else 0.dp,
+                width = AuraSizes.focusBorderLoud,
                 color = if (focused) AuraColors.CursorRing else Color.Transparent,
                 shape = CircleShape
             )

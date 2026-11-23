@@ -3,7 +3,9 @@ package com.hans.aura.ui.nowplaying
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.ComposeUiTestConfig
+import androidx.compose.ui.input.InputMode
 import com.hans.aura.data.LyricBreak
 import com.hans.aura.data.LyricsStore
 import org.junit.Assert.assertEquals
@@ -14,7 +16,9 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class LyricCursorTest {
-    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>(
+        ComposeUiTestConfig(inputMode = InputMode.Keyboard)
+    )
 
     @Test
     fun onlyLineAndBreakChangesInvalidateTheCursorReader() {

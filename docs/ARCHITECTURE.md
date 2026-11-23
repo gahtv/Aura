@@ -263,10 +263,11 @@ album/artist routes fetch the item first.
 ## Screen state and errors
 
 Heavy screens own a `ViewModel` (Library, Home, Collection, Artist, Genres + GenreAlbums,
-Search) with a `StateFlow` of a state data class. They are created with an explicit key —
-`"library:$kind:$userId"`, `"collection:$id:$userId"` — because `AppRoot`'s manual back stack
-keeps `LocalViewModelStoreOwner` at the Activity: without the key, opening a second album or
-switching accounts reuses the previous instance's state.
+Search) with a `StateFlow` of a state data class. `AppRoot` supplies a session-scoped
+`LocalViewModelStoreOwner` backed by an Activity ViewModel, so screen models survive
+Activity recreation but are cleared on profile switch, sign-out, or final Activity
+destruction. Explicit keys such as `"library:$kind:$userId"` and `"collection:$id:$userId"`
+keep different tabs and items from reusing each other's state within that session.
 
 Failures reach the user as `UiError` state rendered by `ui/common/ErrorPane.kt` (message +
 Retry) on Home, Library, Collection, Artist, Genres and Search. The logging stays: a screen

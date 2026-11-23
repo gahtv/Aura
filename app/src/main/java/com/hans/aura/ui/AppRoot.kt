@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,9 +26,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.collection.ArtistScreen
 import com.hans.aura.ui.collection.CollectionScreen
@@ -83,6 +84,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppRoot() {
     val app = LocalContext.current.applicationContext as AuraApp
+    val sessionViewModels = viewModel { SessionViewModels() }
     var signedIn by remember { mutableStateOf(app.jellyfin.auth.isSignedIn) }
     var sessionGeneration by remember { mutableIntStateOf(0) }
 
@@ -92,23 +94,22 @@ fun AppRoot() {
     }
 
     key(sessionGeneration) {
-    val sessionViewModels = remember {
-        object : ViewModelStoreOwner {
-            override val viewModelStore = ViewModelStore()
-        }
-    }
-    DisposableEffect(sessionViewModels) {
-        onDispose { sessionViewModels.viewModelStore.clear() }
-    }
+    val sessionOwner = sessionViewModels.owner
     val player = remember { PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session } }
     val nav = rememberNavState()
 
-    val onSignedOut: () -> Unit = { signedIn = false }
+    val onSignedOut: () -> Unit = {
+        sessionViewModels.reset()
+        signedIn = false
+    }
     val exitSession: (String, Boolean) -> Unit = { action, forgetServer ->
         endSession(app, player, action, forgetServer, onSignedOut)
     }
     val onSwitchProfile: (com.hans.aura.data.Session) -> Unit = { target ->
-        switchSession(app, player, target) { sessionGeneration++ }
+        switchSession(app, player, target) {
+            sessionViewModels.reset()
+            sessionGeneration++
+        }
     }
 
     MirrorWiring(app = app, player = player, nav = nav)
@@ -240,7 +241,7 @@ fun AppRoot() {
                     stateHolder.SaveableStateProvider(key = "$index:${NavSpec.key(screen)}") {
                         val artworkSource = rememberSaveable { mutableStateOf<Long?>(null) }
                         CompositionLocalProvider(
-                            LocalViewModelStoreOwner provides sessionViewModels,
+                            LocalViewModelStoreOwner provides sessionOwner,
                             LocalArtworkTransition provides this@SharedTransitionLayout,
                             LocalArtworkVisibility provides this@AnimatedContent,
                             LocalDestinationActive provides active,
@@ -275,6 +276,24 @@ fun AppRoot() {
         // over it, and it owns focus while it is up.
         MirrorPairingHost()
     }
+    }
+}
+
+private class SessionViewModels : ViewModel() {
+    var owner = newOwner()
+        private set
+
+    fun reset() {
+        owner.viewModelStore.clear()
+        owner = newOwner()
+    }
+
+    override fun onCleared() {
+        owner.viewModelStore.clear()
+    }
+
+    private fun newOwner(): ViewModelStoreOwner = object : ViewModelStoreOwner {
+        override val viewModelStore = ViewModelStore()
     }
 }
 

@@ -1,14 +1,15 @@
 package com.hans.aura.ui
 
 import android.content.ComponentName
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.test.ComposeUiTestConfig
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import com.hans.aura.AuraApp
-import com.hans.aura.MainActivity
 import com.hans.aura.data.AtmosFilter
 import com.hans.aura.data.ItemsResponse
 import com.hans.aura.data.JellyfinItem
@@ -17,10 +18,12 @@ import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Session
 import com.hans.aura.playback.PlaybackService
+import com.hans.aura.ui.theme.AuraTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -56,7 +59,7 @@ class HomeViewModelRecreationTest {
             }
         })
         try {
-            ActivityScenario.launch(MainActivity::class.java).use { activity ->
+            Robolectric.buildActivity(HomeActivity::class.java).setup().use { activity ->
                 waitForLoadedAlbum()
                 activity.recreate()
                 waitForLoadedAlbum()
@@ -73,6 +76,13 @@ class HomeViewModelRecreationTest {
     private fun waitForLoadedAlbum() {
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithText("Loaded album", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    class HomeActivity : ComponentActivity() {
+        override fun onCreate(savedInstanceState: Bundle?) {
+            super.onCreate(savedInstanceState)
+            setContent { AuraTheme { AppRoot() } }
         }
     }
 }

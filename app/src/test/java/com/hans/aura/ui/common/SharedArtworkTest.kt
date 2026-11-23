@@ -1,5 +1,7 @@
 package com.hans.aura.ui.common
 
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SharedTransitionLayout
@@ -12,15 +14,24 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.currentCompositeKeyHash
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsFocused
+import coil.ImageLoader
+import coil.intercept.Interceptor
+import coil.memory.MemoryCache
+import coil.request.ImageRequest
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -31,6 +42,71 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class SharedArtworkTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun largerHeaderHasTheCachedCardDuringLoading() {
+        val url = "https://fixture/album?maxWidth=480"
+        val bitmap = Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888)
+        var oldStarted = false
+        var headerStarted = false
+        lateinit var loader: ImageLoader
+        compose.setContent {
+            val context = LocalContext.current
+            loader = remember {
+                ImageLoader.Builder(context)
+                    .components { add(Interceptor { error("offline fixture") }) }
+                    .build().also { it.memoryCache!![MemoryCache.Key(url)] = MemoryCache.Value(bitmap) }
+            }
+            val header = artworkRequest(url)
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                loader.enqueue(ImageRequest.Builder(context).data(url).size(216)
+                    .target(onStart = { assertEquals(null, it) })
+                    .listener(onStart = { oldStarted = true })
+                    .build())
+                loader.enqueue(header.newBuilder().size(216)
+                    .listener(onStart = {
+                        assertSame(bitmap, (loader.memoryCache!![it.placeholderMemoryCacheKey!!]!!.bitmap))
+                        headerStarted = true
+                    })
+                    .target(onStart = { assertSame(bitmap, (it as BitmapDrawable).bitmap) })
+                    .build())
+            }
+        }
+        compose.waitUntil { oldStarted && headerStarted }
+        compose.runOnIdle { loader.shutdown() }
+    }
+
+    @Test
+    fun artworkRequestsReuseThePosterAsPlaceholder() {
+        compose.setContent {
+            val request = artworkRequest("https://fixture/album?maxWidth=480")
+            assertEquals(request.memoryCacheKey, request.placeholderMemoryCacheKey)
+            assertEquals(request.data, request.memoryCacheKey?.key)
+            val empty = artworkRequest(null)
+            assertEquals(null, empty.memoryCacheKey)
+            assertEquals(null, empty.placeholderMemoryCacheKey)
+        }
+    }
+
+    @Test
+    fun duplicateAlbumOccurrencesHaveDistinctStableCompositionKeys() {
+        val refresh = mutableStateOf(0)
+        val tokens = mutableMapOf<String, Int>()
+        compose.setContent {
+            refresh.value
+            for (shelf in listOf("recent", "favorites")) key(shelf) {
+                key("album") {
+                    val token = currentCompositeKeyHash
+                    tokens.put(shelf, token)?.let { assertEquals(it, token) }
+                }
+            }
+        }
+        compose.runOnIdle {
+            assertNotEquals(tokens["recent"], tokens["favorites"])
+            refresh.value++
+        }
+        compose.waitForIdle()
+    }
 
     @Test
     fun missingScopesPreserveModifierIdentity() {

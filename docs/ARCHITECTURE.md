@@ -1,11 +1,55 @@
-# Aura architecture notes
+# Aura architecture
 
-The Kotlin 2.x app lives in `:app`; `:baselineprofile` generates its baseline profile.
-No DI framework. Compose TV and Material 3 for UI, Media3 for playback, Retrofit +
-kotlinx.serialization for Jellyfin, and Room for the disk cache. `minSdk 26`, `targetSdk 35`,
-`compileSdk 37.1`. Dependency versions live in `gradle/libs.versions.toml`.
+How Aura is wired, and the invariants that keep it working on a TV. The
+[README](../README.md) is the feature tour; this file is for people changing the code.
 
-This file describes **wiring and invariants**, not features. The README is the feature list.
+**Stack:** Kotlin 2.x · Compose TV + Material 3 (Expressive motion, HCT colour) ·
+AndroidX Media3 · Retrofit + OkHttp + kotlinx.serialization · Room · Coil.
+`minSdk 26`, `targetSdk 35`, `compileSdk 37.1`. Modules: `:app`, plus `:baselineprofile`,
+which generates the app's baseline profile. No DI framework; every dependency version
+lives in `gradle/libs.versions.toml`.
+
+## At a glance
+
+```mermaid
+flowchart LR
+    subgraph UI["ui/ (Compose TV)"]
+        Screens["Screens + ViewModels"]
+        Shell["AppRoot · NavigationRail · overlays"]
+        PC["PlayerConnection"]
+    end
+    subgraph Data["data/"]
+        SQ["SourceQueries"]
+        MS["MusicSource → JellyfinSource"]
+        Repo["MediaRepository · LibraryFilter"]
+        Cache["LibraryCache · AtmosCatalog (Room)"]
+    end
+    subgraph Play["playback/ + player/controller/"]
+        Ctrl["PlaybackController · QueueRegistry"]
+        Svc["PlaybackService (ExoPlayer)"]
+    end
+    Mirror["remote/MirrorServer :8099"]
+    JF[("Jellyfin")]
+    AVR[["TV / AVR (bitstream)"]]
+
+    Screens --> SQ --> MS --> Repo --> JF
+    Repo <--> Cache
+    Screens --> PC --> Ctrl --> Svc
+    Svc -- "direct play" --> JF
+    Svc --> AVR
+    Svc <-. "websocket: Play On" .-> JF
+    Mirror <--> PC
+    Mirror <--> Shell
+```
+
+**Contents:** [Layers](#layers) · [Composition root](#composition-root) ·
+[Library-source seam](#the-library-source-seam) · [Navigation](#navigation-contract) ·
+[Motion and transitions](#motion-and-transitions) · [Playback](#playback-pipeline) ·
+[Remote control](#remote-control) · [Screen state](#screen-state-and-errors) ·
+[Design tokens](#design-tokens) · [Theming](#theming) · [Data and caching](#data-and-caching) ·
+[Accounts](#accounts-and-sign-in) · [Android TV integration](#android-tv-integration) ·
+[Lyrics, search, discovery](#lyrics-search-discovery) · [Guardrails](#guardrails) ·
+[Rules](#rules-that-keep-it-working)
 
 ## Layers
 
@@ -19,6 +63,8 @@ model/               immutable media models used by the UI and player
 playback/            MediaSessionService (ExoPlayer) + the Jellyfin websocket
 player/controller/   the pieces PlayerConnection coordinates
 remote/              the LAN mirror link server and its pairing prompt
+search/              Android TV global search provider
+tvchannel/           Android TV Home-screen preview channel
 ui/                  Compose screens
   nav/               destinations, the back stack, the navigation interface
   shell/             side navigation rail and wiring for mirror, debug and session exit
@@ -49,11 +95,15 @@ data/               JellyfinApi, JellyfinClient (OkHttp + shared Json, one Retro
 model/              MediaItem, Track, Album, Artist, Playlist, Genre, Artwork, MediaPage
 
 playback/           PlaybackService (ExoPlayer, AuthDataSourceFactory, PlaybackReporter),
-                    PlaybackRemote (capabilities + websocket commands)
+                    PlaybackRemote (capabilities + websocket commands),
+                    PausedAudioOutput (releases a paused passthrough AudioTrack)
 
-player/controller/  PlaybackController (MediaController, listeners, 500 ms ticker),
+player/controller/  PlaybackController (MediaController, listeners, PlaybackAnchor clock),
                     QueueRegistry (in-process item registry + queue snapshot),
-                    ResumePolicy, AutoplayPolicy, SleepTimer
+                    QueueItemLoader, ResumePolicy, AutoplayPolicy, SleepTimer
+
+search/             AuraSearchProvider (system search over the active session)
+tvchannel/          HomeChannelPublisher ("Aura — Recent & Atmos" preview channel)
 
 remote/             MirrorServer (HTTP server on :8099, state/navigate/control/input/pair),
                     MirrorPairingDialog (the on-TV allow prompt)
@@ -66,8 +116,11 @@ ui/player/          PlayerConnection.kt — the facade screens talk to
 ui/home|library|genres|collection|search|nowplaying|queue|playlist|login|settings/
                     screens; each heavy screen has a paired *ViewModel.kt
 ui/common/          Components, PillsAndBadges, FocusSupport, ContextMenu(s), ConfirmDialog,
-                    FitText, BioDialog, ErrorPane, NavRequests
-ui/theme/           Theme (static scheme), Dynamic (artwork seed), DynamicScheme (HCT), Tokens
+                    FitText, BioDialog, ErrorPane, NavRequests, SharedArtwork,
+                    ConnectedActions, AuraLoadingIndicator, MotionArtwork/MotionWindow
+ui/theme/           Theme (static scheme), Dynamic (artwork seed), DynamicScheme (HCT),
+                    Tokens (incl. AuraMotion)
+ui/AppIntents.kt    parses SEARCH and VIEW intents (aura://item, search results)
 ui/MirrorLink.kt    source-compatible shim over remote/MirrorServer
 ui/MirrorPairing.kt shim over remote/MirrorPairingDialog
 ui/DebugNav.kt      debug-build deep-link channel (FLAG_DEBUGGABLE only)
@@ -185,6 +238,22 @@ the navigation rail so it cannot draw over (and take focus from) a dialog. Overl
 last child of a screen-root `Box`, trap focus with `FocusRequester.Cancel`, and request focus
 shortly after composition.
 
+## Motion and transitions
+
+`AuraMotion` (`ui/theme/Tokens.kt`) wraps `MotionScheme.expressive()`: spatial springs
+for position, size and shape, effect springs for colour and alpha, and the shared focus
+scale for artwork cards. Use it instead of one-off `tween`s.
+
+`AppRoot` hosts destinations inside `SharedTransitionLayout` + `AnimatedContent`, so the
+artwork that was selected (a Home tile, a grid cell) morphs into the album/artist header
+or Now Playing cover. `ui/common/SharedArtwork.kt` scopes this: only the selected
+occurrence carries the shared key, corner radii are interpolated per pair, and a
+destination does not accept focus until its entry is visible.
+
+Lists are lazy (`LazyColumn`/`LazyRow` with stable keys and content types), focus scale
+is applied in `graphicsLayer` so a D-pad move does not recompose cards, and focus
+hand-off is layout-driven rather than timer-driven.
+
 ## Playback pipeline
 
 `PlayerConnection` is the facade every screen and the mirror link talk to. It owns the
@@ -193,7 +262,8 @@ sleep remaining, smart shuffle) and delegates:
 
 | Piece | Responsibility |
 |---|---|
-| `PlaybackController` | builds the `MediaController` against `PlaybackService` through a `SessionToken` (connecting is what brings the service up), forwards listeners, runs the 500 ms position ticker. All Media3 access is main-thread. |
+| `PlaybackController` | builds the `MediaController` against `PlaybackService` through a `SessionToken` (connecting is what brings the service up), forwards listeners and re-anchors the playback clock on every play/pause/seek/transition. All Media3 access is main-thread. |
+| `PlaybackAnchor` | one immutable sample (position, speed, playing, monotonic uptime). `rememberPlaybackPosition` interpolates it on frames only while playing, so the seek bar, karaoke words, adlibs and break dots share one phase-locked clock and nothing recomposes a whole screen on a timer. |
 | `QueueRegistry` | In-process `Track` metadata keyed by media ID, the queue id snapshot the "re-tap the playing row opens Now Playing" rule reads, and `normalOrderIds` for undoing smart shuffle. |
 | `ResumePolicy` | local resume points (30-day TTL) and the "past 15 s, not within 10 s of the end" rule. |
 | `AutoplayPolicy` | appends an Instant Mix on `STATE_ENDED` with repeat off. |
@@ -205,6 +275,12 @@ builds its `DataSource` through `AuthDataSourceFactory`, which resolves the Jell
 `Authorization` header from the live `AuthStore.session` + `BuildConfig.VERSION_NAME` on
 **every** `createDataSource()` call. Baking the header once in `onCreate` left streams on the
 old server's token after a sign-in change.
+
+`PausedAudioOutput` stops the player shortly after a pause on encoded passthrough audio
+(E-AC-3/JOC, AC-3, AC-4, DTS, TrueHD).
+Media3's `pause()` keeps a passthrough `AudioTrack` open, which holds the TV's HDMI
+output and degrades other apps; resume paths must therefore prepare again from
+`STATE_IDLE`.
 
 Media3 `MediaItem`s carry the media ID, stream URI and basic display metadata. The full
 domain `Track` lives in `QueueRegistry`. If remote playback ("Play On") supplies an
@@ -232,8 +308,8 @@ Mutations (`moveInQueue`, `clearUpcoming`, `removeFromQueue`, remote Play Next/L
 the main thread, keep the snapshot in step, and let `onTimelineChanged` republish the mirror —
 the queue screen renders the player's real order, never a separate list.
 
-- **Resume** — positions are remembered locally (`Prefs.ResumePoints`) because Jellyfin
-  12.2.0 never writes `UserData.PlaybackPositionTicks` from the report endpoints.
+- **Resume** — positions are remembered locally (`Prefs.ResumePoints`, keyed per server
+  and user so household profiles never share bookmarks) because Jellyfin 12.2.0 never writes `UserData.PlaybackPositionTicks` from the report endpoints.
 - **Autoplay** — on `STATE_ENDED` with repeat off and the preference on, an Instant Mix
   seeded from the last track is appended (up to 20 new ids). Not gated on `playWhenReady`:
   a player that just finished reports it false, and gating on it silently killed the queue.
@@ -335,12 +411,28 @@ Connect runs **before** a session exists, so it goes through
 `JellyfinClient.apiForServer(url)` — the `api` getter would resolve from the session and point
 at localhost.
 
+`AuthStore` also keeps every saved profile per server. Settings > Profiles switches with
+`switchProfile`, which installs that user's saved session on the same server.
+
 Every exit path funnels through `ui/shell/SessionActions.endSession`, in this order: stop
 playback and release the controller (which stops `PlaybackService`), clear the player
 registry and session caches (including `LibraryCache`, `PagedLibrary`, `AtmosCatalog` and
 `ArtworkSeedCache`), then drop the credentials. Getting the order wrong leaves the old
 server streaming under a login screen, or resolves new-server item ids against old-server
 metadata.
+
+## Android TV integration
+
+- **Home-screen channel** — `HomeChannelPublisher` publishes "Aura — Recent & Atmos"
+  through `TvContract` preview programs (needs `WRITE_EPG_DATA`). Calls are wrapped in
+  `runCatching`, so non-TV devices and Robolectric fail silently.
+- **Global search** — `AuraSearchProvider` answers the launcher's search with results
+  from the active Jellyfin session; with no session it returns nothing.
+- **Intents** — `AppIntents` turns `ACTION_SEARCH` into the Search screen and
+  `ACTION_VIEW` (`aura://item/...`, search-result content URIs) into an item route.
+  Channel programs and search results open through these.
+- **Debug deep links** — debuggable builds accept `--es aura_debug_screen <alias>` plus
+  the extras documented in `ui/DebugNav.kt`; aliases come from `ScreenMeta.debugAlias`.
 
 ## Lyrics, search, discovery
 
@@ -382,11 +474,12 @@ picking any other sort or filter clears the letter first.
   `:app:testDebugUnitTest`. Never installs, never touches a device. It sources
   `scripts/common.sh`, whose hardcoded macOS JDK/SDK paths must be adapted elsewhere;
   the README provides equivalent direct Gradle commands.
-- JVM tests (`app/src/test/`) cover `LibraryFilter` query construction,
-  `LibraryCache` keys and TTL, `AtmosFilter.keep`, `Prefs` (including resume points), LRC
-  parsing, `SortMode` mapping, `AuthStore` persistence and `PlayerConnection`'s pure helpers.
-  Additional tests cover source routing, TTML/word timing, motion scheduling and UI helpers.
-  Robolectric supplies Android context/resources where needed; no device is required.
+- JVM tests (`app/src/test/`, ~80 files) cover the data layer (`LibraryFilter`,
+  `LibraryCache` + Room persistence, `AtmosCatalog`/`AtmosFilter`, `DomainMapping`,
+  `AuthStore`, `Prefs`, source routing), lyrics (LRC, TTML, word timing, breaks, LRCLIB),
+  playback (`PlaybackAnchor`, `PausedAudioOutput`, queue loading and ordering), focus and
+  layout behaviour per screen, the mirror server, TV channel and search provider, and
+  theming. Robolectric supplies Android context where needed; no device is required.
 - `util/AuraLog.kt` — `AuraTag` is the enum of log tags (`AURA_NAV`, `AURA_MENU`,
   `AURA_QUEUE`, `AURA_MIRROR`, …). The tags are the headless verification harness, so they
   are a contract, not decoration. Not every call site has migrated yet; the tags themselves

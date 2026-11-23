@@ -1,5 +1,11 @@
 # Aura — Material 3 Expressive (M3E) Rewrite Plan
 
+> **Status: implemented (historical design record).** The work planned here has landed:
+> lazy shelves, draw-phase focus scaling, the `PlaybackAnchor` playback clock,
+> `SharedTransitionLayout` transitions, `AuraMotion` on `MotionScheme.expressive()`, the
+> `MusicSource` seam and immutable domain models. Version numbers below are the ones the
+> plan started from. For how the app works today, read [ARCHITECTURE.md](ARCHITECTURE.md).
+
 Restarting Aura around Material 3 Expressive (M3E) and a modern Compose TV stack yields meaningful wins in frame-rate and cold-start performance, visual polish and focus fluidity, and architectural cleanliness — with one key TV-specific caveat around `tv-material` vs. mobile M3E.
 
 This plan is grounded in Aura's baseline architecture (~19k LOC, Compose BOM `2024.12.01`, `tv-material 1.0.1`, Coil `2.7.0`).

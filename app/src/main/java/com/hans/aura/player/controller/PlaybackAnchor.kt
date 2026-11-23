@@ -1,5 +1,6 @@
 package com.hans.aura.player.controller
 
+/** Immutable playback sample interpolated against monotonic uptime. */
 data class PlaybackAnchor(
     val positionMs: Long = 0L,
     val anchorUptimeMs: Long = 0L,

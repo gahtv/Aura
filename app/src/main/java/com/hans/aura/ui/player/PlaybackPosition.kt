@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameMillis
 
+/** Playback position that frame-ticks only while the anchor is playing. */
 @Composable
 fun rememberPlaybackPosition(player: PlayerConnection): State<Long> {
     val anchor by player.clock.collectAsState()

@@ -2,22 +2,20 @@ package com.hans.aura.player.controller
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.hans.aura.playback.PlaybackService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 
 /**
- * The Media3 [MediaController] half of PlayerConnection: connect, listen, and the
- * 500ms position ticker.
+ * The Media3 [MediaController] half of PlayerConnection: connect and listen.
  *
  * Everything here touches Media3 on the main thread only (a MediaController call
  * from any other thread throws "Player is accessed on the wrong thread"). The
@@ -25,8 +23,7 @@ import kotlinx.coroutines.launch
  * stay free of Media3 listener boilerplate.
  */
 class PlaybackController(
-    context: Context,
-    private val scope: CoroutineScope
+    context: Context
 ) {
 
     /** Callbacks from the controller, always delivered on the main thread. */
@@ -45,8 +42,8 @@ class PlaybackController(
     private val _controller = MutableStateFlow<MediaController?>(null)
     val controller: StateFlow<MediaController?> = _controller
 
-    private val _positionMs = MutableStateFlow(0L)
-    val positionMs: StateFlow<Long> = _positionMs
+    private val _clock = MutableStateFlow(PlaybackAnchor())
+    val clock: StateFlow<PlaybackAnchor> = _clock
 
     private val _durationMs = MutableStateFlow(0L)
     val durationMs: StateFlow<Long> = _durationMs
@@ -63,7 +60,15 @@ class PlaybackController(
 
     /** Publishes a position the facade already computed (late resume). */
     fun publishPosition(ms: Long) {
-        _positionMs.value = ms
+        _controller.value?.let { reanchor(it, ms) }
+    }
+
+    private fun reanchor(c: MediaController, positionMs: Long = c.currentPosition) {
+        val duration = c.duration.coerceAtLeast(0L)
+        _clock.value = PlaybackAnchor(
+            positionMs, SystemClock.uptimeMillis(), c.playbackParameters.speed, c.isPlaying, duration
+        )
+        _durationMs.value = duration
     }
 
     fun connect() {
@@ -80,33 +85,30 @@ class PlaybackController(
             _controller.value = c
             attach(c)
         }, ContextCompat.getMainExecutor(appContext))
-
-        // Position ticker: drives progress bars and lyric sync.
-        scope.launch {
-            while (true) {
-                _controller.value?.let { c ->
-                    _positionMs.value = c.currentPosition.coerceAtLeast(0)
-                    _durationMs.value = c.duration.coerceAtLeast(0)
-                }
-                delay(TICK_MS)
-            }
-        }
     }
 
     private fun attach(c: MediaController) {
         val l = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 listener?.onMediaItemTransition(c, mediaItem?.mediaId)
-                // The ticker only runs every 500ms; without this, positionMs
-                // (and durationMs) still hold the previous track's values for
-                // up to half a second after the item changes, which consumers
-                // like the lyrics pane read as a stale time into the new song.
-                _positionMs.value = 0
-                _durationMs.value = 0
+                reanchor(c, 0L)
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                reanchor(c)
                 listener?.onIsPlayingChanged(isPlaying)
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                reanchor(c)
+            }
+
+            override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+                reanchor(c)
             }
 
             override fun onShuffleModeEnabledChanged(enabled: Boolean) {
@@ -118,14 +120,17 @@ class PlaybackController(
             }
 
             override fun onPlaybackStateChanged(state: Int) {
+                reanchor(c)
                 listener?.onPlaybackStateChanged(c, state)
             }
 
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                reanchor(c)
                 listener?.onTimelineChanged(c)
             }
         }
         c.addListener(l)
+        reanchor(c)
 
         val sink = listener ?: return
         sink.onAttached(c)
@@ -142,11 +147,7 @@ class PlaybackController(
         released = true
         _controller.value?.let { c -> runCatching { c.release() } }
         _controller.value = null
-        _positionMs.value = 0L
+        _clock.value = PlaybackAnchor(anchorUptimeMs = SystemClock.uptimeMillis())
         _durationMs.value = 0L
-    }
-
-    companion object {
-        private const val TICK_MS = 500L
     }
 }

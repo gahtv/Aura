@@ -47,6 +47,7 @@ import java.util.concurrent.TimeUnit
 class LibraryViewModelTest {
     private val store = ViewModelStore()
     private val requests = Channel<CompletableDeferred<ItemsResponse>>(Channel.UNLIMITED)
+    private val queries = Channel<LibraryFilter.ItemsQuery>(Channel.UNLIMITED)
     private lateinit var app: AuraApp
 
     @Before
@@ -61,6 +62,7 @@ class LibraryViewModelTest {
             override suspend fun atmosAlbumIds(): Set<String> = emptySet()
             override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
                 val response = CompletableDeferred<ItemsResponse>()
+                queries.send(query)
                 requests.send(response)
                 return if (query.includeItemTypes == "Playlist") response.await()
                 else withContext(NonCancellable) { response.await() }
@@ -76,6 +78,33 @@ class LibraryViewModelTest {
         LibraryCache.clear()
         PagedLibrary.clear()
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `overlapping restored page is replaced and pagination finishes without duplicate ids`() = runBlocking {
+        val first = model()
+        val cached = (0 until 60).map { JellyfinItem(id = "$it") }
+        withTimeout(5000) { queries.receive() }
+        withTimeout(5000) { requests.receive() }.complete(ItemsResponse(items = cached, totalRecordCount = 120))
+        withTimeout(5000) { first.state.first { !it.loading && it.items.isNotEmpty() } }
+        val key = first.state.value.cacheKey
+        store.clear()
+        PagedLibrary.clear()
+        val restored = model()
+        withTimeout(5000) { restored.state.first { it.items == cached } }
+        val live = listOf(JellyfinItem(id = "inserted")) + (0 until 120).map { JellyfinItem(id = "$it") }
+        repeat(2) {
+            restored.loadNextPage()
+            val query = withTimeout(5000) { queries.receive() }
+            withTimeout(5000) { requests.receive() }.complete(ItemsResponse(
+                items = live.drop(query.startIndex).take(query.limit), totalRecordCount = live.size
+            ))
+            withTimeout(5000) { restored.state.first { !it.loading } }
+        }
+        assertEquals(live.map { it.id }, restored.state.value.items.map { it.id })
+        assertEquals(restored.state.value.total, restored.state.value.items.size)
+        assertFalse(restored.state.value.loading)
+        assertEquals(live, PagedLibrary.get(key)?.items)
     }
 
     @Test
@@ -143,7 +172,7 @@ class LibraryViewModelTest {
             val existing = JellyfinItem(id = "existing")
             val model = loadPlaylists(existing)
             val activeKey = model.state.value.cacheKey
-            assertEquals(listOf(existing), LibraryCache.get(activeKey))
+            assertEquals(listOf(existing), LibraryCache.peek(activeKey))
             assertEquals(listOf(existing), PagedLibrary.get(activeKey)?.items)
             val otherSortKey = "lib_playlists:$userId:DateCreated:true"
             val otherUserKey = "lib_playlists:${userId}2:SortName:false"
@@ -157,13 +186,13 @@ class LibraryViewModelTest {
 
             val created = app.container.media.createPlaylist(userId, "New playlist", listOf("track"))
 
-            assertNull(LibraryCache.get("home_playlists:$userId"))
+            assertNull(LibraryCache.peek("home_playlists:$userId"))
             for (key in listOf(activeKey, otherSortKey)) {
-                assertNull("Stale first page: $key", LibraryCache.get(key))
+                assertNull("Stale first page: $key", LibraryCache.peek(key))
                 assertNull("Stale accumulated pages: $key", PagedLibrary.get(key))
             }
             for (key in listOf(otherUserKey, albumsKey)) {
-                assertEquals(listOf(existing), LibraryCache.get(key))
+                assertEquals(listOf(existing), LibraryCache.peek(key))
                 assertEquals(listOf(existing), PagedLibrary.get(key)?.items)
             }
             withTimeout(5000) { requests.receive() }.complete(
@@ -200,7 +229,7 @@ class LibraryViewModelTest {
                 stalePage.complete(ItemsResponse(items = listOf(JellyfinItem(id = "stale")), totalRecordCount = 2))
                 withTimeout(5000) { pageJob.join() }
                 assertEquals(expected, model.state.value.items)
-                assertEquals(expected, LibraryCache.get(refreshed.cacheKey))
+                assertEquals(expected, LibraryCache.peek(refreshed.cacheKey))
                 assertEquals(expected, PagedLibrary.get(refreshed.cacheKey)?.items)
             } finally {
                 stalePage.complete(ItemsResponse())
@@ -228,7 +257,7 @@ class LibraryViewModelTest {
 
             server.enqueue(MockResponse().setBody("""{"IsFavorite":false}"""))
             assertEquals(false, Favorites.toggle(app.jellyfin.api, userId, likedTrack))
-            assertNull(LibraryCache.get(key))
+            assertNull(LibraryCache.peek(key))
             assertNull(PagedLibrary.get(key))
 
             server.enqueue(MockResponse().setBody("""{"Items":[],"TotalRecordCount":0}"""))

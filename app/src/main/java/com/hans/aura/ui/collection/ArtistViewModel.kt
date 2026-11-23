@@ -87,15 +87,14 @@ class ArtistViewModel(
     private val userId: String get() = app.jellyfin.auth.session?.userId ?: ""
 
     init {
-        _state.update {
-            it.copy(
-                albums = LibraryCache.get(DetailPresenter.artistAlbumsKey(artistId)),
-                topTracks = LibraryCache.get(DetailPresenter.artistTopTracksKey(artistId)),
-                similar = LibraryCache.get(DetailPresenter.artistSimilarKey(artistId))
-            )
+        viewModelScope.launch {
+            val albums = LibraryCache.get(DetailPresenter.artistAlbumsKey(artistId))
+            val topTracks = LibraryCache.get(DetailPresenter.artistTopTracksKey(artistId))
+            val similar = LibraryCache.get(DetailPresenter.artistSimilarKey(artistId))
+            _state.update { it.copy(albums = albums, topTracks = topTracks, similar = similar) }
+            load(force = false)
+            scanAtmos()
         }
-        load(force = false)
-        scanAtmos()
     }
 
     fun retry() = load(force = true)

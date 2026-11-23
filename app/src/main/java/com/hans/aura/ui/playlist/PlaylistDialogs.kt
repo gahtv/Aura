@@ -296,6 +296,7 @@ fun PlaylistPickerDialog(
                                                 )
                                                 LibraryCache.evict("col:${pl.id}")
                                                 LibraryCache.evict("home_playlists:$userId")
+                                                LibraryCache.clearDiskLists()
                                                 onDismiss()
                                             }.onFailure { e ->
                                                 android.util.Log.w(

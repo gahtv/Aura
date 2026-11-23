@@ -1,6 +1,8 @@
 [versions]
 agp = "9.1.0"
 kotlin = "2.2.10"
+room = "2.8.4"
+ksp = "2.3.14"
 composeBom = "2026.11.01"
 tvMaterial = "1.1.0"
 graphicsShapes = "1.0.1"
@@ -26,6 +28,9 @@ robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
 
 [libraries]
+room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 # --- Compose (versions come from composeBom) ---
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-ui = { module = "androidx.compose.ui:ui" }
@@ -76,6 +81,7 @@ androidx-test-runner = { module = "androidx.test:runner", version.ref = "android
 androidx-test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 
 [plugins]
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-test = { id = "com.android.test", version.ref = "agp" }
 androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "baselineProfile" }

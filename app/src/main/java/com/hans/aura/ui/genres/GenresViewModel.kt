@@ -40,11 +40,13 @@ class GenresViewModel(private val app: AuraApp) : ViewModel() {
     private val userId: String get() = app.jellyfin.auth.session?.userId ?: ""
 
     init {
-        val cached = LibraryCache.get("genres:$userId")
-        if (cached != null) {
-            _state.value = GenresUiState(genres = cached)
-        } else {
-            load()
+        viewModelScope.launch {
+            val cached = LibraryCache.get("genres:$userId")
+            if (cached != null) {
+                _state.value = GenresUiState(genres = cached)
+            } else {
+                load()
+            }
         }
     }
 
@@ -96,13 +98,12 @@ class GenreAlbumsViewModel(
     private val userId: String get() = app.jellyfin.auth.session?.userId ?: ""
 
     init {
-        _state.update {
-            it.copy(
-                albums = LibraryCache.get("genre_albums:$genreName"),
-                tracks = LibraryCache.get("genre_tracks:$genreName")
-            )
+        viewModelScope.launch {
+            val albums = LibraryCache.get("genre_albums:$genreName")
+            val tracks = LibraryCache.get("genre_tracks:$genreName")
+            _state.update { it.copy(albums = albums, tracks = tracks) }
+            if (_state.value.albums == null || _state.value.tracks == null) load()
         }
-        if (_state.value.albums == null || _state.value.tracks == null) load()
     }
 
     fun retry() = load()

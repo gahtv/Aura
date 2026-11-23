@@ -44,12 +44,12 @@ class LibraryCacheTest {
     @Test
     fun `fresh entry is served`() {
         LibraryCache.put("Tracks", items)
-        assertEquals(items, LibraryCache.get("Tracks"))
+        assertEquals(items, LibraryCache.peek("Tracks"))
     }
 
     @Test
     fun `unknown key misses`() {
-        assertNull(LibraryCache.get("never-stored"))
+        assertNull(LibraryCache.peek("never-stored"))
     }
 
     @Test
@@ -59,7 +59,7 @@ class LibraryCacheTest {
         // of sleeping for a day.
         ageEntry("Tracks", 25L * 60 * 60 * 1000)
 
-        assertNull("a >24h old entry must be refetched", LibraryCache.get("Tracks"))
+        assertNull("a >24h old entry must be refetched", LibraryCache.peek("Tracks"))
     }
 
     @Test
@@ -67,7 +67,7 @@ class LibraryCacheTest {
         LibraryCache.put("Tracks", items)
         ageEntry("Tracks", 23L * 60 * 60 * 1000)
 
-        assertEquals(items, LibraryCache.get("Tracks"))
+        assertEquals(items, LibraryCache.peek("Tracks"))
     }
 
     @Test
@@ -77,8 +77,8 @@ class LibraryCacheTest {
 
         LibraryCache.evict("a")
 
-        assertNull(LibraryCache.get("a"))
-        assertNotNull(LibraryCache.get("b"))
+        assertNull(LibraryCache.peek("a"))
+        assertNotNull(LibraryCache.peek("b"))
     }
 
     // ---- evictWhere --------------------------------------------------------
@@ -91,9 +91,9 @@ class LibraryCacheTest {
 
         LibraryCache.evictWhere { it.startsWith("Tracks") }
 
-        assertNull(LibraryCache.get("Tracks|SortName|asc|0"))
-        assertNull(LibraryCache.get("Tracks|DateCreated|desc|0"))
-        assertNotNull("other families must survive", LibraryCache.get("Albums|SortName|asc|0"))
+        assertNull(LibraryCache.peek("Tracks|SortName|asc|0"))
+        assertNull(LibraryCache.peek("Tracks|DateCreated|desc|0"))
+        assertNotNull("other families must survive", LibraryCache.peek("Albums|SortName|asc|0"))
     }
 
     @Test
@@ -120,18 +120,18 @@ class LibraryCacheTest {
     @Test
     fun `cache entries are isolated per hidden library set`() {
         LibraryCache.put("Tracks", items)
-        assertEquals(items, LibraryCache.get("Tracks"))
+        assertEquals(items, LibraryCache.peek("Tracks"))
 
         Prefs.hiddenLibraries = setOf("lib-atmos")
-        assertNull("must not serve the unfiltered list", LibraryCache.get("Tracks"))
+        assertNull("must not serve the unfiltered list", LibraryCache.peek("Tracks"))
 
         val filtered = listOf(Fixtures.item("only-atmos-survivor"))
         LibraryCache.put("Tracks", filtered)
-        assertEquals(filtered, LibraryCache.get("Tracks"))
+        assertEquals(filtered, LibraryCache.peek("Tracks"))
 
         // Back to "nothing hidden": the original list is still there, untouched.
         Prefs.hiddenLibraries = emptySet()
-        assertEquals(items, LibraryCache.get("Tracks"))
+        assertEquals(items, LibraryCache.peek("Tracks"))
     }
 
     @Test

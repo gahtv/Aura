@@ -49,12 +49,13 @@ class CollectionViewModel(
     private val userId: String get() = app.jellyfin.auth.session?.userId ?: ""
 
     init {
-        // Cached tracklist first, so a BACK return paints instantly.
-        _state.update {
-            it.copy(tracks = LibraryCache.get(DetailPresenter.collectionCacheKey(itemId)))
+        viewModelScope.launch {
+            // Cached tracklist first, so a BACK return paints instantly.
+            val tracks = LibraryCache.get(DetailPresenter.collectionCacheKey(itemId))
+            _state.update { it.copy(tracks = tracks) }
+            if (itemType == "Playlist") scanAtmos()
+            load(force = false)
         }
-        if (itemType == "Playlist") scanAtmos()
-        load(force = false)
     }
 
     /** Retry from the ErrorPane: ignore the cache and fetch again. */

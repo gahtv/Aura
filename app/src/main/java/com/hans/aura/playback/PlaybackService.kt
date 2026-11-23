@@ -24,6 +24,7 @@ import com.hans.aura.data.APP_VERSION
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Session
+import com.hans.aura.data.invalidateHistoryOnSuccess
 import com.hans.aura.player.controller.RepeatPlaybackAnchor
 import com.hans.aura.util.AuraLog
 import com.hans.aura.util.AuraTag
@@ -282,11 +283,11 @@ private class AuthDataSourceFactory(
 internal class PlaybackReporter(
     private val jellyfin: com.hans.aura.data.JellyfinClient,
     private val player: Player,
+    private val scope: kotlinx.coroutines.CoroutineScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
+    ),
     private val isOutputReleased: () -> Boolean = { false }
 ) {
-    private val scope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
-    )
     private var playSessionId: String = java.util.UUID.randomUUID().toString()
     private var currentItemId: String? = null
     private var handler: android.os.Handler? = null
@@ -340,7 +341,7 @@ internal class PlaybackReporter(
                                             positionTicks = oldTicks,
                                             mediaSourceId = oldId
                                         )
-                                    )
+                                    ).invalidateHistoryOnSuccess(oldId)
                                 }.onFailure {
                                     AuraLog.w(AuraTag.REPORT, "stop failed: ${it.message}")
                                 }
@@ -366,7 +367,7 @@ internal class PlaybackReporter(
                                         repeatMode = repeatMode,
                                         playbackOrder = playbackOrder
                                     )
-                                )
+                                ).invalidateHistoryOnSuccess(id)
                             }.onFailure {
                                 AuraLog.w(AuraTag.REPORT, "playbackStart failed: ${it.message}")
                             }
@@ -423,7 +424,7 @@ internal class PlaybackReporter(
                                         positionTicks = ticks,
                                         mediaSourceId = oldId
                                     )
-                                )
+                                ).invalidateHistoryOnSuccess(oldId)
                             }.onFailure {
                                 AuraLog.w(AuraTag.REPORT, "stop failed: ${it.message}")
                             }

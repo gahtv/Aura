@@ -28,6 +28,8 @@ object Favorites {
     /** id -> isFavorite, for items toggled this session. Wins over UserData. */
     private var overrides by mutableStateOf<Map<String, Boolean>>(emptyMap())
 
+    fun clear() { overrides = emptyMap() }
+
     /** True when [item] is liked: session override first, then server UserData. */
     fun isFavorite(item: JellyfinItem): Boolean =
         overrides[item.id] ?: (item.userData?.isFavorite == true)
@@ -68,6 +70,7 @@ object Favorites {
         val after = isFavorite(item.id)
         Log.d(TAG, "item=${item.id} now=$after code=${resp.code()}")
         evictCaches(userId, item)
+        LibraryCache.clearDiskLists()
         return after
     }
 

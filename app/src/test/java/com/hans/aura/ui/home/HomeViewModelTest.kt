@@ -128,7 +128,7 @@ class HomeViewModelTest {
         scan.complete(emptySet())
         val done = withTimeout(5000) { model.state.first { !it.loading } }
         assertNull(done.artists)
-        assertNull(LibraryCache.get("home_artists:"))
+        assertNull(LibraryCache.peek("home_artists:"))
         assertEquals(emptyList<JellyfinItem>(), done.playlists)
         assertEquals(emptyList<JellyfinItem>(), done.recentAlbums)
         assertEquals(emptyList<JellyfinItem>(), done.atmosAlbums)

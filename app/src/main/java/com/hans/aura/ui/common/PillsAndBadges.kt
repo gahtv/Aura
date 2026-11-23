@@ -120,7 +120,7 @@ fun AtmosFilterPill(
             .clip(shape)
             .background(
                 when {
-                    selected -> colors.secondaryContainer
+                    selected -> colors.primary
                     focused -> AuraColors.FocusedFillSubtle
                     else -> Color.Transparent
                 }
@@ -140,7 +140,7 @@ fun AtmosFilterPill(
             ),
             contentDescription = "Only Atmos",
             tint = when {
-                selected -> colors.onSecondaryContainer
+                selected -> colors.onPrimary
                 else -> TextPrimary
             },
             modifier = Modifier.size(AuraSizes.iconBadge)

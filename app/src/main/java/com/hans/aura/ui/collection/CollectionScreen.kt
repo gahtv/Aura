@@ -48,6 +48,8 @@ import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Mixes
+import com.hans.aura.ui.common.ConnectedAction
+import com.hans.aura.ui.common.ConnectedActions
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.MotionArtwork
 import com.hans.aura.ui.common.TrackRow
@@ -255,30 +257,19 @@ private fun CollectionContent(
                     horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm),
                     verticalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
                 ) {
-                    androidx.tv.material3.Button(
-                        modifier = Modifier
-                            .focusRequester(playButtonFocus)
-                            .focusProperties { right = contentFocus },
-                        colors = androidx.tv.material3.ButtonDefaults.colors(
-                            containerColor = colors.primary,
-                            contentColor = colors.onPrimary,
-                            focusedContainerColor = colors.onSurface,
-                            focusedContentColor = colors.inverseOnSurface
-                        ),
-                        onClick = { tracks?.let { player.playQueue(it, 0, resume = false) } }
-                    ) { androidx.tv.material3.Text("Play") }
-                    androidx.tv.material3.Button(
-                        modifier = Modifier.focusProperties { right = contentFocus },
-                        onClick = {
-                            tracks?.let { list ->
-                                player.playQueue(list.shuffled(), 0, resume = false)
-                            }
-                        }
-                    ) { androidx.tv.material3.Text("Shuffle") }
-                    if (collection.type != "Playlist") {
-                        androidx.tv.material3.Button(
-                            modifier = Modifier.focusProperties { right = contentFocus },
-                            onClick = {
+                    ConnectedActions(buildList {
+                        add(ConnectedAction(
+                            label = "Play",
+                            modifier = Modifier.focusRequester(playButtonFocus),
+                            primary = true,
+                            onClick = { tracks?.let { player.playQueue(it, 0, resume = false) } }
+                        ))
+                        add(ConnectedAction(
+                            label = "Shuffle",
+                            onClick = { tracks?.let { player.playQueue(it.shuffled(), 0, resume = false) } }
+                        ))
+                        if (collection.type != "Playlist") {
+                            add(ConnectedAction(label = "Radio", onClick = {
                                 scope.launch {
                                     Mixes.playMix(
                                         api = app.jellyfin.api,
@@ -288,9 +279,9 @@ private fun CollectionContent(
                                         seed = shown
                                     )
                                 }
-                            }
-                        ) { androidx.tv.material3.Text("Radio") }
-                    }
+                            }))
+                        }
+                    })
                     androidx.tv.material3.Button(
                         modifier = Modifier.focusProperties { right = contentFocus },
                         onClick = onBack

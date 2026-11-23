@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -362,6 +363,7 @@ fun LoginScreen(
                         // Trap the cursor inside the panel; DOWN must not fall
                         // back into the login form behind the scrim.
                         .focusProperties { onExit = { cancelFocusChange() } }
+                        .focusGroup()
                         .padding(AuraSpacing.xl),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {

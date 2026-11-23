@@ -98,6 +98,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
+    implementation(libs.androidx.graphics.shapes)
 
     // Media3 playback
     implementation(libs.media3.exoplayer)

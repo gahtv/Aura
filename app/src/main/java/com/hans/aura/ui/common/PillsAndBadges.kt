@@ -1,5 +1,7 @@
 package com.hans.aura.ui.common
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,12 +21,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
 import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
@@ -112,19 +118,19 @@ fun AtmosFilterPill(
 ) {
     val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
-    val shape = AuraShapes.control
+    val shape = filterPillShape(selected, focused)
+    val fill by animateColorAsState(
+        if (focused) AuraColors.FocusedFillSubtle else Color.Transparent,
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
+        label = "atmosFilterFill"
+    )
     Box(
         modifier
+            .semantics { this.selected = selected }
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClickLabel = "Only Atmos") { onClick() }
             .clip(shape)
-            .background(
-                when {
-                    selected -> colors.primary
-                    focused -> AuraColors.FocusedFillSubtle
-                    else -> Color.Transparent
-                }
-            )
+            .background(if (selected) colors.primary else fill)
             .border(
                 width = if (focused) AuraSizes.focusBorderLoud else 0.dp,
                 color = if (focused) TextPrimary else Color.Transparent,
@@ -146,6 +152,21 @@ fun AtmosFilterPill(
             modifier = Modifier.size(AuraSizes.iconBadge)
         )
     }
+}
+
+@Composable
+internal fun filterPillShape(selected: Boolean, focused: Boolean): RoundedCornerShape {
+    val radius by animateDpAsState(
+        when {
+            focused && selected -> AuraShapes.pillSelectedFocusRadius
+            focused -> AuraShapes.pillFocusRadius
+            selected -> AuraShapes.cardRadius
+            else -> AuraShapes.pillRestRadius
+        },
+        animationSpec = AuraMotion.scheme.fastSpatialSpec(),
+        label = "filterPillCorner"
+    )
+    return remember(radius) { RoundedCornerShape(radius.coerceAtLeast(0.dp)) }
 }
 
 /** Small ATMOS marker used on rows (the card equivalent is ArtworkCard's badge). */

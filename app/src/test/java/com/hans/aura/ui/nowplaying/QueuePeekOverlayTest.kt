@@ -1,15 +1,26 @@
 package com.hans.aura.ui.nowplaying
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.tv.material3.Button
+import androidx.tv.material3.Text
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.ComposeUiTestConfig
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
@@ -29,6 +40,30 @@ class QueuePeekOverlayTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>(
         ComposeUiTestConfig(inputMode = InputMode.Keyboard)
     )
+
+    @Test
+    fun rightFromFirstRowDoesNotFocusUnderlyingPause() {
+        var collapses = 0
+        val tracks = (0..2).map { Fixtures.track("Track $it") }
+        compose.setContent {
+            AuraTheme {
+                Box(Modifier.fillMaxSize()) {
+                    Button(
+                        onClick = {},
+                        modifier = Modifier.align(Alignment.CenterEnd).width(100.dp).fillMaxHeight()
+                    ) { Text("Pause") }
+                    QueuePeekOverlay(tracks, tracks.size, 1, 0L,
+                        onExtend = {}, onCollapse = { collapses++ }, onJump = {})
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(500)
+        press(0, Key.DirectionRight)
+        compose.onNodeWithText("Track 0").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(0, collapses) }
+        compose.onNodeWithText("Pause").assertIsNotFocused()
+        compose.onNodeWithText("Track 0").assertIsFocused()
+    }
 
     @Test
     fun navigateExtendAndJumpToLowerRow() {

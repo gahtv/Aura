@@ -36,6 +36,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -134,6 +135,11 @@ private fun NowPlayingContent(
     }
 
     var dimMode by remember { mutableStateOf(Prefs.nowPlayingDimMode) }
+    val dimFraction by animateFloatAsState(
+        targetValue = if (dimMode) 1f else 0f,
+        animationSpec = AuraMotion.scheme.slowEffectsSpec(),
+        label = "npDim"
+    )
 
     val ambientEnabled = remember { Prefs.ambientNowPlaying }
     var hudInteractionTick by remember { mutableIntStateOf(0) }
@@ -227,7 +233,7 @@ private fun NowPlayingContent(
     }
     val hudAlpha by animateFloatAsState(
         targetValue = if (ambientHidden) 0f else 1f,
-        animationSpec = AuraMotion.effectsDefault,
+        animationSpec = AuraMotion.scheme.defaultEffectsSpec(),
         label = "npAmbientHudAlpha"
     )
     val wakeKeys = remember { mutableSetOf<Key>() }
@@ -259,7 +265,7 @@ private fun NowPlayingContent(
         Column(
             Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(if (dimMode) colors.background else colors.artworkWash, colors.surface)))
+                .background(Brush.verticalGradient(listOf(lerp(colors.artworkWash, colors.background, dimFraction), colors.surface)))
                 // Lyrics view is full-bleed edge to edge; the track view keeps the
                 // standard screen insets.
                 .padding(

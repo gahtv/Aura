@@ -44,6 +44,20 @@ class SharedArtworkTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun cornerEndpointsUseTheirCounterpartWithoutShapeAssumptions() {
+        val corners = ArtworkCorners()
+        val card = Any()
+        val header = Any()
+        assertEquals(7.dp, corners.otherRadius(card, 7.dp))
+        corners.endpoints[card] = 7.dp
+        corners.endpoints[header] = 29.dp
+        assertEquals(29.dp, corners.otherRadius(card, 7.dp))
+        assertEquals(7.dp, corners.otherRadius(header, 29.dp))
+        corners.endpoints.remove(card)
+        assertEquals(29.dp, corners.otherRadius(header, 29.dp))
+    }
+
+    @Test
     fun largerHeaderHasTheCachedCardDuringLoading() {
         val url = "https://fixture/album?maxWidth=480"
         val bitmap = Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888)
@@ -112,10 +126,10 @@ class SharedArtworkTest {
     fun missingScopesPreserveModifierIdentity() {
         val modifier = Modifier.size(40.dp)
         compose.setContent {
-            assertSame(modifier, modifier.sharedArtwork("album"))
+            assertSame(modifier, modifier.sharedArtwork("album", 7.dp))
             SharedTransitionLayout {
                 CompositionLocalProvider(LocalArtworkTransition provides this) {
-                    assertSame(modifier, modifier.sharedArtwork("album"))
+                    assertSame(modifier, modifier.sharedArtwork("album", 7.dp))
                 }
             }
         }
@@ -182,6 +196,7 @@ class SharedArtworkTest {
                 AnimatedContent(destination.value, label = "test") { detail ->
                     CompositionLocalProvider(
                         LocalArtworkTransition provides this@SharedTransitionLayout,
+                        LocalArtworkCorners provides remember { mutableMapOf() },
                         LocalArtworkVisibility provides this@AnimatedContent
                     ) {
                         if (detail) {
@@ -189,7 +204,7 @@ class SharedArtworkTest {
                             target = state
                             Box(Modifier.size(120.dp).sharedElement(state, this@AnimatedContent))
                         } else {
-                            Box(Modifier.size(40.dp).sharedArtwork("album"))
+                            Box(Modifier.size(40.dp).sharedArtwork("album", 7.dp))
                         }
                     }
                 }

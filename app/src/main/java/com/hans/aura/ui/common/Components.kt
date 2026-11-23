@@ -93,8 +93,8 @@ fun ArtworkCard(
     val colors = MaterialTheme.colorScheme
     val artworkSource = LocalArtworkSource.current
     val artworkToken = currentCompositeKeyHash
-    val sharedArtwork = if (artworkSource?.value == artworkToken) {
-        Modifier.sharedArtwork(item.id, if (circular) CircleShape else AuraShapes.card)
+    val sharedArtwork = if (!circular && artworkSource?.value == artworkToken) {
+        Modifier.sharedArtwork(item.id, AuraShapes.cardRadius)
     } else Modifier.clip(if (circular) CircleShape else AuraShapes.card)
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(

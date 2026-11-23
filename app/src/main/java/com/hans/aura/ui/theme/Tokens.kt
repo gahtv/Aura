@@ -166,7 +166,8 @@ object AuraTypography {
 object AuraShapes {
     val cardRadius = 12.dp
     val card = RoundedCornerShape(cardRadius)
-    val cardHero = RoundedCornerShape(20.dp)
+    val cardHeroRadius = 20.dp
+    val cardHero = RoundedCornerShape(cardHeroRadius)
     val quickTile = RoundedCornerShape(14.dp)
     val pillRestRadius = 24.dp
     val pillFocusRadius = 8.dp

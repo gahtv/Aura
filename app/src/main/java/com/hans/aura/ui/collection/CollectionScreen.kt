@@ -196,7 +196,7 @@ private fun CollectionContent(
                             .size(216.dp)
                             .then(
                                 if (LocalArtworkTransition.current == null) Modifier.clip(AuraShapes.cardHero)
-                                else Modifier.sharedArtwork(shown.id, AuraShapes.cardHero)
+                                else Modifier.sharedArtwork(shown.id, AuraShapes.cardHeroRadius)
                             )
                             .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
                     ) {

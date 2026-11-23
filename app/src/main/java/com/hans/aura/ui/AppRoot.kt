@@ -35,6 +35,8 @@ import com.hans.aura.ui.common.LocalArtworkTransition
 import com.hans.aura.ui.common.LocalArtworkVisibility
 import com.hans.aura.ui.common.LocalDestinationActive
 import com.hans.aura.ui.common.LocalArtworkSource
+import com.hans.aura.ui.common.LocalArtworkCorners
+import com.hans.aura.ui.common.ArtworkCorners
 import com.hans.aura.ui.common.DestinationFocusGate
 import com.hans.aura.ui.genres.GenreScreen
 import com.hans.aura.ui.genres.GenresScreen
@@ -193,6 +195,7 @@ fun AppRoot() {
             }
         ) {
             SharedTransitionLayout {
+                val artworkCorners = remember { mutableMapOf<String, ArtworkCorners>() }
                 AnimatedContent(
                     targetState = nav.stack.lastIndex to nav.top,
                     contentKey = { (index, screen) -> "$index:${NavSpec.key(screen)}" },
@@ -215,7 +218,8 @@ fun AppRoot() {
                             LocalArtworkTransition provides this@SharedTransitionLayout,
                             LocalArtworkVisibility provides this@AnimatedContent,
                             LocalDestinationActive provides active,
-                            LocalArtworkSource provides artworkSource
+                            LocalArtworkSource provides artworkSource,
+                            LocalArtworkCorners provides artworkCorners
                         ) {
                             DestinationFocusGate(active) {
                                 DestinationHost(

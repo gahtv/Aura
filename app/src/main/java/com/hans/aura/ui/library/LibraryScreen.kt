@@ -100,6 +100,7 @@ internal fun LibraryScreen(
     val session = app.jellyfin.auth.session ?: return
     val state by viewModel.state.collectAsState()
     val items = state.items
+    val hasMoreItems = items.size < state.total
     val tracks = items.filterIsInstance<Track>()
     val current by player.current.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -147,14 +148,14 @@ internal fun LibraryScreen(
         }
     }
     LaunchedEffect(nearGridEnd, items.size) {
-        if (kind != "Tracks" && nearGridEnd && state.initialized && items.isNotEmpty() && items.size < state.total) {
+        if (kind != "Tracks" && nearGridEnd && state.initialized && items.isNotEmpty() && hasMoreItems) {
             viewModel.loadNextPage()
         }
     }
     val canLoadLikedPage = !state.likedOnly || (!state.loading && state.error == null)
     LaunchedEffect(nearListEnd, items.size, canLoadLikedPage) {
         if (kind == "Tracks" && nearListEnd && canLoadLikedPage &&
-            state.initialized && items.isNotEmpty() && items.size < state.total
+            state.initialized && items.isNotEmpty() && hasMoreItems
         ) {
             viewModel.loadNextPage()
         }
@@ -359,11 +360,11 @@ internal fun LibraryScreen(
                     }
                     item {
                         Spacer(Modifier.height(60.dp))
-                        if (items.size < state.total) {
+                        if (hasMoreItems && state.loading) {
                             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 AuraLoadingIndicator("Loading more tracks")
                             }
-                        } else androidx.tv.material3.Text(
+                        } else if (!hasMoreItems) androidx.tv.material3.Text(
                             com.hans.aura.ui.common.countLabel(items.size, "track"),
                             color = TextSecondary, fontSize = 12.sp,
                             modifier = Modifier.padding(horizontal = 24.dp)
@@ -425,11 +426,11 @@ internal fun LibraryScreen(
                     item(span = { GridItemSpan(5) }) {
                         Column {
                             Spacer(Modifier.height(24.dp))
-                            if (items.size < state.total) {
+                            if (hasMoreItems && state.loading) {
                                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                     AuraLoadingIndicator("Loading more library items")
                                 }
-                            } else androidx.tv.material3.Text(
+                            } else if (!hasMoreItems) androidx.tv.material3.Text(
                                 com.hans.aura.ui.common.countLabel(
                                     items.size,
                                     singular = kind.lowercase().removeSuffix("s"),

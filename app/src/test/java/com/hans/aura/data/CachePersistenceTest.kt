@@ -1,6 +1,8 @@
 package com.hans.aura.data
 
 import android.content.Context
+import android.database.sqlite.SQLiteBlobTooBigException
+import android.database.sqlite.SQLiteException
 import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -77,7 +79,55 @@ class CachePersistenceTest {
     }
 
     @Test
-    fun `expired and corrupt lists are misses and deleted`() = runBlocking {
+    fun `database read failures delete bad rows and Atmos falls back to a scan`() = runBlocking {
+        disk.read {
+            putList(CachedLibraryList("bad", System.currentTimeMillis(), "[]"))
+            putAtmos(CachedAtmosCatalog("u", System.currentTimeMillis(), "[]", "[]"))
+        }
+        disk.close()
+        val delegate = db.cacheDao()
+        var deletedAtmos = false
+        disk = CacheDisk(object : CacheDao by delegate {
+            override fun list(key: String): CachedLibraryList? = throw SQLiteBlobTooBigException("oversized row")
+            override fun atmos(key: String): CachedAtmosCatalog? = throw SQLiteException("read failed")
+            override fun deleteAtmos(key: String) {
+                deletedAtmos = true
+                delegate.deleteAtmos(key)
+            }
+            override fun putList(row: CachedLibraryList) = throw SQLiteException("write failed")
+        })
+        coldStart()
+        assertNull(LibraryCache.get("bad"))
+        assertEquals(emptyList<String>(), disk.read { listKeys() })
+        LibraryCache.put("write-fails", items)
+        assertEquals(emptyList<String>(), disk.read { listKeys() })
+        assertEquals(items, LibraryCache.peek("write-fails"))
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""{"Items":[],"TotalRecordCount":0}"""))
+            assertEquals(AtmosCatalog.Catalog(), AtmosCatalog.catalog(api(server), "u"))
+            assertEquals(1, server.requestCount)
+            assertTrue(deletedAtmos)
+        }
+    }
+
+    @Test
+    fun `cleanup failure is still a cache miss and closed disk rejects writes safely`() = runBlocking {
+        disk.read { }
+        disk.close()
+        val delegate = db.cacheDao()
+        disk = CacheDisk(object : CacheDao by delegate {
+            override fun list(key: String): CachedLibraryList? = throw SQLiteException("read failed")
+            override fun deleteList(key: String) = throw SQLiteException("delete failed")
+        })
+        coldStart()
+        assertNull(LibraryCache.get("bad"))
+        disk.close()
+        disk.write { error("closed executor must not run this") }
+        disk = CacheDisk(delegate)
+    }
+
+    @Test
+    fun `expired and corrupt lists are misses and deleted`() = runBlocking<Unit> {
         disk.read {
             putList(CachedLibraryList("expired", 0, jellyfinJson.encodeToString(items)))
             putList(CachedLibraryList("corrupt", System.currentTimeMillis(), "not json"))
@@ -107,7 +157,7 @@ class CachePersistenceTest {
         LibraryCache.clear()
         coldStart()
         assertNull(LibraryCache.get("remaining:u"))
-        assertTrue(disk.read { listKeys().isEmpty() })
+        assertEquals(true, disk.read { listKeys().isEmpty() })
     }
 
     private fun api(server: MockWebServer): JellyfinApi = Retrofit.Builder()
@@ -136,7 +186,7 @@ class CachePersistenceTest {
             assertNull(LibraryCache.peek("home_recent:u"))
             assertNull(LibraryCache.peek("lib_tracks:u:SortName:false"))
             assertNull(PagedLibrary.get("lib_tracks:u:SortName:false"))
-            assertTrue(disk.read { listKeys().isEmpty() })
+            assertEquals(true, disk.read { listKeys().isEmpty() })
             coldStart()
             assertNull(LibraryCache.get("home_new:u"))
             assertNull(LibraryCache.get("arbitrary-selection-key"))

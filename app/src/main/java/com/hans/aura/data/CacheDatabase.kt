@@ -9,6 +9,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 
@@ -56,16 +58,37 @@ class CacheDisk(val dao: CacheDao) {
     private val dispatcher = executor.asCoroutineDispatcher()
 
     fun write(block: CacheDao.() -> Unit) {
-        executor.execute {
-            try {
-                dao.block()
-            } catch (e: Exception) {
-                android.util.Log.w("AURA_CACHE", "Cache write failed", e)
+        try {
+            executor.execute {
+                try {
+                    dao.block()
+                } catch (e: Exception) {
+                    android.util.Log.w("AURA_CACHE", "Cache write failed", e)
+                }
             }
+        } catch (e: RejectedExecutionException) {
+            android.util.Log.w("AURA_CACHE", "Cache write rejected", e)
         }
     }
 
-    suspend fun <T> read(block: CacheDao.() -> T): T = withContext(dispatcher) { dao.block() }
+    suspend fun <T> read(
+        onFailure: CacheDao.() -> Unit = {},
+        block: CacheDao.() -> T
+    ): T? = withContext(dispatcher) {
+        try {
+            dao.block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("AURA_CACHE", "Cache read failed", e)
+            try {
+                dao.onFailure()
+            } catch (cleanup: Exception) {
+                android.util.Log.w("AURA_CACHE", "Cache cleanup failed", cleanup)
+            }
+            null
+        }
+    }
 
     fun close() = dispatcher.close()
 }

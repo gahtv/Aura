@@ -38,7 +38,7 @@ object LibraryCache {
         val fullKey = k(key)
         val version = generation
         val storage = disk ?: return null
-        val entry = storage.read {
+        val entry = storage.read(onFailure = { deleteList(fullKey) }) {
             val row = list(fullKey) ?: return@read null
             if (System.currentTimeMillis() - row.savedAtMs >= TTL_MS) {
                 deleteList(fullKey)

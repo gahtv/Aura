@@ -49,7 +49,7 @@ object AtmosCatalog {
             }
             val version = generation
             val storage = disk
-            val persisted = storage?.read {
+            val persisted = storage?.read(onFailure = { deleteAtmos(key) }) {
                 val row = atmos(key) ?: return@read null
                 if (System.currentTimeMillis() - row.savedAtMs >= 24L * 60 * 60 * 1000) {
                     deleteAtmos(key)

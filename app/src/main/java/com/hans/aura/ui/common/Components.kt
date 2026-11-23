@@ -406,18 +406,26 @@ fun ItemShelf(
     showLoading: Boolean = true,
     badgeFor: ((JellyfinItem) -> String?)? = null,
     onLongPress: ((JellyfinItem) -> Unit)? = null,
-    // True only while this row is on screen (Home passes the flag from
-    // rememberOnScreen). Inside, the horizontal scroll offset narrows it again
-    // to the covers actually in view: a 20-card row must not request 20 slots.
+    // True while this row is in the lazy list's motion window. Inside, the
+    // horizontal scroll offset narrows it to the covers actually in view:
+    // a 20-card row must not request 20 slots.
     animate: Boolean = false,
-    // Attached to the scrolling row so Home can measure whether the shelf is
-    // inside the window at all.
-    modifier: Modifier = Modifier
+    // Applied to the scrolling row.
+    modifier: Modifier = Modifier,
+    restoreItemId: String? = null,
+    onRestoreReady: () -> Unit = {}
 ) {
     // "Only Atmos" (Settings) filters shelves without a second request: artists
     // pass through, albums/tracks must be in the Atmos catalog.
     val shown = items?.let { list -> list.filter { com.hans.aura.data.AtmosFilter.keep(it) } }
     val listState = rememberLazyListState()
+    androidx.compose.runtime.LaunchedEffect(restoreItemId, shown?.map { it.id }) {
+        val index = shown?.indexOfFirst { it.id == restoreItemId } ?: -1
+        if (restoreItemId != null && index >= 0) {
+            listState.scrollToItem(index)
+            onRestoreReady()
+        }
+    }
     when {
         items == null -> {
             if (showLoading) {

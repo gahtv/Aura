@@ -20,3 +20,18 @@ Personal project, but PRs are welcome. Ground rules:
   changes to lyric presentation also need device checks.
 - Keep the user-visible UX rules: unmistakable focus outlines, ~120dp bottom spacer so
   the now-playing bar never covers the last row, BACK restores exact focus + scroll.
+
+### Regenerate the Baseline Profile
+
+Connect a disposable Android TV device or emulator (API 33+ or rooted API 28–32), install Aura with
+`./gradlew :app:installRelease`, and sign in to a Jellyfin music library. Pick
+a playable album visible on Home without scrolling. With that device still
+connected, run:
+
+```sh
+./gradlew :app:generateReleaseBaselineProfile -Pandroid.testInstrumentationRunnerArguments.profileAlbum="Your Album"
+```
+
+Commit the updated generated rules. Generation tests a non-minified build and
+uninstalls the app from the device afterward, clearing its local data. Ordinary
+release builds use the checked-in profiles and require no device or server.

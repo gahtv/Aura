@@ -216,18 +216,26 @@ fun NowPlayingScreen(
         animationSpec = AuraMotion.effectsDefault,
         label = "npAmbientHudAlpha"
     )
+    val wakeKeys = remember { mutableSetOf<Key>() }
 
     Box(
         Modifier
             .fillMaxSize()
             .onPreviewKeyEvent { event ->
+                if (event.key in wakeKeys) {
+                    if (event.type == KeyEventType.KeyUp) wakeKeys.remove(event.key)
+                    return@onPreviewKeyEvent true
+                }
                 if (event.type == KeyEventType.KeyDown) {
                     hudInteractionTick++
                     if (ambientHidden) {
                         ambientHidden = false
                         android.util.Log.d("AURA_NP", "ambient=off")
                         runCatching { playPauseFocus.requestFocus() }
-                        if (event.key != Key.Back) return@onPreviewKeyEvent true
+                        if (event.key != Key.Back) {
+                            wakeKeys.add(event.key)
+                            return@onPreviewKeyEvent true
+                        }
                     }
                 }
                 false

@@ -8,13 +8,13 @@ import java.util.concurrent.ConcurrentHashMap
  * position and focus restoration work across full library depths.
  */
 object PagedLibrary {
-    data class Page(val items: List<JellyfinItem>, val total: Int)
+    data class Page(val items: List<JellyfinItem>, val total: Int, val requiresRefresh: Boolean = false)
 
     private val store = ConcurrentHashMap<String, Page>()
 
     fun get(key: String): Page? = store[k(key)]
-    fun put(key: String, items: List<JellyfinItem>, total: Int) {
-        store[k(key)] = Page(items, total)
+    fun put(key: String, items: List<JellyfinItem>, total: Int, requiresRefresh: Boolean = false) {
+        store[k(key)] = Page(items, total, requiresRefresh)
     }
     val size: Int get() = store.size
     fun clear() = store.clear()

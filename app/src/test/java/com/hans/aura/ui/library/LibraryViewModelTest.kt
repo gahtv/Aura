@@ -47,6 +47,7 @@ import java.util.concurrent.TimeUnit
 class LibraryViewModelTest {
     private val store = ViewModelStore()
     private val requests = Channel<CompletableDeferred<ItemsResponse>>(Channel.UNLIMITED)
+    private val queries = Channel<LibraryFilter.ItemsQuery>(Channel.UNLIMITED)
     private lateinit var app: AuraApp
 
     @Before
@@ -61,6 +62,7 @@ class LibraryViewModelTest {
             override suspend fun atmosAlbumIds(): Set<String> = emptySet()
             override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
                 val response = CompletableDeferred<ItemsResponse>()
+                queries.send(query)
                 requests.send(response)
                 return if (query.includeItemTypes == "Playlist") response.await()
                 else withContext(NonCancellable) { response.await() }
@@ -79,23 +81,30 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun `live page overlapping a restored first page has unique item ids`() = runBlocking {
+    fun `overlapping restored page is replaced and pagination finishes without duplicate ids`() = runBlocking {
         val first = model()
-        val cached = listOf(JellyfinItem(id = "a"), JellyfinItem(id = "b"))
-        withTimeout(5000) { requests.receive() }.complete(ItemsResponse(items = cached, totalRecordCount = 4))
+        val cached = (0 until 60).map { JellyfinItem(id = "$it") }
+        withTimeout(5000) { queries.receive() }
+        withTimeout(5000) { requests.receive() }.complete(ItemsResponse(items = cached, totalRecordCount = 120))
         withTimeout(5000) { first.state.first { !it.loading && it.items.isNotEmpty() } }
         val key = first.state.value.cacheKey
         store.clear()
         PagedLibrary.clear()
         val restored = model()
         withTimeout(5000) { restored.state.first { it.items == cached } }
-        restored.loadNextPage()
-        withTimeout(5000) { requests.receive() }.complete(
-            ItemsResponse(items = listOf(JellyfinItem(id = "b"), JellyfinItem(id = "c")), totalRecordCount = 4)
-        )
-        withTimeout(5000) { restored.state.first { !it.loading && it.items.size >= 3 } }
-        assertEquals(listOf("a", "b", "c"), restored.state.value.items.map { it.id })
-        assertEquals(listOf("a", "b", "c"), PagedLibrary.get(key)?.items?.map { it.id })
+        val live = listOf(JellyfinItem(id = "inserted")) + (0 until 120).map { JellyfinItem(id = "$it") }
+        repeat(2) {
+            restored.loadNextPage()
+            val query = withTimeout(5000) { queries.receive() }
+            withTimeout(5000) { requests.receive() }.complete(ItemsResponse(
+                items = live.drop(query.startIndex).take(query.limit), totalRecordCount = live.size
+            ))
+            withTimeout(5000) { restored.state.first { !it.loading } }
+        }
+        assertEquals(live.map { it.id }, restored.state.value.items.map { it.id })
+        assertEquals(restored.state.value.total, restored.state.value.items.size)
+        assertFalse(restored.state.value.loading)
+        assertEquals(live, PagedLibrary.get(key)?.items)
     }
 
     @Test

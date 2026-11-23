@@ -258,7 +258,7 @@ class LibraryViewModel(
             val cached = runCatching { LibraryCache.get(key) }.getOrNull()
             if (!cached.isNullOrEmpty()) {
                 _state.update { it.copy(items = cached, initialized = true) }
-                PagedLibrary.put(key, cached, Int.MAX_VALUE)
+                PagedLibrary.put(key, cached, Int.MAX_VALUE, requiresRefresh = true)
                 return@launch
             }
             _state.update { it.copy(initialized = true) }
@@ -272,16 +272,22 @@ class LibraryViewModel(
     private suspend fun loadPage(key: String, generation: Long, replaceLoadedRange: Boolean = false) {
         if (!isCurrentLoad(generation)) return
         val snapshot = _state.value
-        if (snapshot.loading || (!replaceLoadedRange && snapshot.items.size >= snapshot.total)) return
+        val refreshCachedPage = PagedLibrary.get(key)?.requiresRefresh == true
+        val replace = replaceLoadedRange || refreshCachedPage
+        if (snapshot.loading || (!replace && snapshot.items.size >= snapshot.total)) return
         _state.update { it.copy(loading = true) }
         // Keep the saved scroll position and keyed rows available while Liked refreshes.
-        val startIndex = if (replaceLoadedRange) 0 else snapshot.items.size
-        val limit = if (replaceLoadedRange) maxOf(PAGE_SIZE, snapshot.items.size) else PAGE_SIZE
+        val startIndex = if (replace) 0 else snapshot.items.size
+        val limit = when {
+            refreshCachedPage -> snapshot.items.size + PAGE_SIZE
+            replaceLoadedRange -> maxOf(PAGE_SIZE, snapshot.items.size)
+            else -> PAGE_SIZE
+        }
         runCatching {
             withContext(Dispatchers.IO) { fetchPage(snapshot, startIndex, limit) }
         }.onSuccess { result ->
             if (!isCurrentLoad(generation)) return@onSuccess
-            val merged = (if (replaceLoadedRange) result.items else snapshot.items + result.items).distinctBy { it.id }
+            val merged = if (replace) result.items else snapshot.items + result.items
             // A-Z jump skips the count: pagination ends on a short page instead
             // of trusting a total that belongs to the whole (unfiltered) list.
             val total = if (snapshot.letter != null) {

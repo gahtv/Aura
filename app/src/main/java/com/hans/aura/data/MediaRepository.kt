@@ -595,7 +595,9 @@ class MediaRepository(
     }
 
     private fun List<JellyfinItem>.mixTracks(): List<Track> =
-        filter { it.type.isEmpty() || it.type == "Audio" }.toTracks()
+        filter { it.type.isEmpty() || it.type == "Audio" }
+            .map { if (it.type.isEmpty()) it.copy(type = "Audio") else it }
+            .toTracks()
 
     suspend fun trackMix(track: Track, limit: Int): List<Track> = rawInstantMix(track.id, limit).mixTracks()
 

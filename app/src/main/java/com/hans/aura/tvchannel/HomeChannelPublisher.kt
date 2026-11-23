@@ -1,8 +1,10 @@
 package com.hans.aura.tvchannel
 
 import android.content.ContentUris
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
+import android.media.tv.TvContract
 import android.net.Uri
 import android.util.Log
 import com.hans.aura.data.AuthStore
@@ -26,7 +28,7 @@ object HomeChannelPublisher {
             val channelId = ensureChannel(context, resolver)
             if (channelId <= 0L) return
 
-            resolver.delete(PROGRAM_URI, "channel_id=?", arrayOf(channelId.toString()))
+            deletePrograms(resolver, channelId)
             val distinct = items.distinctBy { it.id }.take(12)
             distinct.forEachIndexed { idx, item ->
                 val values = buildProgramValues(channelId, item, serverUrl, weight = distinct.size - idx)
@@ -42,10 +44,18 @@ object HomeChannelPublisher {
         runCatching {
             val channelId = Prefs.tvChannelId
             if (channelId > 0L) {
-                context.applicationContext.contentResolver.delete(
-                    PROGRAM_URI, "channel_id=?", arrayOf(channelId.toString())
-                )
+                deletePrograms(context.applicationContext.contentResolver, channelId)
                 Log.i(TAG, "cleared programs for channelId=$channelId")
+            }
+        }
+    }
+
+    private fun deletePrograms(resolver: ContentResolver, channelId: Long) {
+        val uri = TvContract.buildPreviewProgramsUriForChannel(channelId)
+        checkNotNull(resolver.query(uri, arrayOf("_id"), null, null, null)).use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow("_id")
+            while (cursor.moveToNext()) {
+                resolver.delete(TvContract.buildPreviewProgramUri(cursor.getLong(idColumn)), null, null)
             }
         }
     }

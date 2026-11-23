@@ -56,6 +56,7 @@ import com.hans.aura.ui.common.MotionArtwork
 import com.hans.aura.ui.common.resolveArtwork
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraDynamicTheme
+import com.hans.aura.ui.theme.artworkWash
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -258,7 +259,7 @@ private fun NowPlayingContent(
         Column(
             Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(if (dimMode) colors.background else colors.primaryContainer, colors.surface)))
+                .background(Brush.verticalGradient(listOf(if (dimMode) colors.background else colors.artworkWash, colors.surface)))
                 // Lyrics view is full-bleed edge to edge; the track view keeps the
                 // standard screen insets.
                 .padding(

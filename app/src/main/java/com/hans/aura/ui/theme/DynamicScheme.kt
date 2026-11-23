@@ -11,11 +11,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.lerp
 import com.materialkolor.dynamiccolor.MaterialDynamicColors
 import com.materialkolor.hct.Hct
 import com.materialkolor.quantize.QuantizerCelebi
-import com.materialkolor.scheme.SchemeVibrant
+import com.materialkolor.scheme.SchemeTonalSpot
 import com.materialkolor.score.Score
 
 const val AuraSeedArgb: Int = 0xFFE8A44C.toInt()
@@ -30,7 +31,7 @@ fun extractSeed(pixels: IntArray): Int {
 }
 
 fun dynamicColorScheme(seedArgb: Int): ColorScheme {
-    val scheme = SchemeVibrant(Hct.fromInt(seedArgb), isDark = true, contrastLevel = 0.0)
+    val scheme = SchemeTonalSpot(Hct.fromInt(seedArgb), isDark = true, contrastLevel = 0.0)
     val colors = MaterialDynamicColors()
     return darkColorScheme(
         primary = Color(colors.primary().getArgb(scheme)),
@@ -83,6 +84,9 @@ fun dynamicColorScheme(seedArgb: Int): ColorScheme {
         onTertiaryFixedVariant = Color(colors.onTertiaryFixedVariant().getArgb(scheme))
     )
 }
+
+internal val androidx.tv.material3.ColorScheme.artworkWash: Color
+    get() = primaryContainer.copy(alpha = 0.30f).compositeOver(surface)
 
 fun ColorScheme.toTvColorScheme(): androidx.tv.material3.ColorScheme =
     androidx.tv.material3.darkColorScheme(

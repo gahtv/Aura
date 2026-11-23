@@ -54,6 +54,7 @@ import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.nowplaying.AtmosBadge
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraDynamicTheme
+import com.hans.aura.ui.theme.artworkWash
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
@@ -138,7 +139,7 @@ private fun CollectionContent(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        colors.primaryContainer,
+                        colors.artworkWash,
                         colors.surface,
                         colors.background
                     )
@@ -160,7 +161,7 @@ private fun CollectionContent(
                 .fillMaxSize()
                 .background(
                     Brush.horizontalGradient(
-                        0.0f to colors.primaryContainer.copy(alpha = 0.78f),
+                        0.0f to colors.artworkWash.copy(alpha = 0.78f),
                         0.45f to colors.background.copy(alpha = 0.85f),
                         1.0f to colors.background.copy(alpha = 0.94f)
                     )

@@ -69,6 +69,7 @@ import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraDynamicTheme
+import com.hans.aura.ui.theme.artworkWash
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -334,7 +335,7 @@ private fun HomeLivePreviewHero(
     val artUrl = art?.url(serverUrl, maxWidth = 720)
     AuraDynamicTheme(art?.url(serverUrl, maxWidth = 240)) {
         val colors = MaterialTheme.colorScheme
-        val wash = colors.primaryContainer
+        val wash = colors.artworkWash
 
         Box(
             modifier = Modifier

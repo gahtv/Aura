@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.tv.material3.MaterialTheme
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -21,6 +22,71 @@ import org.robolectric.annotation.Config
 class AuraDynamicThemeTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun pendingSeedRetainsPreviousSchemeAndFailureRestoresStatic() {
+        val red = 0xFFDD2222.toInt()
+        val blue = 0xFF2244DD.toInt()
+        val url = mutableStateOf<String?>("cached-red")
+        val pending = CompletableDeferred<Int?>()
+        val failed = CompletableDeferred<Int?>()
+        val empty = CompletableDeferred<Int?>()
+        var primary = Color.Unspecified
+        ArtworkSeedCache.put("cached-red", red)
+        try {
+            compose.setContent {
+                val seed = rememberArtworkSeed(url.value) {
+                    when (it) {
+                        "pending-blue" -> pending.await()
+                        "failed" -> failed.await()
+                        "empty" -> empty.await()
+                        else -> error("Cached seed should not load")
+                    }
+                }
+                val colors = seed?.let(::dynamicColorScheme) ?: AuraComposeColorScheme
+                SideEffect { primary = colors.primary }
+            }
+            compose.runOnIdle {
+                assertEquals(dynamicColorScheme(red).primary, primary)
+                url.value = "pending-blue"
+            }
+            compose.runOnIdle {
+                assertEquals(dynamicColorScheme(red).primary, primary)
+                pending.complete(blue)
+            }
+            compose.runOnIdle {
+                assertEquals(dynamicColorScheme(blue).primary, primary)
+                url.value = "failed"
+            }
+            compose.runOnIdle {
+                assertEquals(dynamicColorScheme(blue).primary, primary)
+                failed.completeExceptionally(IllegalStateException("Decode failed"))
+            }
+            compose.runOnIdle {
+                assertEquals(Accent, primary)
+                url.value = "cached-red"
+            }
+            compose.runOnIdle {
+                assertEquals(dynamicColorScheme(red).primary, primary)
+                url.value = "empty"
+            }
+            compose.runOnIdle {
+                assertEquals(dynamicColorScheme(red).primary, primary)
+                empty.complete(null)
+            }
+            compose.runOnIdle {
+                assertEquals(Accent, primary)
+                url.value = "cached-red"
+            }
+            compose.runOnIdle {
+                assertEquals(dynamicColorScheme(red).primary, primary)
+                url.value = null
+            }
+            compose.runOnIdle { assertEquals(Accent, primary) }
+        } finally {
+            ArtworkSeedCache.clear()
+        }
+    }
 
     @Test
     fun dynamicScopeAnimatesBothThemesWithoutChangingItsStaticSibling() {

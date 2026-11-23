@@ -26,29 +26,39 @@ object ArtworkSeedCache {
 @Composable
 fun rememberArtworkSeed(imageUrl: String?): Int? {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var seed by remember(imageUrl) { mutableStateOf(imageUrl?.let(ArtworkSeedCache::get)) }
+    return rememberArtworkSeed(imageUrl) { url ->
+        val request = ImageRequest.Builder(context)
+            .data(url)
+            .size(96)
+            .allowHardware(false)
+            .build()
+        val bitmap = (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
+            ?: return@rememberArtworkSeed null
+        withContext(Dispatchers.Default) {
+            val pixels = IntArray(bitmap.width * bitmap.height)
+            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            extractSeed(pixels)
+        }
+    }
+}
+
+@Composable
+internal fun rememberArtworkSeed(imageUrl: String?, loadSeed: suspend (String) -> Int?): Int? {
+    var seed by remember { mutableStateOf(imageUrl?.let(ArtworkSeedCache::get)) }
     LaunchedEffect(imageUrl) {
-        if (imageUrl == null || seed != null) return@LaunchedEffect
-        try {
-            val request = ImageRequest.Builder(context)
-                .data(imageUrl)
-                .size(96)
-                .allowHardware(false)
-                .build()
-            val bitmap = (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
-                ?: return@LaunchedEffect
-            val extracted = withContext(Dispatchers.Default) {
-                val pixels = IntArray(bitmap.width * bitmap.height)
-                bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-                extractSeed(pixels)
+        if (imageUrl == null) {
+            seed = null
+            return@LaunchedEffect
+        }
+        seed = ArtworkSeedCache.get(imageUrl) ?: try {
+            loadSeed(imageUrl)?.also {
+                ArtworkSeedCache.put(imageUrl, it)
             }
-            ArtworkSeedCache.put(imageUrl, extracted)
-            seed = extracted
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            seed = null
+            null
         }
     }
-    return seed
+    return if (imageUrl == null) null else seed
 }

@@ -1,8 +1,11 @@
 package com.hans.aura.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import com.materialkolor.hct.Hct
+import com.materialkolor.scheme.SchemeTonalSpot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,7 +29,7 @@ class DynamicColorTest {
     }
 
     @Test
-    fun schemesMaintainTextContrastAcrossSeedGrid() {
+    fun tonalSpotSchemesMaintainTextContrastAcrossSeedGrid() {
         val seeds = buildList {
             addAll(listOf(0xFFFFFFFE.toInt(), 0xFFFFFF00.toInt(), 0xFF000000.toInt(), AuraSeedArgb))
             for (r in 0..255 step 51) {
@@ -51,6 +54,27 @@ class DynamicColorTest {
             for ((background, foreground) in pairs) {
                 assertTrue("Seed $seed: $background / $foreground", contrast(background, foreground) >= 4.5f)
             }
+        }
+    }
+
+    @Test
+    fun tonalSpotUsesItsRestrainedPrimaryPalette() {
+        for (seed in listOf(0xFFDD2222.toInt(), 0xFFE6CDE4.toInt(), 0xFFFFFF00.toInt())) {
+            val tonalSpot = SchemeTonalSpot(Hct.fromInt(seed), isDark = true, contrastLevel = 0.0)
+            val scheme = dynamicColorScheme(seed)
+            assertEquals(tonalSpot.primaryPalette.tone(80), scheme.primary.toArgb())
+            assertEquals(tonalSpot.primaryPalette.tone(30), scheme.primaryContainer.toArgb())
+            assertTrue(Hct.fromInt(scheme.primary.toArgb()).chroma <= 40.0)
+        }
+    }
+
+    @Test
+    fun artworkWashCompositesThirtyPercentContainerOverSurface() {
+        for (seed in listOf(0xFFDD2222.toInt(), 0xFFE6CDE4.toInt(), AuraSeedArgb)) {
+            val scheme = dynamicColorScheme(seed).toTvColorScheme()
+            assertEquals(scheme.primaryContainer.copy(alpha = 0.30f).compositeOver(scheme.surface), scheme.artworkWash)
+            assertEquals(1f, scheme.artworkWash.alpha)
+            assertTrue(contrast(scheme.artworkWash, scheme.onSurface) >= 4.5f)
         }
     }
 

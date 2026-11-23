@@ -67,6 +67,7 @@ suspend fun FocusRequester.requestFocusOnFrame(maxFrames: Int = 8): Boolean {
  *  the now-playing bar hides so overlays sit on top and keep focus. */
 object OverlayVisibility {
     var dialogOpen by mutableStateOf(false)
+    var dialogScrim by mutableStateOf(com.hans.aura.ui.theme.AuraColors.DialogScrim)
 }
 
 /** Tracks which item last held focus in a screen so BACK can restore it exactly. */

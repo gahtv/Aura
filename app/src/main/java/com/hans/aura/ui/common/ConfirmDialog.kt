@@ -61,6 +61,7 @@ fun ConfirmDialog(
 
     // The now-playing bar and top bar gate their render on this flag.
     DisposableEffect(Unit) {
+        OverlayVisibility.dialogScrim = AuraColors.DialogScrim
         OverlayVisibility.dialogOpen = true
         onDispose { OverlayVisibility.dialogOpen = false }
     }

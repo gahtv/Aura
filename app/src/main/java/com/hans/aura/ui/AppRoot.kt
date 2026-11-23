@@ -9,7 +9,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -185,6 +187,7 @@ fun AppRoot() {
 
     FocusHandoffHost(Modifier.fillMaxSize().background(Canvas)) {
         val showRail = nav.top != Screen.NowPlaying && !OverlayVisibility.dialogOpen
+        fun destinationInset(screen: Screen) = if (screen == Screen.NowPlaying) 0.dp else collapsedRailWidth
         NavigationRailLayout(
             showRail = showRail,
             insetContent = false,
@@ -226,7 +229,7 @@ fun AppRoot() {
                             LocalArtworkSource provides artworkSource,
                             LocalArtworkCorners provides artworkCorners
                         ) {
-                            Box(Modifier.fillMaxSize().padding(start = if (screen == Screen.NowPlaying) 0.dp else collapsedRailWidth)) {
+                            Box(Modifier.fillMaxSize().padding(start = destinationInset(screen))) {
                                 DestinationFocusGate(active) {
                                     DestinationHost(
                                         app = app,
@@ -246,6 +249,12 @@ fun AppRoot() {
                     }
                 }
             }
+        }
+        if (OverlayVisibility.dialogOpen) {
+            Box(
+                Modifier.width(destinationInset(nav.top)).fillMaxHeight()
+                    .background(OverlayVisibility.dialogScrim)
+            )
         }
         // Long-press context menus + their playlist picker, always on top.
         ContextMenuHosts(app)

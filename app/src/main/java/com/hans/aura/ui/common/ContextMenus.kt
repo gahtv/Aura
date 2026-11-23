@@ -248,7 +248,9 @@ object ContextMenus {
     ) {
         scope.launch {
             runCatching {
-                app.container.media.movePlaylistItem(move.playlistId, move.itemId, newIndex)
+                val serverIndex = SourceQueries.playlistMoveIndex(move.playlistId, newIndex)
+                    ?: error("Playlist row no longer exists")
+                app.container.media.movePlaylistItem(move.playlistId, move.itemId, serverIndex)
             }.onSuccess {
                 android.util.Log.d(
                     "AURA_QUEUE",

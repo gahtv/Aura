@@ -164,7 +164,7 @@ private fun NavigationRail(
     val focusManager = LocalFocusManager.current
     val expansion by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
-        animationSpec = AuraMotion.spatialDefault,
+        animationSpec = AuraMotion.scheme.defaultSpatialSpec(),
         label = "Navigation rail"
     )
     val progress = expansion.coerceIn(0f, 1f)

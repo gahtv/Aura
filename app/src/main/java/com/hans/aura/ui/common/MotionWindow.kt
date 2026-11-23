@@ -1,5 +1,6 @@
 package com.hans.aura.ui.common
 
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.grid.LazyGridLayoutInfo
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
@@ -10,13 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
@@ -77,34 +71,13 @@ fun gridMotionWindow(
     return (from..minOf(until - 1, lastItem)).toSet()
 }
 
-/**
- * Tracks whether one shelf row is inside the window, for surfaces that are a
- * plain scrolling `Column` of shelves (Home) and therefore have no lazy
- * layoutInfo to read.
- *
- * Attach [modifier] to the shelf and pass [visible] as its `animate` flag.
- * [lookahead] is the slack below/above the viewport that counts as "close
- * enough to warm up" — roughly two shelf rows.
- */
-@Composable
-fun rememberOnScreen(lookahead: Dp = 260.dp): OnScreen {
-    var visible by remember { mutableStateOf(false) }
-    val view = LocalView.current
-    val lookaheadPx = with(LocalDensity.current) { lookahead.toPx() }
-    val modifier = remember(view, lookaheadPx) {
-        Modifier.onGloballyPositioned { coords ->
-            val top = coords.positionInWindow().y
-            val bottom = top + coords.size.height
-            val height = view.height.toFloat()
-            val now = height > 0f && top < height + lookaheadPx && bottom > -lookaheadPx
-            // Guarded: onGloballyPositioned fires on every placement (i.e. every
-            // scrolled pixel), and an unguarded write would recompose the shelf
-            // on each of them.
-            if (now != visible) visible = now
-        }
-    }
-    return OnScreen(modifier, visible)
+/** Visible list items plus nearby items on either side, clamped to the list. */
+fun listMotionWindow(info: LazyListLayoutInfo, lookaheadItems: Int = 2): Set<Int> {
+    if (info.visibleItemsInfo.isEmpty() || info.totalItemsCount <= 0) return emptySet()
+    val lookahead = lookaheadItems.coerceAtLeast(0)
+    val first = info.visibleItemsInfo.minOf { it.index }
+    val last = info.visibleItemsInfo.maxOf { it.index }
+    val from = (first.toLong() - lookahead).coerceAtLeast(0).toInt()
+    val through = (last.toLong() + lookahead).coerceAtMost((info.totalItemsCount - 1).toLong()).toInt()
+    return (from..through).toSet()
 }
-
-/** Result of [rememberOnScreen]: the modifier to attach and the current flag. */
-class OnScreen internal constructor(val modifier: Modifier, val visible: Boolean)

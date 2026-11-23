@@ -32,9 +32,18 @@ object HomeChannelPublisher {
             val distinct = items.distinctBy { it.id }.take(12)
             distinct.forEachIndexed { idx, item ->
                 val values = buildProgramValues(channelId, item, serverUrl, weight = distinct.size - idx)
-                resolver.insert(PROGRAM_URI, values)
+                checkNotNull(resolver.insert(PROGRAM_URI, values))
             }
             Log.i(TAG, "published ${distinct.size} programs to channelId=$channelId")
+            if (Prefs.tvBrowsableRequestedId != channelId) {
+                Prefs.tvBrowsableRequestedId = channelId
+                runCatching {
+                    TvContract.requestChannelBrowsable(context.applicationContext, channelId)
+                    Log.i(TAG, "requested browsability for channelId=$channelId")
+                }.onFailure { e ->
+                    Log.w(TAG, "channel browsability request failed for channelId=$channelId: ${e.message}")
+                }
+            }
         }.onFailure { e ->
             Log.d(TAG, "channel publish skipped: ${e.message}")
         }

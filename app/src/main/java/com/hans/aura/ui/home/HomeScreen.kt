@@ -148,55 +148,18 @@ fun HomeScreen(
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val focusKeeper = remember { FocusKeeper() }
     var focusedCardId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    RestoreFocusOnBack(focusTick, contentFocus, focusedCardId, focusKeeper,
+        ready = (quickAccessItems.isNotEmpty() || itemsById.values.any { AtmosFilter.keep(it) }) &&
+            (focusedCardId == null ||
+                itemsById[focusedCardId?.removePrefix("qa:")]?.let { AtmosFilter.keep(it) } == true ||
+                !state.loading))
     val listState = rememberLazyListState()
     val motionWindow by remember(listState) {
         derivedStateOf { listMotionWindow(listState.layoutInfo) }
     }
-    var focusedShelfKey by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    var restorePrepared by remember(focusTick) { mutableStateOf(false) }
-    val shelfItems = mapOf(
-        "quickAccess" to quickAccessItems,
-        "shelf_recent_played" to state.recentlyPlayed.orEmpty(),
-        "shelf_recent_artists" to state.recentArtists.orEmpty(),
-        "shelf_recent_albums" to state.recentAlbums.orEmpty(),
-        "shelf_atmos" to state.atmosAlbums.orEmpty(),
-        "shelf_artists" to state.artists.orEmpty(),
-        "shelf_playlists" to state.playlists.orEmpty()
-    )
-    val savedId = focusedCardId?.removePrefix("qa:")
-    val savedShelf = focusedShelfKey ?: shelfItems.entries.firstOrNull { (_, items) ->
-        items.any { it.id == savedId }
-    }?.key
-    val savedCardAvailable = shelfItems[savedShelf].orEmpty().any {
-        it.id == savedId && AtmosFilter.keep(it)
-    }
-    val rowKeys = buildList {
-        if (!state.loading && state.error != null) add("partialError")
-        if (activePreview != null) add("hero")
-        if (quickAccessItems.isNotEmpty()) add("quickAccess")
-        if (!state.recentlyPlayed.isNullOrEmpty()) add("shelf_recent_played")
-        if (!state.recentArtists.isNullOrEmpty()) add("shelf_recent_artists")
-        addAll(listOf("shelf_recent_albums", "shelf_atmos", "shelf_artists"))
-        if (!state.playlists.isNullOrEmpty()) add("shelf_playlists")
-        add("bottomSpacer")
-    }
-    val restoreRow = rowKeys.indexOf(savedShelf)
-    LaunchedEffect(focusTick, restoreRow, savedCardAvailable) {
-        if (focusTick > 0 && !restorePrepared && savedCardAvailable && restoreRow >= 0) {
-            listState.scrollToItem(restoreRow)
-            if (savedShelf == "quickAccess") restorePrepared = true
-        }
-    }
-    fun restoreItemFor(shelf: String): String? = savedId.takeIf {
-        focusTick > 0 && !restorePrepared && savedCardAvailable && savedShelf == shelf
-    }
-    RestoreFocusOnBack(focusTick, contentFocus, focusedCardId, focusKeeper,
-        ready = (quickAccessItems.isNotEmpty() || itemsById.values.any { AtmosFilter.keep(it) }) &&
-            (restorePrepared || ((focusedCardId == null || !savedCardAvailable) && !state.loading)))
 
-    fun onItemFocused(id: String, shelf: String) {
+    fun onItemFocused(id: String) {
         focusedCardId = id
-        focusedShelfKey = shelf
         itemsById[id.removePrefix("qa:")]?.let { previewItem = it }
     }
 
@@ -258,7 +221,7 @@ fun HomeScreen(
                         serverUrl = serverUrl,
                         atmosAlbumIds = atmosAlbumIds,
                         focusKeeper = focusKeeper,
-                        onFocused = { onItemFocused(it, "quickAccess") },
+                        onFocused = ::onItemFocused,
                         onOpen = { item -> openItem(item, listOf(item), 0) },
                         onLongPress = { item ->
                             if (item.type == "Audio") trackMenu(item)
@@ -279,9 +242,7 @@ fun HomeScreen(
                         showLoading = state.loading,
                         serverUrl = serverUrl,
                         focusKeeper = focusKeeper,
-                        onFocused = { onItemFocused(it, "shelf_recent_played") },
-                        restoreItemId = restoreItemFor("shelf_recent_played"),
-                        onRestoreReady = { restorePrepared = true },
+                        onFocused = ::onItemFocused,
                         onLongPress = { trackMenu(it) },
                         onOpen = { item, idx ->
                             onPlayTrack(item, state.recentlyPlayed ?: listOf(item), idx)
@@ -298,9 +259,7 @@ fun HomeScreen(
                         showLoading = state.loading,
                         serverUrl = serverUrl,
                         focusKeeper = focusKeeper,
-                        onFocused = { onItemFocused(it, "shelf_recent_artists") },
-                        restoreItemId = restoreItemFor("shelf_recent_artists"),
-                        onRestoreReady = { restorePrepared = true },
+                        onFocused = ::onItemFocused,
                         onOpen = { item, _ -> onOpenArtist(item) }
                     )
                 }
@@ -313,9 +272,7 @@ fun HomeScreen(
                     showLoading = state.loading,
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
-                    onFocused = { onItemFocused(it, "shelf_recent_albums") },
-                    restoreItemId = restoreItemFor("shelf_recent_albums"),
-                    onRestoreReady = { restorePrepared = true },
+                    onFocused = ::onItemFocused,
                     onLongPress = { albumMenu(it) },
                     onOpen = { item, _ -> onOpenCollection(item) }
                 )
@@ -328,9 +285,7 @@ fun HomeScreen(
                     showLoading = state.loading,
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
-                    onFocused = { onItemFocused(it, "shelf_atmos") },
-                    restoreItemId = restoreItemFor("shelf_atmos"),
-                    onRestoreReady = { restorePrepared = true },
+                    onFocused = ::onItemFocused,
                     badgeFor = { "ATMOS" },
                     onLongPress = { albumMenu(it) },
                     onOpen = { item, _ -> onOpenCollection(item) }
@@ -344,9 +299,7 @@ fun HomeScreen(
                     showLoading = state.loading,
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
-                    onFocused = { onItemFocused(it, "shelf_artists") },
-                    restoreItemId = restoreItemFor("shelf_artists"),
-                    onRestoreReady = { restorePrepared = true },
+                    onFocused = ::onItemFocused,
                     onOpen = { item, _ -> onOpenArtist(item) }
                 )
             }
@@ -359,9 +312,7 @@ fun HomeScreen(
                         showLoading = state.loading,
                         serverUrl = serverUrl,
                         focusKeeper = focusKeeper,
-                        onFocused = { onItemFocused(it, "shelf_playlists") },
-                        restoreItemId = restoreItemFor("shelf_playlists"),
-                        onRestoreReady = { restorePrepared = true },
+                        onFocused = ::onItemFocused,
                         onLongPress = { albumMenu(it) },
                         onOpen = { item, _ -> onOpenCollection(item) }
                     )
@@ -640,8 +591,6 @@ private fun MotionShelf(
     focusKeeper: FocusKeeper,
     onFocused: (String) -> Unit,
     onOpen: (JellyfinItem, Int) -> Unit,
-    restoreItemId: String? = null,
-    onRestoreReady: () -> Unit = {},
     badgeFor: ((JellyfinItem) -> String?)? = null,
     onLongPress: ((JellyfinItem) -> Unit)? = null
 ) {
@@ -655,8 +604,6 @@ private fun MotionShelf(
         onOpen = onOpen,
         badgeFor = badgeFor,
         onLongPress = onLongPress,
-        animate = animate,
-        restoreItemId = restoreItemId,
-        onRestoreReady = onRestoreReady
+        animate = animate
     )
 }

@@ -3,6 +3,7 @@ package com.hans.aura.data
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.encodeToString
 
 /**
  * Knows which albums and tracks contain an E-AC-3 JOC (Dolby Atmos) stream.
@@ -25,6 +26,15 @@ object AtmosCatalog {
 
     private val cache = ConcurrentHashMap<String, Catalog>()
     private val scanMutex = Mutex()
+    private var disk: CacheDisk? = null
+    @Volatile private var generation = 0L
+
+    @Synchronized
+    fun install(disk: CacheDisk?) {
+        this.disk = disk
+        generation++
+        cache.clear()
+    }
 
     suspend fun catalog(api: JellyfinApi, userId: String): Catalog {
         val key = userId + LibraryFilter.cacheSuffix()
@@ -36,6 +46,32 @@ object AtmosCatalog {
             cache[key]?.let {
                 AtmosFilter.adopt(it)
                 return@withLock it
+            }
+            val version = generation
+            val storage = disk
+            val persisted = storage?.read {
+                val row = atmos(key) ?: return@read null
+                if (System.currentTimeMillis() - row.savedAtMs >= 24L * 60 * 60 * 1000) {
+                    deleteAtmos(key)
+                    return@read null
+                }
+                try {
+                    Catalog(jellyfinJson.decodeFromString<Set<String>>(row.albumIds),
+                        jellyfinJson.decodeFromString<Set<String>>(row.trackIds))
+                } catch (_: IllegalArgumentException) {
+                    deleteAtmos(key)
+                    null
+                }
+            }
+            if (persisted != null) {
+                val adopted = synchronized(this) {
+                    if (version == generation) {
+                        cache[key] = persisted
+                        AtmosFilter.adopt(persisted)
+                        true
+                    } else false
+                }
+                if (adopted) return@withLock persisted
             }
             val atmosAlbums = HashSet<String>()
             val atmosTracks = HashSet<String>()
@@ -81,8 +117,16 @@ object AtmosCatalog {
                 scan(null)
             }
             val result = Catalog(atmosAlbums.toSet(), atmosTracks.toSet())
-            cache[key] = result
-            AtmosFilter.adopt(result)
+            synchronized(this) {
+                if (version == generation) {
+                    cache[key] = result
+                    AtmosFilter.adopt(result)
+                    storage?.write {
+                        putAtmos(CachedAtmosCatalog(key, System.currentTimeMillis(),
+                            jellyfinJson.encodeToString(result.albumIds), jellyfinJson.encodeToString(result.trackIds)))
+                    }
+                }
+            }
             result
         }
     }
@@ -92,8 +136,11 @@ object AtmosCatalog {
         catalog(api, userId).albumIds
 
     val size: Int get() = cache.size
+    @Synchronized
     fun clear() {
+        generation++
         cache.clear()
+        disk?.write { clearAtmos() }
         AtmosFilter.adopt(Catalog())
     }
 }

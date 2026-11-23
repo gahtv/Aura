@@ -45,7 +45,7 @@ object AtmosBrowse {
         favoritesOnly: Boolean
     ): List<JellyfinItem> {
         val key = cacheKey(type, userId, sortBy, desc, favoritesOnly)
-        LibraryCache.get(key)?.let { if (it.isNotEmpty()) return it }
+        LibraryCache.get(key)?.let { return it }
         val fetched = mutableListOf<JellyfinItem>()
         for (chunk in ids.toList().chunked(CHUNK)) {
             runCatching {

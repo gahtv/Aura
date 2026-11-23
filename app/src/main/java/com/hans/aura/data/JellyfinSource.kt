@@ -111,7 +111,7 @@ class JellyfinSource(
 
     // ---- Browse ------------------------------------------------------------
 
-    override fun cached(prefix: String): List<JellyfinItem>? = media.cached(prefix)
+    override suspend fun cached(prefix: String): List<JellyfinItem>? = media.cached(prefix)
 
     override fun cache(prefix: String, items: List<JellyfinItem>) = media.cache(prefix, items)
 

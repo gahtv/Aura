@@ -115,20 +115,24 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
     private fun load() {
         loadJob?.cancel()
         val uid = userId
-        // Session cache first: a fully cached Home does no network at all.
-        val history = MusicSources.current?.hasPlayHistory == true
-        _state.value = HomeUiState(
-            historyShelves = history,
-            recentlyPlayed = if (history) LibraryCache.get("home_recent:$uid") else null,
-            recentArtists = if (history) LibraryCache.get("home_recent_artists:$uid") else null,
-            recentAlbums = LibraryCache.get("home_new:$uid"),
-            atmosAlbums = LibraryCache.get("home_atmos:$uid"),
-            artists = LibraryCache.get("home_artists:$uid"),
-            playlists = LibraryCache.get("home_playlists:$uid")
-        )
-        if (_state.value.fullyCached) return
         _state.update { it.copy(loading = true) }
         loadJob = viewModelScope.launch {
+            // Session cache first: a fully cached Home does no network at all.
+            val history = MusicSources.current?.hasPlayHistory == true
+            _state.value = HomeUiState(
+                loading = true,
+                historyShelves = history,
+                recentlyPlayed = if (history) LibraryCache.get("home_recent:$uid") else null,
+                recentArtists = if (history) LibraryCache.get("home_recent_artists:$uid") else null,
+                recentAlbums = LibraryCache.get("home_new:$uid"),
+                atmosAlbums = LibraryCache.get("home_atmos:$uid"),
+                artists = LibraryCache.get("home_artists:$uid"),
+                playlists = LibraryCache.get("home_playlists:$uid")
+            )
+            if (_state.value.fullyCached) {
+                _state.update { it.copy(loading = false) }
+                return@launch
+            }
             try {
                 withContext(Dispatchers.IO) { fetchMissing(uid) }
                 val channelItems = (_state.value.atmosAlbums.orEmpty() + _state.value.recentAlbums.orEmpty())

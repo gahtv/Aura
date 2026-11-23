@@ -91,7 +91,7 @@ class MediaRepository(
      * [LibraryCache] / [PagedLibrary] append the library-selection suffix
      * themselves, so callers pass the plain, stable key ("home_recent:…").
      */
-    fun cached(prefix: String): List<JellyfinItem>? = LibraryCache.get(prefix)
+    suspend fun cached(prefix: String): List<JellyfinItem>? = LibraryCache.get(prefix)
 
     /** Stores a browse result under [prefix] (TTL + selection scoped). */
     fun cache(prefix: String, items: List<JellyfinItem>) {

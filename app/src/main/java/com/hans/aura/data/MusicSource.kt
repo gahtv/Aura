@@ -166,7 +166,7 @@ interface MusicSource {
     // ---- Browse (mirrors MediaRepository, main-safe there) ------------------
 
     /** Last cached copy of [prefix] (null when absent or expired). */
-    fun cached(prefix: String): List<JellyfinItem>?
+    suspend fun cached(prefix: String): List<JellyfinItem>?
 
     /** Stores a browse result under [prefix]. */
     fun cache(prefix: String, items: List<JellyfinItem>)

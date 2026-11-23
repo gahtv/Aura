@@ -8,10 +8,15 @@ val envProps = Properties().apply {
 }
 
 plugins {
+    alias(libs.plugins.ksp)
     alias(libs.plugins.android.application)
     alias(libs.plugins.androidx.baselineprofile)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 android {
@@ -88,6 +93,9 @@ baselineProfile {
 }
 
 dependencies {
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
     baselineProfile(project(":baselineprofile"))
     implementation(libs.androidx.profileinstaller)
 

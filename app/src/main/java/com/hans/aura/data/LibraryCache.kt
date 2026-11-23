@@ -2,6 +2,7 @@ package com.hans.aura.data
 
 import android.content.Context
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.serialization.encodeToString
 
 /**
  * Library query cache with a 24h TTL, keyed by stable request keys.
@@ -21,6 +22,43 @@ object LibraryCache {
 
     private data class Entry(val savedAtMs: Long, val items: List<JellyfinItem>)
     private val store = ConcurrentHashMap<String, Entry>()
+    private var disk: CacheDisk? = null
+    @Volatile private var generation = 0L
+
+    @Synchronized
+    fun install(disk: CacheDisk?) {
+        this.disk = disk
+        generation++
+        store.clear()
+    }
+
+    suspend fun get(key: String): List<JellyfinItem>? {
+        peek(key)?.let { return it }
+        val fullKey = k(key)
+        val version = generation
+        val storage = disk ?: return null
+        val entry = storage.read {
+            val row = list(fullKey) ?: return@read null
+            if (System.currentTimeMillis() - row.savedAtMs >= TTL_MS) {
+                deleteList(fullKey)
+                return@read null
+            }
+            try {
+                Entry(row.savedAtMs, jellyfinJson.decodeFromString<List<JellyfinItem>>(row.items))
+            } catch (_: IllegalArgumentException) {
+                deleteList(fullKey)
+                null
+            }
+        } ?: return null
+        return synchronized(this) {
+            if (version != generation) null else {
+                val current = store[fullKey]?.takeIf { System.currentTimeMillis() - it.savedAtMs < TTL_MS }
+                val result = current ?: entry
+                store[fullKey] = result
+                result.items
+            }
+        }
+    }
 
     private var prefs: android.content.SharedPreferences? = null
     private var lastPersistAtMs = 0L
@@ -43,15 +81,26 @@ object LibraryCache {
         lastManualRefreshAtMs = p.getLong(KEY_MANUAL, 0L)
     }
 
-    fun get(key: String): List<JellyfinItem>? =
+    /** Non-blocking memory-only lookup for callers that cannot suspend. */
+    fun peek(key: String): List<JellyfinItem>? =
         store[k(key)]?.takeIf { System.currentTimeMillis() - it.savedAtMs < TTL_MS }?.items
 
+    @Synchronized
     fun put(key: String, items: List<JellyfinItem>) {
-        store[k(key)] = Entry(System.currentTimeMillis(), items)
+        val fullKey = k(key)
+        val entry = Entry(System.currentTimeMillis(), items)
+        store[fullKey] = entry
+        disk?.write { putList(CachedLibraryList(fullKey, entry.savedAtMs, jellyfinJson.encodeToString(items))) }
         markLoaded()
     }
 
-    fun evict(key: String) { store.remove(k(key)) }
+    @Synchronized
+    fun evict(key: String) {
+        generation++
+        val fullKey = k(key)
+        store.remove(fullKey)
+        disk?.write { deleteList(fullKey) }
+    }
 
     internal fun tabKeyPrefix(kind: String, userId: String) = "lib_${kind.lowercase()}:$userId:"
 
@@ -59,8 +108,11 @@ object LibraryCache {
      *  Needed for mutations that touch a whole FAMILY of keys — a favourite
      *  toggle invalidates every sorted/paged Tracks list, and the sort+dir
      *  suffix means there is no single key to name. */
+    @Synchronized
     fun evictWhere(predicate: (String) -> Boolean) {
+        generation++
         store.keys.filter(predicate).forEach { store.remove(it) }
+        disk?.write { listKeys().filter(predicate).forEach { deleteList(it) } }
     }
 
     /**
@@ -75,7 +127,12 @@ object LibraryCache {
 
     /** Wipes cached lists but keeps the stamps: Settings should still be able to
      *  report when the previous batch of data was fetched. */
-    fun clear() = store.clear()
+    @Synchronized
+    fun clear() {
+        generation++
+        store.clear()
+        disk?.write { clearLists() }
+    }
 
     /** Fresh data arrived from the server. Persist at most every 30s — put() is
      *  called dozens of times per screen and each write is a disk edit. */

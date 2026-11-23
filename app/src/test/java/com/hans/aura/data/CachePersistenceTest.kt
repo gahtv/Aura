@@ -235,6 +235,34 @@ class CachePersistenceTest {
     }
 
     @Test
+    fun `playback invalidates persisted item data in every list but preserves session memory`() = runBlocking {
+        val played = Fixtures.item("played", playCount = 0)
+        val other = Fixtures.item("other", playCount = 3)
+        for (hidden in listOf(emptySet(), setOf("hidden"))) {
+            Prefs.hiddenLibraries = hidden
+            LibraryCache.put("col:album", listOf(played, other))
+            LibraryCache.put("lib_tracks:u:SortName:false", listOf(played))
+            LibraryCache.put("col:other", listOf(other))
+            LibraryCache.put("empty", emptyList())
+        }
+        PagedLibrary.put("tracks", listOf(played), 1)
+        retrofit2.Response.error<Unit>(503, okhttp3.ResponseBody.create(null, "failed"))
+            .invalidateHistoryOnSuccess(played.id)
+        assertEquals(8, disk.read { listKeys().size })
+        retrofit2.Response.success(Unit).invalidateHistoryOnSuccess(played.id)
+        assertEquals(listOf(played, other), LibraryCache.peek("col:album"))
+        assertEquals(listOf(played), PagedLibrary.get("tracks")?.items)
+        coldStart()
+        for (hidden in listOf(emptySet(), setOf("hidden"))) {
+            Prefs.hiddenLibraries = hidden
+            assertNull(LibraryCache.get("col:album"))
+            assertNull(LibraryCache.get("lib_tracks:u:SortName:false"))
+            assertEquals(listOf(other), LibraryCache.get("col:other"))
+            assertEquals(emptyList<JellyfinItem>(), LibraryCache.get("empty"))
+        }
+    }
+
+    @Test
     fun `progress report preserves memory and disk while stop evicts only disk history`() = runBlocking {
         MockWebServer().use { server ->
             val client = JellyfinClient(ApplicationProvider.getApplicationContext())
@@ -265,14 +293,15 @@ class CachePersistenceTest {
                 shadowOf(Looper.getMainLooper()).idle()
                 awaitReport("/Sessions/Playing")
                 LibraryCache.put("home_recent:u", items)
-                LibraryCache.put("home_new:u", items)
+                val unrelated = listOf(Fixtures.item("unrelated"))
+                LibraryCache.put("home_new:u", unrelated)
                 PagedLibrary.put("lib_tracks:u:PlayCount:true", items, 2)
                 val before = disk.read { listKeys().associateWith { list(it) } }
                 server.enqueue(MockResponse().setResponseCode(204))
                 shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(11))
                 awaitReport("/Sessions/Playing/Progress")
                 assertEquals(items, LibraryCache.peek("home_recent:u"))
-                assertEquals(items, LibraryCache.peek("home_new:u"))
+                assertEquals(unrelated, LibraryCache.peek("home_new:u"))
                 assertEquals(before, disk.read { listKeys().associateWith { list(it) } })
                 state = Player.STATE_IDLE
                 server.enqueue(MockResponse().setResponseCode(204))
@@ -282,7 +311,7 @@ class CachePersistenceTest {
                 assertEquals(items, PagedLibrary.get("lib_tracks:u:PlayCount:true")?.items)
                 coldStart()
                 assertNull(LibraryCache.get("home_recent:u"))
-                assertEquals(items, LibraryCache.get("home_new:u"))
+                assertEquals(unrelated, LibraryCache.get("home_new:u"))
             } finally {
                 reporter.stop()
                 client.auth.clearSession()

@@ -341,7 +341,7 @@ internal class PlaybackReporter(
                                             positionTicks = oldTicks,
                                             mediaSourceId = oldId
                                         )
-                                    ).invalidateHistoryOnSuccess()
+                                    ).invalidateHistoryOnSuccess(oldId)
                                 }.onFailure {
                                     AuraLog.w(AuraTag.REPORT, "stop failed: ${it.message}")
                                 }
@@ -367,7 +367,7 @@ internal class PlaybackReporter(
                                         repeatMode = repeatMode,
                                         playbackOrder = playbackOrder
                                     )
-                                ).invalidateHistoryOnSuccess()
+                                ).invalidateHistoryOnSuccess(id)
                             }.onFailure {
                                 AuraLog.w(AuraTag.REPORT, "playbackStart failed: ${it.message}")
                             }
@@ -424,7 +424,7 @@ internal class PlaybackReporter(
                                         positionTicks = ticks,
                                         mediaSourceId = oldId
                                     )
-                                ).invalidateHistoryOnSuccess()
+                                ).invalidateHistoryOnSuccess(oldId)
                             }.onFailure {
                                 AuraLog.w(AuraTag.REPORT, "stop failed: ${it.message}")
                             }

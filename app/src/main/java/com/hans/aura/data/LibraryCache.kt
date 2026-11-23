@@ -142,7 +142,7 @@ object LibraryCache {
     }
 
     @Synchronized
-    fun evictPlaybackHistoryFromDisk() {
+    fun evictPlaybackHistoryFromDisk(itemId: String? = null) {
         disk?.write {
             listKeys().filter { key ->
                 val plain = key.substringBefore('#')
@@ -150,7 +150,13 @@ object LibraryCache {
                     plain.startsWith("artist_top:") ||
                     plain.split(':').any { field ->
                         field.split(',').any { it.equals("PlayCount", true) || it.equals("DatePlayed", true) }
-                    }
+                    } || (itemId != null && try {
+                        list(key)?.let { row ->
+                            jellyfinJson.decodeFromString<List<JellyfinItem>>(row.items).any { it.id == itemId }
+                        } == true
+                    } catch (_: Exception) {
+                        true
+                    })
             }.forEach { deleteList(it) }
         }
     }
@@ -175,7 +181,7 @@ object LibraryCache {
     }
 }
 
-internal fun <T> Response<T>.invalidateHistoryOnSuccess(): Response<T> {
-    if (isSuccessful) LibraryCache.evictPlaybackHistoryFromDisk()
+internal fun <T> Response<T>.invalidateHistoryOnSuccess(itemId: String): Response<T> {
+    if (isSuccessful) LibraryCache.evictPlaybackHistoryFromDisk(itemId)
     return this
 }

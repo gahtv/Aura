@@ -263,8 +263,8 @@ class LibraryViewModel(
         _state.update { it.copy(loading = true) }
         val startIndex = if (replace) 0 else snapshot.items.size
         val limit = when {
-            refreshCachedPage -> snapshot.items.size + PAGE_SIZE
-            replaceLoadedRange || accumulatedPageMissing -> maxOf(PAGE_SIZE, snapshot.items.size)
+            refreshCachedPage || accumulatedPageMissing -> snapshot.items.size + PAGE_SIZE
+            replaceLoadedRange -> maxOf(PAGE_SIZE, snapshot.items.size)
             else -> PAGE_SIZE
         }
         runCatching {

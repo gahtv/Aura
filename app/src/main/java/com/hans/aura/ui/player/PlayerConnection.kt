@@ -1,6 +1,7 @@
 package com.hans.aura.ui.player
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -9,6 +10,7 @@ import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Session
 import com.hans.aura.playback.PlaybackService
 import com.hans.aura.player.controller.AutoplayPolicy
+import com.hans.aura.player.controller.PlaybackAnchor
 import com.hans.aura.player.controller.PlaybackController
 import com.hans.aura.player.controller.QueueItemLoader
 import com.hans.aura.player.controller.QueueRegistry
@@ -60,7 +62,7 @@ class PlayerConnection(
 
     private val resumePolicy = ResumePolicy()
 
-    private val playback = PlaybackController(context, scope)
+    private val playback = PlaybackController(context)
 
     private val autoplay = AutoplayPolicy(
         jellyfin = jellyfin,
@@ -94,7 +96,7 @@ class PlayerConnection(
 
     val current: StateFlow<JellyfinItem?> = _currentItem
     val isPlaying: StateFlow<Boolean> = _isPlaying
-    val positionMs: StateFlow<Long> = playback.positionMs
+    val clock: StateFlow<PlaybackAnchor> = playback.clock
     val durationMs: StateFlow<Long> = playback.durationMs
     val queue: StateFlow<List<JellyfinItem>> = _queue
     val queueIndex: StateFlow<Int> = _queueIndex
@@ -103,9 +105,8 @@ class PlayerConnection(
     val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled
     val repeatMode: StateFlow<Int> = _repeatMode
 
-    @androidx.annotation.MainThread
     internal fun currentPositionMs(): Long =
-        playback.controller.value?.currentPosition?.coerceAtLeast(0L) ?: positionMs.value
+        clock.value.positionAt(SystemClock.uptimeMillis())
 
     /** Milliseconds left on the sleep timer, null when no timer is running. */
     val sleepRemaining: StateFlow<Long?> = sleep.remaining
@@ -373,7 +374,7 @@ class PlayerConnection(
         val c = controller() ?: return@onMainThread
         val duration = c.duration
         if (duration <= 0) return@onMainThread
-        val position = c.currentPosition.coerceIn(0, duration)
+        val position = currentPositionMs().coerceIn(0, duration)
         c.seekTo(position + deltaMs.coerceIn(-position, duration - position))
     }
     fun skipToQueue(index: Int) { controller()?.seekTo(index, 0) }

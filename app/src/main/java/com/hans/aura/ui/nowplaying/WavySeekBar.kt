@@ -38,13 +38,13 @@ import kotlin.math.sin
 
 @Composable
 internal fun WavySeekBar(
-    progress: Float,
+    progress: () -> Float,
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
     onSeek: (Long) -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
-    val fraction = if (progress.isNaN()) 0f else progress.coerceIn(0f, 1f)
+    fun fraction() = progress().let { if (it.isNaN()) 0f else it.coerceIn(0f, 1f) }
     var focused by remember { mutableStateOf(false) }
     var phase by remember { mutableFloatStateOf(0f) }
     val wavePath = remember { Path() }
@@ -80,10 +80,11 @@ internal fun WavySeekBar(
             }
             .semantics {
                 contentDescription = "Playback position"
-                progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
+                progressBarRangeInfo = ProgressBarRangeInfo(fraction(), 0f..1f)
             }
             .focusable()
     ) {
+        val fraction = fraction()
         val stroke = AuraSizes.seekStroke.toPx()
         val radius = stroke / 2
         val start = radius

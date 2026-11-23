@@ -22,6 +22,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.toPath
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +52,7 @@ import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
 import com.hans.aura.ui.common.formatDuration
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.ui.player.rememberPlaybackPosition
 import com.hans.aura.ui.player.nextRepeatMode
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
@@ -91,9 +93,9 @@ internal fun LiveTransportBar(
         dimMode = dimMode,
         onToggleDimMode = onToggleDimMode,
         seekSection = {
-            val position by player.positionMs.collectAsState()
+            val position = rememberPlaybackPosition(player)
             val duration by player.durationMs.collectAsState()
-            SeekSection(position, duration, isPlaying, playPauseFocus, player::seekBy)
+            SeekSection({ position.value }, duration, isPlaying, playPauseFocus, player::seekBy)
         }
     )
 }
@@ -123,35 +125,39 @@ internal fun TransportBar(
         dimMode = dimMode,
         onToggleDimMode = onToggleDimMode,
         seekSection = {
-            SeekSection(position, duration, isPlaying, playPauseFocus, player::seekBy)
+            SeekSection({ position }, duration, isPlaying, playPauseFocus, player::seekBy)
         }
     )
 }
 
 @Composable
 private fun SeekSection(
-    position: Long,
+    position: () -> Long,
     duration: Long,
     isPlaying: Boolean,
     playPauseFocus: FocusRequester,
     onSeek: (Long) -> Unit
 ) {
     WavySeekBar(
-        progress = if (duration > 0) position.toFloat() / duration else 0f,
+        progress = { if (duration > 0) position().toFloat() / duration else 0f },
         isPlaying = isPlaying,
         modifier = Modifier.focusProperties { down = playPauseFocus },
         onSeek = onSeek
     )
     Spacer(Modifier.height(AuraSpacing.xs))
+    val elapsed by remember(position) { derivedStateOf { formatDuration(position()) } }
+    val remaining by remember(position, duration) {
+        derivedStateOf { "-${formatDuration((duration - position()).coerceAtLeast(0))}" }
+    }
     Row(Modifier.fillMaxWidth()) {
         androidx.tv.material3.Text(
-            formatDuration(position),
+            elapsed,
             color = TextSecondary,
             fontSize = AuraTypography.caption
         )
         Spacer(Modifier.weight(1f))
         androidx.tv.material3.Text(
-            "-${formatDuration((duration - position).coerceAtLeast(0))}",
+            remaining,
             color = TextSecondary, fontSize = AuraTypography.caption
         )
     }
@@ -195,7 +201,7 @@ private fun TransportBarContent(
             }
             Spacer(Modifier.width(AuraSpacing.md))
             TransportIconButton(R.drawable.ic_replay_10, "Back 10 seconds") {
-                player.seekTo((player.positionMs.value - 10_000).coerceAtLeast(0))
+                player.seekTo((player.currentPositionMs() - 10_000).coerceAtLeast(0))
             }
             Spacer(Modifier.width(AuraSpacing.md))
             // Big emphasized play/pause.
@@ -214,7 +220,7 @@ private fun TransportBarContent(
             Spacer(Modifier.width(AuraSpacing.md))
             TransportIconButton(R.drawable.ic_forward_10, "Forward 10 seconds") {
                 val dur = player.durationMs.value.coerceAtLeast(1)
-                player.seekTo((player.positionMs.value + 10_000).coerceIn(0, dur))
+                player.seekTo((player.currentPositionMs() + 10_000).coerceIn(0, dur))
             }
             Spacer(Modifier.width(AuraSpacing.md))
             TransportIconButton(R.drawable.ic_skip_next, "Next") {

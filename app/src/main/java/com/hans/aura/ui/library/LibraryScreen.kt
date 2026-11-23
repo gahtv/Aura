@@ -59,6 +59,7 @@ import com.hans.aura.ui.common.AuraLoadingIndicator
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.common.filterPillShape
+import com.hans.aura.ui.nav.Screen
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
@@ -83,16 +84,14 @@ internal fun LibraryScreen(
     focusTick: Int = 0,
     onOpenCollection: (JellyfinItem) -> Unit,
     onOpenArtist: (JellyfinItem) -> Unit,
-    // Genres live behind a pill INSIDE the Albums tab: a sixth top-bar tab does
-    // not fit 960dp next to five tabs, the pill and two icon buttons.
-    onOpenGenres: (() -> Unit)? = null,
-    onSwitchCategory: (com.hans.aura.ui.nav.Screen) -> Unit = {},
+    onSwitchCategory: (Screen) -> Unit = {},
+    likedOnly: Boolean = false,
     viewModel: LibraryViewModel = viewModel(
         // AppRoot's manual back-stack keeps LocalViewModelStoreOwner at the
         // Activity, so every tab needs its own key (and a new user needs a new
         // one or the previous session's pages would be served).
-        key = "library:$kind:${app.jellyfin.auth.session?.userId ?: "anon"}",
-        factory = viewModelFactory { initializer { LibraryViewModel(app, kind) } }
+        key = "library:${if (likedOnly) "Liked" else kind}:${app.jellyfin.auth.session?.userId ?: "anon"}",
+        factory = viewModelFactory { initializer { LibraryViewModel(app, kind, likedOnly) } }
     )
 ) {
     val session = app.jellyfin.auth.session ?: return
@@ -102,6 +101,7 @@ internal fun LibraryScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     LaunchedEffect(refreshKey) { viewModel.onRefreshKey(refreshKey) }
+    LaunchedEffect(viewModel) { viewModel.refreshLikedIfEvicted() }
 
     fun trackMenu(track: JellyfinItem, onRemove: (() -> Unit)? = null) =
         com.hans.aura.ui.common.ContextMenuHost.open(
@@ -147,8 +147,11 @@ internal fun LibraryScreen(
             viewModel.loadNextPage()
         }
     }
-    LaunchedEffect(nearListEnd, items.size) {
-        if (kind == "Tracks" && nearListEnd && state.initialized && items.isNotEmpty() && items.size < state.total) {
+    val canLoadLikedPage = !state.likedOnly || (!state.loading && state.error == null)
+    LaunchedEffect(nearListEnd, items.size, canLoadLikedPage) {
+        if (kind == "Tracks" && nearListEnd && canLoadLikedPage &&
+            state.initialized && items.isNotEmpty() && items.size < state.total
+        ) {
             viewModel.loadNextPage()
         }
     }
@@ -171,27 +174,34 @@ internal fun LibraryScreen(
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
 
     Column(Modifier.fillMaxSize()) {
-        // Unified Library category filter pills: Albums · Artists · Tracks · Playlists · Genres
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 32.dp, end = 32.dp, top = 6.dp, bottom = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val categories = listOf(
-                "Albums" to com.hans.aura.ui.nav.Screen.Albums,
-                "Artists" to com.hans.aura.ui.nav.Screen.Artists,
-                "Tracks" to com.hans.aura.ui.nav.Screen.Tracks,
-                "Playlists" to com.hans.aura.ui.nav.Screen.Playlists,
-                "Genres" to com.hans.aura.ui.nav.Screen.Genres
+        if (likedOnly) {
+            androidx.tv.material3.Text(
+                "Liked",
+                modifier = Modifier.padding(start = 32.dp, top = 24.dp, bottom = 8.dp),
+                style = androidx.tv.material3.MaterialTheme.typography.headlineLarge,
+                color = TextPrimary
             )
-            categories.forEach { (label, screen) ->
-                SortPill(
-                    label = label,
-                    selected = kind == label,
-                    onClick = { onSwitchCategory(screen) }
+        } else {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 32.dp, end = 32.dp, top = 24.dp, bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val categories = listOf(
+                    "Albums" to Screen.Albums,
+                    "Artists" to Screen.Artists,
+                    "Tracks" to Screen.Tracks,
+                    "Playlists" to Screen.Playlists
                 )
+                categories.forEach { (label, screen) ->
+                    SortPill(
+                        label = label,
+                        selected = kind == label,
+                        onClick = { onSwitchCategory(screen) }
+                    )
+                }
             }
         }
         // Sort pills: UP from the grid reaches them; the ACTIVE pill toggles
@@ -211,18 +221,6 @@ internal fun LibraryScreen(
                     onClick = { viewModel.toggleAtmos() }
                 )
                 Spacer(Modifier.width(12.dp))
-            }
-            // Liked pill lives INSIDE the Tracks sort row: the 960dp top bar
-            // cannot fit a sixth tab, and this reads as a filter, not a place.
-            if (kind == "Tracks") {
-                SortPill(
-                    label = "Liked",
-                    leadingIcon = if (state.likedOnly) com.hans.aura.R.drawable.ic_favorite_fill1
-                    else com.hans.aura.R.drawable.ic_favorite,
-                    selected = state.likedOnly,
-                    onClick = { viewModel.toggleLiked() }
-                )
-                Spacer(Modifier.width(18.dp))
             }
             sortModesFor(kind).forEach { mode ->
                 val active = mode == state.sort

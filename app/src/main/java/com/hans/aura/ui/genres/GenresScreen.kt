@@ -69,8 +69,7 @@ import com.hans.aura.ui.theme.AuraShapes
 import kotlinx.coroutines.launch
 
 /**
- * Music genres, reached from the Genres pill inside the Albums tab (not a sixth
- * top-bar tab — five tabs + pill + two icon buttons already fill 960dp).
+ * Music genres, reached directly from the navigation rail.
  *
  * The genre list comes from the library's own tracks: there is no
  * GET /MusicGenres collection endpoint in the 12.4.0 spec (only

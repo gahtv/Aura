@@ -5,7 +5,7 @@ import com.hans.aura.data.JellyfinItem
 /**
  * Every destination the app can show. Screens carry only their payload; all
  * per-screen metadata (saveable-state key, remote vocabulary, debug alias,
- * library kind, tab label) lives in [ScreenMeta] so no mapping is duplicated.
+ * library kind) lives in [ScreenMeta] so no mapping is duplicated.
  */
 internal sealed interface Screen {
     val meta: ScreenMeta
@@ -24,6 +24,10 @@ internal sealed interface Screen {
 
     data object Tracks : Screen {
         override val meta = ScreenMeta.TRACKS
+    }
+
+    data object Liked : Screen {
+        override val meta = ScreenMeta.LIKED
     }
 
     data object Playlists : Screen {
@@ -75,7 +79,6 @@ internal sealed interface Screen {
  *  - [routeName]    the route a remote may navigate TO (null = not addressable).
  *  - [debugAlias]   the name accepted by `--es aura_debug_screen` (null = none).
  *  - [libraryKind]  LibraryScreen kind when this screen lists a library.
- *  - [tabLabel]     top-bar label when this screen is a root tab.
  *  - [takesItem]    the screen wraps a JellyfinItem that must be resolved first.
  */
 internal enum class ScreenMeta(
@@ -84,19 +87,19 @@ internal enum class ScreenMeta(
     val routeName: String? = null,
     val debugAlias: String? = null,
     val libraryKind: String? = null,
-    val tabLabel: String? = null,
     val takesItem: Boolean = false
 ) {
-    HOME("home", "home", "home", "home", tabLabel = "Home"),
-    ARTISTS("artists", "artists", "artists", "artists", libraryKind = "Artists", tabLabel = "Artists"),
-    ALBUMS("albums", "albums", "albums", "albums", libraryKind = "Albums", tabLabel = "Albums"),
-    TRACKS("tracks", "tracks", "tracks", "tracks", libraryKind = "Tracks", tabLabel = "Tracks"),
-    PLAYLISTS("playlists", "playlists", "playlists", "playlists", libraryKind = "Playlists", tabLabel = "Playlists"),
+    HOME("home", "home", "home", "home"),
+    ARTISTS("artists", "artists", "artists", "artists", libraryKind = "Artists"),
+    ALBUMS("albums", "albums", "albums", "albums", libraryKind = "Albums"),
+    TRACKS("tracks", "tracks", "tracks", "tracks", libraryKind = "Tracks"),
+    LIKED("liked", "tracks", debugAlias = "liked", libraryKind = "Tracks"),
+    PLAYLISTS("playlists", "playlists", "playlists", "playlists", libraryKind = "Playlists"),
     SEARCH("search", "search", "search", "search"),
     SETTINGS("settings", "settings", "settings", "settings"),
     NOWPLAYING("nowplaying", "nowplaying", "nowplaying", "nowplaying"),
     QUEUE("queue", "queue", "queue", "queue"),
-    GENRES("genres", "albums"),
+    GENRES("genres", "albums", debugAlias = "genres"),
     GENRE("genre", "albums"),
     COLLECTION("col", "collection", "collection", takesItem = true),
     ARTIST("artist", "artist", "artist", takesItem = true);
@@ -108,26 +111,18 @@ internal object NavSpec {
     /** Screens with no payload, in one place so meta lookups stay data-driven. */
     private val simpleScreens: List<Screen> = listOf(
         Screen.Home, Screen.Artists, Screen.Albums, Screen.Tracks, Screen.Playlists,
-        Screen.Search, Screen.Settings, Screen.NowPlaying, Screen.Queue, Screen.Genres
-    )
-
-    /** Root tabs shown in the top bar (Search/Settings are icon buttons). */
-    val tabs: List<Screen> = listOf(
-        Screen.Home, Screen.Albums
+        Screen.Search, Screen.Settings, Screen.NowPlaying, Screen.Queue, Screen.Genres, Screen.Liked
     )
 
     fun isLibraryScreen(screen: Screen): Boolean =
         screen is Screen.Albums || screen is Screen.Artists ||
-            screen is Screen.Tracks || screen is Screen.Playlists ||
-            screen is Screen.Genres || screen is Screen.Genre
+            screen is Screen.Tracks || screen is Screen.Playlists
 
     /** Remote routes that replace the stack instead of pushing onto it. */
     private val rootRoutes = setOf(
         ScreenMeta.HOME, ScreenMeta.ARTISTS, ScreenMeta.ALBUMS, ScreenMeta.TRACKS,
         ScreenMeta.PLAYLISTS, ScreenMeta.SEARCH, ScreenMeta.SETTINGS
     )
-
-    fun tabLabel(screen: Screen): String = screen.meta.tabLabel ?: screen.meta.keyPrefix
 
     /**
      * Saveable-state key. Format is byte-identical to the pre-refactor keys:

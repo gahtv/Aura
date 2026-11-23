@@ -55,14 +55,8 @@ fun sortModesFor(kind: String): List<SortMode> = when (kind) {
 /** Session-scoped: the chosen sort survives navigating away and back. */
 private object LibrarySortPrefs {
     private val byKind = mutableMapOf<String, SortMode>()
-    fun get(kind: String): SortMode = byKind[kind] ?: sortModesFor(kind).first()
+    fun get(key: String, kind: String): SortMode = byKind[key] ?: sortModesFor(kind).first()
     fun set(kind: String, mode: SortMode) { byKind[kind] = mode }
-}
-
-/** Session-scoped "Liked" filter for the Tracks tab (a pill, not a 6th tab —
- *  the 960dp top bar has no room for another tab). */
-private object LibraryLikedPrefs {
-    var on: Boolean = false
 }
 
 /**
@@ -108,19 +102,21 @@ data class LibraryUiState(
 
 class LibraryViewModel(
     private val app: AuraApp,
-    private val kind: String
+    private val kind: String,
+    likedOnly: Boolean = false
 ) : ViewModel() {
 
+    private val preferenceKey = if (likedOnly) "Liked" else kind
     private val capable = kind == "Albums" || kind == "Tracks"
-    private val initialSort = LibrarySortPrefs.get(kind)
+    private val initialSort = LibrarySortPrefs.get(preferenceKey, kind)
 
     private val _state = MutableStateFlow(
         LibraryUiState(
             kind = kind,
             sort = initialSort,
             desc = initialSort.defaultDesc,
-            likedOnly = kind == "Tracks" && LibraryLikedPrefs.on,
-            atmosView = capable && LibraryAtmosPrefs.get(kind)
+            likedOnly = likedOnly,
+            atmosView = capable && LibraryAtmosPrefs.get(preferenceKey)
         )
     )
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
@@ -159,6 +155,13 @@ class LibraryViewModel(
 
     fun retry() = reload()
 
+    fun refreshLikedIfEvicted() {
+        val current = _state.value
+        if (current.likedOnly && current.initialized && !current.loading &&
+            current.error == null && PagedLibrary.get(current.cacheKey) == null
+        ) reload()
+    }
+
     fun loadNextPage() {
         val snapshot = _state.value
         if (snapshot.loading || snapshot.items.size >= snapshot.total) return
@@ -174,7 +177,7 @@ class LibraryViewModel(
         if (mode == current.sort && mode != SortMode.RANDOM) {
             _state.update { it.copy(letter = null, desc = !it.desc) }
         } else if (mode != current.sort) {
-            LibrarySortPrefs.set(kind, mode)
+            LibrarySortPrefs.set(preferenceKey, mode)
             _state.update { it.copy(letter = null, sort = mode, desc = mode.defaultDesc) }
         } else {
             _state.update { it.copy(letter = null) }
@@ -182,20 +185,11 @@ class LibraryViewModel(
         reload()
     }
 
-    fun toggleLiked() {
-        val current = _state.value
-        current.letter?.let { logAz("cleared reason=Liked kind=$kind was=$it") }
-        val next = !current.likedOnly
-        LibraryLikedPrefs.on = next
-        _state.update { it.copy(letter = null, likedOnly = next) }
-        reload()
-    }
-
     fun toggleAtmos() {
         val current = _state.value
         current.letter?.let { logAz("cleared reason=atmos kind=$kind was=$it") }
         val next = !current.atmosView
-        LibraryAtmosPrefs.set(kind, next)
+        LibraryAtmosPrefs.set(preferenceKey, next)
         Log.d("AURA_ATMOS", "view=${if (next) "on" else "off"} kind=$kind")
         _state.update { it.copy(letter = null, atmosView = next) }
         reload()

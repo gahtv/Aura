@@ -1,9 +1,20 @@
 package com.hans.aura.data
 
 import android.content.Context
+import android.os.Looper
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import com.hans.aura.playback.PlaybackReporter
+import java.lang.reflect.Proxy
+import java.time.Duration
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import okhttp3.MediaType.Companion.toMediaType
@@ -15,9 +26,12 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.LooperMode
 import retrofit2.Retrofit
 
 @RunWith(RobolectricTestRunner::class)
+@LooperMode(LooperMode.Mode.PAUSED)
 class CachePersistenceTest {
     private lateinit var db: CacheDatabase
     private lateinit var disk: CacheDisk
@@ -109,9 +123,20 @@ class CachePersistenceTest {
             val album = Fixtures.item("a")
             LibraryCache.put("home_new:u", listOf(album))
             LibraryCache.put("arbitrary-selection-key", listOf(album))
+            LibraryCache.put("home_recent:u", items)
+            LibraryCache.put("lib_tracks:u:SortName:false", items)
+            PagedLibrary.put("lib_albums:u:SortName:false", listOf(album), 1)
+            PagedLibrary.put("lib_tracks:u:SortName:false", items, 2)
             server.enqueue(MockResponse().setBody("""{"IsFavorite":true}"""))
             assertEquals(true, Favorites.toggle(api(server), "u", album))
             assertTrue(Favorites.isFavorite(album))
+            assertEquals(listOf(album), LibraryCache.peek("home_new:u"))
+            assertEquals(listOf(album), LibraryCache.peek("arbitrary-selection-key"))
+            assertEquals(listOf(album), PagedLibrary.get("lib_albums:u:SortName:false")?.items)
+            assertNull(LibraryCache.peek("home_recent:u"))
+            assertNull(LibraryCache.peek("lib_tracks:u:SortName:false"))
+            assertNull(PagedLibrary.get("lib_tracks:u:SortName:false"))
+            assertTrue(disk.read { listKeys().isEmpty() })
             coldStart()
             assertNull(LibraryCache.get("home_new:u"))
             assertNull(LibraryCache.get("arbitrary-selection-key"))
@@ -137,24 +162,82 @@ class CachePersistenceTest {
     }
 
     @Test
-    fun `mutation invalidation removes every selection and paged list before returning`() = runBlocking {
-        LibraryCache.put("home_recent:u", items)
-        LibraryCache.put("col:playlist", items)
-        Prefs.hiddenLibraries = setOf("hidden")
-        LibraryCache.put("lib_albums:u:sort", items)
-        PagedLibrary.put("lib_albums:u:sort", items, 2)
-        assertEquals(items, LibraryCache.get("lib_albums:u:sort"))
-        retrofit2.Response.success(Unit).invalidateLibraryOnSuccess()
-        assertNull(PagedLibrary.get("lib_albums:u:sort"))
-        assertNull(LibraryCache.peek("lib_albums:u:sort"))
-        assertTrue(disk.read { listKeys().isEmpty() })
+    fun `playback history invalidation drops only history disk rows`() = runBlocking {
+        val history = listOf("home_recent:u", "home_recent_artists:u", "artist_top:a",
+            "lib_tracks:u:PlayCount:true", "lib_atmos_audio:u:DatePlayed:false:all",
+            "atmos_audio:u:PlayCount:true:all", "lib_albums:u:DatePlayed,SortName:true")
+        val retained = listOf("home_new:u", "home_artists:u", "artist_albums:a",
+            "lib_albums:u:SortName:false", "lib_tracks:u:DateCreated:true", "col:playlist")
+        for (hidden in listOf(emptySet(), setOf("hidden"))) {
+            Prefs.hiddenLibraries = hidden
+            (history + retained).forEach { LibraryCache.put(it, items) }
+        }
+        PagedLibrary.put("lib_tracks:u:PlayCount:true", items, 2)
+        LibraryCache.evictPlaybackHistoryFromDisk()
+        (history + retained).forEach { assertEquals(items, LibraryCache.peek(it)) }
+        assertEquals(items, PagedLibrary.get("lib_tracks:u:PlayCount:true")?.items)
         coldStart()
-        assertNull(LibraryCache.get("lib_albums:u:sort"))
-        Prefs.hiddenLibraries = emptySet()
-        assertNull(LibraryCache.get("home_recent:u"))
-        assertNull(LibraryCache.get("col:playlist"))
-        retrofit2.Response.success(Unit).invalidateLibraryOnSuccess()
-        assertTrue(disk.read { listKeys().isEmpty() })
+        for (hidden in listOf(emptySet(), setOf("hidden"))) {
+            Prefs.hiddenLibraries = hidden
+            history.forEach { assertNull(it, LibraryCache.get(it)) }
+            retained.forEach { assertEquals(it, items, LibraryCache.get(it)) }
+        }
+    }
+
+    @Test
+    fun `progress report preserves memory and disk while stop evicts only disk history`() = runBlocking {
+        MockWebServer().use { server ->
+            val client = JellyfinClient(ApplicationProvider.getApplicationContext())
+            client.auth.save(Session(server.url("/").toString(), "u", "user", "token", client.deviceId))
+            var state = Player.STATE_READY
+            val item = MediaItem.Builder().setMediaId("a").build()
+            val player = Proxy.newProxyInstance(Player::class.java.classLoader, arrayOf(Player::class.java)) { _, method, _ ->
+                when (method.name) {
+                    "getCurrentMediaItem", "getMediaItemAt" -> item
+                    "getPlaybackState" -> state
+                    "isPlaying", "getPlayWhenReady" -> state == Player.STATE_READY
+                    "getCurrentPosition" -> 10_000L
+                    "getMediaItemCount" -> 1
+                    "getRepeatMode" -> Player.REPEAT_MODE_OFF
+                    "getShuffleModeEnabled" -> false
+                    else -> error("Unexpected player call: ${method.name}")
+                }
+            } as Player
+            val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+            val reporter = PlaybackReporter(client, player, scope = scope)
+            suspend fun awaitReport(path: String) {
+                assertEquals(path, server.takeRequest(5, TimeUnit.SECONDS)?.path)
+                scope.coroutineContext.job.children.toList().forEach { it.join() }
+            }
+            try {
+                server.enqueue(MockResponse().setResponseCode(204))
+                reporter.start()
+                shadowOf(Looper.getMainLooper()).idle()
+                awaitReport("/Sessions/Playing")
+                LibraryCache.put("home_recent:u", items)
+                LibraryCache.put("home_new:u", items)
+                PagedLibrary.put("lib_tracks:u:PlayCount:true", items, 2)
+                val before = disk.read { listKeys().associateWith { list(it) } }
+                server.enqueue(MockResponse().setResponseCode(204))
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(11))
+                awaitReport("/Sessions/Playing/Progress")
+                assertEquals(items, LibraryCache.peek("home_recent:u"))
+                assertEquals(items, LibraryCache.peek("home_new:u"))
+                assertEquals(before, disk.read { listKeys().associateWith { list(it) } })
+                state = Player.STATE_IDLE
+                server.enqueue(MockResponse().setResponseCode(204))
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+                awaitReport("/Sessions/Playing/Stopped")
+                assertEquals(items, LibraryCache.peek("home_recent:u"))
+                assertEquals(items, PagedLibrary.get("lib_tracks:u:PlayCount:true")?.items)
+                coldStart()
+                assertNull(LibraryCache.get("home_recent:u"))
+                assertEquals(items, LibraryCache.get("home_new:u"))
+            } finally {
+                reporter.stop()
+                client.auth.clearSession()
+            }
+        }
     }
 
     @Test

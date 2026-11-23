@@ -2,8 +2,6 @@ package com.hans.aura.data
 
 import android.content.Context
 import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import retrofit2.Response
 
@@ -137,12 +135,23 @@ object LibraryCache {
         disk?.write { clearLists() }
     }
 
-    /** Mutations can change membership and sorting even in lists without the item. */
-    suspend fun invalidateAfterMutation() {
-        withContext(NonCancellable) {
-            clear()
-            PagedLibrary.clear()
-            disk?.read { }
+    /** Prevents cold restoration without changing the current session's lists. */
+    @Synchronized
+    fun clearDiskLists() {
+        disk?.write { clearLists() }
+    }
+
+    @Synchronized
+    fun evictPlaybackHistoryFromDisk() {
+        disk?.write {
+            listKeys().filter { key ->
+                val plain = key.substringBefore('#')
+                plain.startsWith("home_recent:") || plain.startsWith("home_recent_artists:") ||
+                    plain.startsWith("artist_top:") ||
+                    plain.split(':').any { field ->
+                        field.split(',').any { it.equals("PlayCount", true) || it.equals("DatePlayed", true) }
+                    }
+            }.forEach { deleteList(it) }
         }
     }
 
@@ -166,7 +175,7 @@ object LibraryCache {
     }
 }
 
-internal suspend fun <T> Response<T>.invalidateLibraryOnSuccess(): Response<T> {
-    if (isSuccessful) LibraryCache.invalidateAfterMutation()
+internal fun <T> Response<T>.invalidateHistoryOnSuccess(): Response<T> {
+    if (isSuccessful) LibraryCache.evictPlaybackHistoryFromDisk()
     return this
 }

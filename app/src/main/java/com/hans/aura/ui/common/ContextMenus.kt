@@ -269,7 +269,8 @@ object ContextMenus {
                         "newIndex=$newIndex -> code=${resp.code()}"
                 )
                 if (resp.isSuccessful) {
-                    LibraryCache.invalidateAfterMutation()
+                    LibraryCache.evict("col:${move.playlistId}")
+                    LibraryCache.clearDiskLists()
                     move.onMoved()
                 } else {
                     Log.w(TAG, "playlist move rejected: HTTP ${resp.code()}")

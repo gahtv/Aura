@@ -247,7 +247,7 @@ object Prefs {
  * (still 0). So "resume where you left off" has to be remembered by Aura.
  *
  * Stored as a map keyed by server, user and item, pruned to the newest
- * [POSITION_LIMIT] entries and expired after [POSITION_TTL_MS].
+ * [POSITION_LIMIT] entries per profile and expired after [POSITION_TTL_MS].
  */
 object ResumePoints {
     private const val TAG = "AURA_RESUME"
@@ -261,8 +261,11 @@ object ResumePoints {
 
     private fun prefs() = Prefs.file()
 
+    private fun profilePrefix(session: Session): String =
+        "${Uri.encode(session.serverUrl.trimEnd('/'))}/${Uri.encode(session.userId)}/"
+
     private fun key(session: Session, itemId: String): String =
-        "${Uri.encode(session.serverUrl.trimEnd('/'))}/${Uri.encode(session.userId)}/${Uri.encode(itemId)}"
+        profilePrefix(session) + Uri.encode(itemId)
 
     private fun load(): MutableMap<String, String> = synchronized(lock) {
         cache?.let { return it }
@@ -288,12 +291,15 @@ object ResumePoints {
         if (itemId.isBlank() || positionMs < 5_000L) return
         synchronized(lock) {
             val map = load()
-            map[key(session, itemId)] = "$positionMs:${System.currentTimeMillis()}"
+            val prefix = profilePrefix(session)
+            map[prefix + Uri.encode(itemId)] = "$positionMs:${System.currentTimeMillis()}"
             if (map.size > POSITION_LIMIT) {
-                // Drop the oldest by timestamp, not by insertion order.
-                val keep = map.entries.sortedByDescending { it.value.substringAfter(':').toLongOrNull() ?: 0L }
-                    .take(POSITION_LIMIT).associate { it.key to it.value }
-                map.clear(); map.putAll(keep)
+                val profileEntries = map.entries.filter { it.key.startsWith(prefix) }
+                if (profileEntries.size > POSITION_LIMIT) {
+                    profileEntries.sortedByDescending { it.value.substringAfter(':').toLongOrNull() ?: 0L }
+                        .drop(POSITION_LIMIT)
+                        .forEach { map.remove(it.key) }
+                }
             }
             prefs()?.edit()?.putString(KEY, map.entries.joinToString("|") { "${it.key}:${it.value}" })?.apply()
         }

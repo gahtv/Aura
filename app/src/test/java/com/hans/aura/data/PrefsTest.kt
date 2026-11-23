@@ -11,6 +11,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.shadows.ShadowSystemClock
+import java.time.Duration
 
 /** Prefs (lyrics offset, recent searches) and the locally stored resume points. */
 @RunWith(RobolectricTestRunner::class)
@@ -59,6 +61,20 @@ class PrefsTest {
 
         assertEquals(42_000L, ResumePoints.position(alex, "track-1"))
         assertEquals(61_000L, ResumePoints.position(other, "track-1"))
+    }
+
+    @Test
+    fun `pruning bookmarks leaves another profile's bookmarks intact`() {
+        val sam = alex.copy(userId = "sam")
+        ResumePoints.save(sam, "track-0", 42_000L)
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(1))
+        ResumePoints.save(alex, "track-0", 61_000L)
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(1))
+        for (i in 1..400) ResumePoints.save(alex, "track-$i", 61_000L)
+
+        assertEquals(42_000L, ResumePoints.position(sam, "track-0"))
+        assertNull(ResumePoints.position(alex, "track-0"))
+        for (i in 1..400) assertEquals(61_000L, ResumePoints.position(alex, "track-$i"))
     }
 
     @Test

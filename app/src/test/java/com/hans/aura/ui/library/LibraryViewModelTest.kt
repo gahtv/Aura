@@ -301,6 +301,32 @@ class LibraryViewModelTest {
         }
     }
 
+    @Test
+    fun `evicted accumulated page reloads the displayed range instead of substituting the next page`() = runBlocking {
+        val model = model()
+        val firstPage = (0 until 60).map { JellyfinItem(id = "$it", type = "MusicAlbum") }
+        withTimeout(5000) { queries.receive() }
+        withTimeout(5000) { requests.receive() }.complete(ItemsResponse(items = firstPage, totalRecordCount = 120))
+        withTimeout(5000) { model.state.first { it.items.size == 60 && !it.loading } }
+
+        PagedLibrary.evictWhere { it.startsWith(model.state.value.cacheKey) }
+        model.loadNextPage()
+        val query = withTimeout(5000) { queries.receive() }
+        val response = withTimeout(5000) { requests.receive() }
+        try {
+            assertEquals(0, query.startIndex)
+            assertEquals(60, query.limit)
+        } finally {
+            val nextPage = (60 until 120).map { JellyfinItem(id = "$it", type = "MusicAlbum") }
+            response.complete(ItemsResponse(
+                items = if (query.startIndex == 0) firstPage else nextPage,
+                totalRecordCount = 120
+            ))
+        }
+        withTimeout(5000) { model.state.first { !it.loading } }
+        assertEquals(firstPage.map { it.id }, model.state.value.items.map { it.id })
+    }
+
     private fun MockWebServer.signIn(): String = "user".also { userId ->
         app.jellyfin.auth.installSession(Session(url("/").toString(), userId, "Test", "token", "device"))
     }

@@ -256,13 +256,15 @@ class LibraryViewModel(
         if (!isCurrentLoad(generation)) return
         val snapshot = _state.value
         val refreshCachedPage = app.container.media.cachedPageRequiresRefresh(key)
-        val replace = replaceLoadedRange || refreshCachedPage
+        val accumulatedPageMissing = !replaceLoadedRange && snapshot.items.isNotEmpty() &&
+            !app.container.media.hasCachedPage(key)
+        val replace = replaceLoadedRange || refreshCachedPage || accumulatedPageMissing
         if (snapshot.loading || (!replace && snapshot.items.size >= snapshot.total)) return
         _state.update { it.copy(loading = true) }
         val startIndex = if (replace) 0 else snapshot.items.size
         val limit = when {
             refreshCachedPage -> snapshot.items.size + PAGE_SIZE
-            replaceLoadedRange -> maxOf(PAGE_SIZE, snapshot.items.size)
+            replaceLoadedRange || accumulatedPageMissing -> maxOf(PAGE_SIZE, snapshot.items.size)
             else -> PAGE_SIZE
         }
         runCatching {

@@ -18,7 +18,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -31,6 +30,7 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.Border
 import kotlin.math.PI
@@ -41,10 +41,10 @@ import kotlin.math.sin
 internal fun WavySeekBar(
     progress: Float,
     isPlaying: Boolean,
-    accent: Color,
     modifier: Modifier = Modifier,
     onSeek: (Long) -> Unit = {}
 ) {
+    val colors = MaterialTheme.colorScheme
     val fraction = if (progress.isNaN()) 0f else progress.coerceIn(0f, 1f)
     var focused by remember { mutableStateOf(false) }
     var phase by remember { mutableFloatStateOf(0f) }
@@ -106,16 +106,16 @@ internal fun WavySeekBar(
                 if (x >= activeEnd) break
                 x = min(x + 4f, activeEnd)
             }
-            drawPath(wavePath, accent, style = Stroke(stroke, cap = StrokeCap.Round))
+            drawPath(wavePath, colors.primary, style = Stroke(stroke, cap = StrokeCap.Round))
         }
         val inactiveStart = point + gap + stroke
         if (inactiveStart < end) {
             drawLine(Border, Offset(inactiveStart, centerY), Offset(end, centerY), stroke, StrokeCap.Round)
         }
-        drawCircle(accent, radius, Offset(end, centerY))
+        drawCircle(colors.primary, radius, Offset(end, centerY))
         if (focused) {
             val halfHandle = (AuraSizes.seekHandleHeight.toPx() - stroke) / 2
-            drawLine(accent, Offset(point, centerY - halfHandle), Offset(point, centerY + halfHandle), stroke, StrokeCap.Round)
+            drawLine(colors.primary, Offset(point, centerY - halfHandle), Offset(point, centerY + halfHandle), stroke, StrokeCap.Round)
         }
     }
 }

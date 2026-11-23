@@ -31,7 +31,6 @@ import com.hans.aura.data.Session
 import com.hans.aura.playback.PlaybackService
 import com.hans.aura.player.controller.PlaybackController
 import com.hans.aura.ui.player.PlayerConnection
-import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertFalse
@@ -90,7 +89,6 @@ class Phase2ErgonomicsTest {
                     duration = 0,
                     isPlaying = false,
                     playPauseFocus = remember { FocusRequester() },
-                    accent = Accent,
                     onOpenPeek = { false },
                     dimMode = dim,
                     onToggleDimMode = {

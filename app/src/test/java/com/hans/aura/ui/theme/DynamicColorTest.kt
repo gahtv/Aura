@@ -56,17 +56,17 @@ class DynamicColorTest {
 
     @Test
     fun cacheStoresSeedsAndClearsAtSessionEnd() {
-        PaletteCache.clear()
+        ArtworkSeedCache.clear()
         try {
-            assertEquals(null, PaletteCache.get("cover"))
-            PaletteCache.put("cover", AuraSeedArgb)
-            assertEquals(AuraSeedArgb, PaletteCache.get("cover"))
-            assertEquals(1, PaletteCache.size)
-            PaletteCache.clear()
-            assertEquals(null, PaletteCache.get("cover"))
-            assertEquals(0, PaletteCache.size)
+            assertEquals(null, ArtworkSeedCache.get("cover"))
+            ArtworkSeedCache.put("cover", AuraSeedArgb)
+            assertEquals(AuraSeedArgb, ArtworkSeedCache.get("cover"))
+            assertEquals(1, ArtworkSeedCache.size)
+            ArtworkSeedCache.clear()
+            assertEquals(null, ArtworkSeedCache.get("cover"))
+            assertEquals(0, ArtworkSeedCache.size)
         } finally {
-            PaletteCache.clear()
+            ArtworkSeedCache.clear()
         }
     }
 

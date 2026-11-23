@@ -10,8 +10,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,8 +36,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
@@ -63,6 +59,7 @@ import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
+import com.hans.aura.ui.theme.LocalDynamicTheme
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
@@ -77,10 +74,6 @@ fun ArtworkCard(
     serverUrl: String,
     size: Dp,
     badge: String? = null,
-    // Optional per-screen tint (artist pages derive it from the artist image);
-    // defaults to the app-wide amber so no other screen changes.
-    badgeColor: Color = com.hans.aura.ui.theme.Accent,
-    accent: Color = com.hans.aura.ui.theme.Accent,
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
@@ -97,6 +90,8 @@ fun ArtworkCard(
     circular: Boolean = item.type == "MusicArtist",
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
+    val dynamic = LocalDynamicTheme.current
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) AuraMotion.artworkFocusedScale else 1f,
@@ -138,7 +133,7 @@ fun ArtworkCard(
                     // Unmistakable focus outline: accent ring on the artwork.
                     if (focused) Modifier.clip(innerShape).border(
                         width = AuraSizes.focusBorderLoud,
-                        color = accent,
+                        color = colors.primary,
                         shape = innerShape
                     ) else Modifier
                 )
@@ -173,14 +168,14 @@ fun ArtworkCard(
                                 .align(Alignment.BottomEnd)
                                 .padding(AuraSpacing.xxs)
                                 .background(
-                                    AuraColors.BadgeScrim,
+                                    if (dynamic) colors.tertiary else AuraColors.BadgeScrim,
                                     AuraShapes.badge
                                 )
                                 .padding(horizontal = AuraSpacing.xxs, vertical = 2.dp)
                         ) {
                             androidx.tv.material3.Text(
                                 label,
-                                color = badgeColor,
+                                color = if (dynamic) colors.onTertiary else colors.tertiary,
                                 fontSize = AuraTypography.caption,
                                 fontWeight = FontWeight.Bold
                             )
@@ -193,7 +188,6 @@ fun ArtworkCard(
                     if (favorite == true) {
                         HeartToggle(
                             favorite = favorite,
-                            accent = accent,
                             interactive = false,
                             modifier = Modifier.align(Alignment.TopEnd).padding(AuraSpacing.xxs)
                         )
@@ -245,8 +239,6 @@ fun TrackRow(
     isCurrent: Boolean,
     onClick: () -> Unit,
     atmos: Boolean = false,
-    // Per-screen tint (artist pages); app amber elsewhere.
-    accent: Color = com.hans.aura.ui.theme.Accent,
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
@@ -256,12 +248,11 @@ fun TrackRow(
     favorite: Boolean? = null,
     onToggleFavorite: (() -> Unit)? = null
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val bg by animateColorAsState(
         when {
-            // Tinted by the screen's accent so the "now playing" row belongs to
-            // an album whose colour isn't the app amber.
-            isCurrent -> accent.copy(alpha = 0.16f)
+            isCurrent -> colors.secondaryContainer
             focused -> SurfaceHigh
             else -> Color.Transparent
         },
@@ -292,13 +283,13 @@ fun TrackRow(
                 Modifier
                     .width(AuraSizes.rowAccentBarWidth)
                     .height(AuraSizes.rowAccentBarHeight)
-                    .background(accent)
+                    .background(colors.primary)
             )
             Spacer(Modifier.width(AuraSpacing.md))
         }
         androidx.tv.material3.Text(
             text = if (isCurrent) "\u25B6" else index.toString(),
-            color = if (isCurrent) accent else TextSecondary,
+            color = if (isCurrent) colors.onSecondaryContainer else TextSecondary,
             fontSize = AuraTypography.bodySmall,
             modifier = Modifier.width(AuraSizes.trackIndexWidth)
         )
@@ -306,7 +297,7 @@ fun TrackRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 androidx.tv.material3.Text(
                     track.name,
-                    color = if (isCurrent) accent else TextPrimary,
+                    color = if (isCurrent) colors.onSecondaryContainer else TextPrimary,
                     fontSize = AuraTypography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -314,7 +305,7 @@ fun TrackRow(
                 )
                 if (atmos) {
                     Spacer(Modifier.width(AuraSpacing.xs))
-                    AtmosChip(color = accent)
+                    AtmosChip()
                 }
             }
             if (track.artistNames.isNotBlank()) {
@@ -342,7 +333,7 @@ fun TrackRow(
                 if (favorite != null || onToggleFavorite != null) {
                     androidx.tv.material3.Text(
                         text = "\u2665",
-                        color = if (favorite == true) accent else TextSecondary,
+                        color = if (favorite == true) colors.primary else TextSecondary,
                         fontSize = AuraTypography.label
                     )
                 }
@@ -371,7 +362,6 @@ fun TrackRow(
             Spacer(Modifier.width(AuraSpacing.xs))
             HeartToggle(
                 favorite = favorite,
-                accent = accent,
                 interactive = false
             )
         }

@@ -44,6 +44,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
 import com.hans.aura.ui.common.formatDuration
 import com.hans.aura.ui.player.PlayerConnection
@@ -68,7 +69,6 @@ internal fun LiveTransportBar(
     player: PlayerConnection,
     isPlaying: Boolean,
     playPauseFocus: FocusRequester,
-    accent: Color,
     onOpenPeek: (FocusRequester) -> Boolean,
     favorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
@@ -80,7 +80,6 @@ internal fun LiveTransportBar(
         player = player,
         isPlaying = isPlaying,
         playPauseFocus = playPauseFocus,
-        accent = accent,
         onOpenPeek = onOpenPeek,
         favorite = favorite,
         onToggleFavorite = onToggleFavorite,
@@ -90,7 +89,7 @@ internal fun LiveTransportBar(
         seekSection = {
             val position by player.positionMs.collectAsState()
             val duration by player.durationMs.collectAsState()
-            SeekSection(position, duration, isPlaying, accent, playPauseFocus, player::seekBy)
+            SeekSection(position, duration, isPlaying, playPauseFocus, player::seekBy)
         }
     )
 }
@@ -102,7 +101,6 @@ internal fun TransportBar(
     duration: Long,
     isPlaying: Boolean,
     playPauseFocus: FocusRequester,
-    accent: Color,
     onOpenPeek: (FocusRequester) -> Boolean,
     favorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
@@ -114,7 +112,6 @@ internal fun TransportBar(
         player = player,
         isPlaying = isPlaying,
         playPauseFocus = playPauseFocus,
-        accent = accent,
         onOpenPeek = onOpenPeek,
         favorite = favorite,
         onToggleFavorite = onToggleFavorite,
@@ -122,7 +119,7 @@ internal fun TransportBar(
         dimMode = dimMode,
         onToggleDimMode = onToggleDimMode,
         seekSection = {
-            SeekSection(position, duration, isPlaying, accent, playPauseFocus, player::seekBy)
+            SeekSection(position, duration, isPlaying, playPauseFocus, player::seekBy)
         }
     )
 }
@@ -132,14 +129,12 @@ private fun SeekSection(
     position: Long,
     duration: Long,
     isPlaying: Boolean,
-    accent: Color,
     playPauseFocus: FocusRequester,
     onSeek: (Long) -> Unit
 ) {
     WavySeekBar(
         progress = if (duration > 0) position.toFloat() / duration else 0f,
         isPlaying = isPlaying,
-        accent = accent,
         modifier = Modifier.focusProperties { down = playPauseFocus },
         onSeek = onSeek
     )
@@ -163,7 +158,6 @@ private fun TransportBarContent(
     player: PlayerConnection,
     isPlaying: Boolean,
     playPauseFocus: FocusRequester,
-    accent: Color,
     onOpenPeek: (FocusRequester) -> Boolean,
     favorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
@@ -192,11 +186,11 @@ private fun TransportBarContent(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TransportIconButton(R.drawable.ic_skip_previous, "Previous", accent = accent) {
+            TransportIconButton(R.drawable.ic_skip_previous, "Previous") {
                 player.previous()
             }
             Spacer(Modifier.width(AuraSpacing.md))
-            TransportIconButton(R.drawable.ic_replay_10, "Back 10 seconds", accent = accent) {
+            TransportIconButton(R.drawable.ic_replay_10, "Back 10 seconds") {
                 player.seekTo((player.positionMs.value - 10_000).coerceAtLeast(0))
             }
             Spacer(Modifier.width(AuraSpacing.md))
@@ -204,7 +198,6 @@ private fun TransportBarContent(
             TransportIconButton(
                 icon = if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play_arrow,
                 label = if (isPlaying) "Pause" else "Play",
-                accent = accent,
                 iconSize = AuraSizes.transportIconLarge,
                 filled = true,
                 squircle = isPlaying,
@@ -215,12 +208,12 @@ private fun TransportBarContent(
                 player.playPause()
             }
             Spacer(Modifier.width(AuraSpacing.md))
-            TransportIconButton(R.drawable.ic_forward_10, "Forward 10 seconds", accent = accent) {
+            TransportIconButton(R.drawable.ic_forward_10, "Forward 10 seconds") {
                 val dur = player.durationMs.value.coerceAtLeast(1)
                 player.seekTo((player.positionMs.value + 10_000).coerceIn(0, dur))
             }
             Spacer(Modifier.width(AuraSpacing.md))
-            TransportIconButton(R.drawable.ic_skip_next, "Next", accent = accent) {
+            TransportIconButton(R.drawable.ic_skip_next, "Next") {
                 player.next()
             }
         }
@@ -233,7 +226,6 @@ private fun TransportBarContent(
             TransportIconButton(
                 icon = R.drawable.ic_shuffle,
                 label = "Shuffle",
-                accent = accent,
                 active = shuffleEnabled,
                 modifier = peekOnDown(shuffleFocus)
             ) {
@@ -247,7 +239,6 @@ private fun TransportBarContent(
                     Player.REPEAT_MODE_ALL -> "Repeat all"
                     else -> "Repeat off"
                 },
-                accent = accent,
                 active = repeatMode != Player.REPEAT_MODE_OFF,
                 modifier = peekOnDown(repeatFocus)
             ) {
@@ -258,7 +249,6 @@ private fun TransportBarContent(
                 // Heart for the CURRENT track: filled accent when liked.
                 TransportHeartButton(
                     favorite = favorite,
-                    accent = accent,
                     onClick = onToggleFavorite
                 )
             }
@@ -275,7 +265,6 @@ private fun TransportBarContent(
                 TransportIconButton(
                     icon = R.drawable.ic_bedtime,
                     label = "Dim mode",
-                    accent = accent,
                     active = dimMode
                 ) {
                     toggleDim()
@@ -293,7 +282,6 @@ private fun TransportBarContent(
 private fun TransportIconButton(
     icon: Int,
     label: String,
-    accent: Color,
     iconSize: Dp = AuraSizes.transportIcon,
     filled: Boolean = false,
     active: Boolean = false,
@@ -301,17 +289,18 @@ private fun TransportIconButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val plate = when {
-        filled -> accent
-        focused -> accent.copy(alpha = 0.34f)
-        active -> accent.copy(alpha = 0.18f)
+        filled -> colors.primary
+        focused -> colors.secondaryContainer
+        active -> colors.secondaryContainer
         else -> Color.Transparent
     }
     val tint by animateColorAsState(
         when {
-            filled -> AuraColors.OnAccent
-            active || focused -> accent
+            filled -> colors.onPrimary
+            active || focused -> colors.onSecondaryContainer
             else -> TextPrimary
         },
         label = "transportTint"
@@ -361,15 +350,16 @@ private fun TransportIconButton(
  * vector drawable in res/. `active` (liked) keeps the accent tint at rest.
  */
 @Composable
-private fun TransportHeartButton(favorite: Boolean, accent: Color, onClick: () -> Unit) {
+private fun TransportHeartButton(favorite: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val plate = when {
-        focused -> accent.copy(alpha = 0.34f)
-        favorite -> accent.copy(alpha = 0.18f)
+        focused -> colors.secondaryContainer
+        favorite -> colors.secondaryContainer
         else -> Color.Transparent
     }
     val tint by animateColorAsState(
-        if (favorite || focused) accent else TextPrimary,
+        if (favorite || focused) colors.onSecondaryContainer else TextPrimary,
         label = "heartTint"
     )
     val grow by animateFloatAsState(if (focused) 1.15f else 1f, label = "heartGrow")

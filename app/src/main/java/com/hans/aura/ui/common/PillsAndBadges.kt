@@ -1,12 +1,9 @@
 package com.hans.aura.ui.common
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,13 +21,14 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
+import com.hans.aura.ui.theme.LocalDynamicTheme
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 import com.hans.aura.data.SourceQueries
@@ -52,12 +50,13 @@ import com.hans.aura.data.SourceQueries
 @Composable
 fun HeartToggle(
     favorite: Boolean,
-    accent: Color,
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     iconSize: Dp = AuraSizes.iconSmall,
     interactive: Boolean = true
 ) {
+    val colors = MaterialTheme.colorScheme
+    val dynamic = LocalDynamicTheme.current
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.pill
     val focusableModifier = if (!interactive) {
@@ -67,7 +66,7 @@ fun HeartToggle(
             .clip(shape)
             .background(
                 when {
-                    focused -> accent.copy(alpha = 0.25f)
+                    focused -> if (dynamic) colors.secondaryContainer else colors.primary.copy(alpha = 0.25f)
                     else -> Color.Transparent
                 }
             )
@@ -92,7 +91,7 @@ fun HeartToggle(
                 else R.drawable.ic_favorite
             ),
             contentDescription = null,
-            tint = if (favorite) accent else TextSecondary,
+            tint = if (focused && dynamic) colors.onSecondaryContainer else if (favorite) colors.primary else TextSecondary,
             modifier = Modifier.size(iconSize)
         )
     }
@@ -111,9 +110,10 @@ fun HeartToggle(
 fun AtmosFilterPill(
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    accent: Color = com.hans.aura.ui.theme.Accent
+    modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
+    val dynamic = LocalDynamicTheme.current
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.control
     Box(
@@ -123,7 +123,7 @@ fun AtmosFilterPill(
             .clip(shape)
             .background(
                 when {
-                    selected -> accent
+                    selected -> if (dynamic) colors.secondaryContainer else colors.primary
                     focused -> AuraColors.FocusedFillSubtle
                     else -> Color.Transparent
                 }
@@ -142,7 +142,11 @@ fun AtmosFilterPill(
                 else R.drawable.ic_spatial_audio_off
             ),
             contentDescription = "Only Atmos",
-            tint = if (selected) AuraColors.OnAccentText else TextPrimary,
+            tint = when {
+                selected && dynamic -> colors.onSecondaryContainer
+                selected -> AuraColors.OnAccentText
+                else -> TextPrimary
+            },
             modifier = Modifier.size(AuraSizes.iconBadge)
         )
     }
@@ -150,14 +154,16 @@ fun AtmosFilterPill(
 
 /** Small ATMOS marker used on rows (the card equivalent is ArtworkCard's badge). */
 @Composable
-fun AtmosChip(color: Color = com.hans.aura.ui.theme.Accent) {
+fun AtmosChip() {
+    val colors = MaterialTheme.colorScheme
+    val dynamic = LocalDynamicTheme.current
     androidx.tv.material3.Text(
         "ATMOS",
-        color = color,
+        color = if (dynamic) colors.onTertiary else colors.tertiary,
         fontSize = AuraTypography.caption,
         fontWeight = FontWeight.Bold,
         modifier = Modifier
-            .background(AuraColors.BadgeScrim, AuraShapes.badge)
+            .background(if (dynamic) colors.tertiary else AuraColors.BadgeScrim, AuraShapes.badge)
             .padding(horizontal = AuraSpacing.xs, vertical = 2.dp)
     )
 }

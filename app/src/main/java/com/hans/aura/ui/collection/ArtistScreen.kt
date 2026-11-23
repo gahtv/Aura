@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -60,7 +59,6 @@ import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.hans.aura.AuraApp
-import com.hans.aura.data.ArtistArtwork
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Mixes
@@ -70,17 +68,14 @@ import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraDynamicTheme
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.Canvas
-import com.hans.aura.ui.theme.Surface
-import com.hans.aura.ui.theme.SurfaceHigh
+import com.hans.aura.ui.theme.LocalDynamicTheme
 import com.hans.aura.ui.theme.TextPrimary
-import com.hans.aura.ui.theme.TextSecondary
-import com.hans.aura.ui.theme.darken
-import com.hans.aura.ui.theme.rememberDynamicColors
 import kotlinx.coroutines.launch
 
 private enum class ArtistTab(val label: String) {
@@ -116,8 +111,6 @@ fun ArtistScreen(
     val artUrl = shownArtist.primaryImageTag?.let {
         AuthStore.imageUrl(session.serverUrl, shownArtist.id, it, maxWidth = 480)
     }
-    val dyn = rememberDynamicColors(artUrl)
-    val accent = dyn?.secondary ?: com.hans.aura.ui.theme.Accent
     val atmosAlbumIds = state.atmosAlbumIds
     var showBioDialog by remember { mutableStateOf(false) }
     var sourceBio by remember(artist.id) { mutableStateOf<String?>(null) }
@@ -158,275 +151,271 @@ fun ArtistScreen(
     var selectedTab by rememberSaveable(artist.id) { mutableStateOf(ArtistTab.DISCOGRAPHY) }
     val activeTab = if (selectedTab in availableTabs) selectedTab else availableTabs.first()
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        dyn?.primary ?: Surface,
-                        dyn?.let { darken(it.primary, 0.55f) } ?: SurfaceHigh,
-                        Canvas
-                    )
-                )
-            )
-    ) {
-        artwork.bannerUrl?.let { url ->
-            AsyncImage(
-                model = url,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                alpha = 0.22f,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+    AuraDynamicTheme(artUrl) {
+        val colors = MaterialTheme.colorScheme
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
-                    Brush.horizontalGradient(
-                        0.0f to (dyn?.primary ?: Surface).copy(alpha = 0.80f),
-                        0.45f to Canvas.copy(alpha = 0.86f),
-                        1.0f to Canvas.copy(alpha = 0.94f)
+                    Brush.verticalGradient(
+                        listOf(
+                            colors.primaryContainer,
+                            colors.surface,
+                            colors.background
+                        )
                     )
                 )
-        )
-
-        Row(
-            Modifier
-                .fillMaxSize()
-                .padding(horizontal = AuraSpacing.screenHorizontal, vertical = AuraSpacing.lg),
-            horizontalArrangement = Arrangement.spacedBy(AuraSpacing.xl)
         ) {
-            // Left pane (~35%): circular portrait, title/logo, bio, and actions.
-            Column(
-                modifier = Modifier
-                    .weight(0.35f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.Top
-            ) {
-                if (artUrl != null) {
-                    AsyncImage(
-                        model = artUrl,
-                        contentDescription = shownArtist.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(180.dp)
-                            .clip(CircleShape)
-                            .background(SurfaceHigh)
-                    )
-                    Spacer(Modifier.height(AuraSpacing.md))
-                }
-                ArtistTitle(shownArtist.name, artwork.logoUrl)
-                bio?.let { text ->
-                    Row(
-                        Modifier
-                            .padding(top = AuraSpacing.sm)
-                            .fillMaxWidth()
-                            .clickable { showBioDialog = true },
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        androidx.tv.material3.Text(
-                            text,
-                            fontSize = 13.sp,
-                            color = TextPrimary,
-                            maxLines = 2,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        androidx.tv.material3.Text(
-                            "  More",
-                            fontSize = 13.sp,
-                            color = accent
-                        )
-                    }
-                }
-                Spacer(Modifier.height(AuraSpacing.md))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm),
-                    verticalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
-                ) {
-                    ArtistRadioButton(
-                        accent = accent,
-                        modifier = Modifier
-                            .focusRequester(leftFocus)
-                            .focusProperties { right = contentFocus },
-                        onClick = {
-                            scope.launch {
-                                Mixes.playMix(
-                                    api = app.jellyfin.api,
-                                    userId = session.userId,
-                                    player = player,
-                                    kind = Mixes.Kind.ARTIST,
-                                    seed = shownArtist
-                                )
-                            }
-                        }
-                    )
-                    if (!com.hans.aura.data.AtmosFilter.on) {
-                        com.hans.aura.ui.common.AtmosFilterPill(
-                            selected = state.atmosView,
-                            accent = accent,
-                            onClick = { viewModel.toggleAtmos() }
-                        )
-                    }
-                    androidx.tv.material3.Button(
-                        modifier = Modifier.focusProperties { right = contentFocus },
-                        onClick = onBack
-                    ) {
-                        androidx.tv.material3.Text("Back")
-                    }
-                }
+            artwork.bannerUrl?.let { url ->
+                AsyncImage(
+                    model = url,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    alpha = 0.22f,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
-
-            // Right pane (~65%): sub-filter pills + content list/grid.
-            Column(
-                modifier = Modifier
-                    .weight(0.65f)
-                    .fillMaxHeight()
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    availableTabs.forEach { tab ->
-                        ArtistTabPill(
-                            label = tab.label,
-                            selected = tab == activeTab,
-                            accent = accent,
-                            onClick = { selectedTab = tab }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            0.0f to colors.primaryContainer.copy(alpha = 0.80f),
+                            0.45f to colors.background.copy(alpha = 0.86f),
+                            1.0f to colors.background.copy(alpha = 0.94f)
                         )
-                    }
-                }
-                Spacer(Modifier.height(AuraSpacing.md))
-
-                if (state.error != null && !state.hasContent) {
-                    ErrorPane(
-                        message = "Couldn't load from server",
-                        detail = state.error,
-                        onRetry = { viewModel.retry() }
                     )
-                } else {
-                    when (activeTab) {
-                        ArtistTab.DISCOGRAPHY -> LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .focusRequester(contentFocus)
-                                .focusRestorer()
-                                .focusProperties { left = leftFocus },
-                            contentPadding = PaddingValues(
-                                vertical = AuraMotion.artworkFocusInset(176.dp),
-                                horizontal = AuraSpacing.xs
-                            ),
-                            horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md),
-                            verticalArrangement = Arrangement.spacedBy(AuraSpacing.lg)
-                        ) {
-                            items(
-                                items = visibleAlbums,
-                                key = { "album_${it.id}" },
-                                contentType = { "album" }
-                            ) { album ->
-                                ArtworkCard(
-                                    item = album,
-                                    serverUrl = session.serverUrl,
-                                    size = 176.dp,
-                                    badge = "ATMOS".takeIf { album.id in atmosAlbumIds },
-                                    badgeColor = accent,
-                                    accent = accent,
-                                    focusKeeper = focusKeeper,
-                                    onFocused = {
-                                        focusedId = it
-                                        logFocus("albums", it)
-                                    }
-                                ) { onOpenCollection(album) }
-                            }
-                            item { Spacer(Modifier.height(AuraSizes.bottomBarClearance)) }
-                        }
-
-                        ArtistTab.POPULAR -> LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .focusRequester(contentFocus)
-                                .focusRestorer()
-                                .focusProperties { left = leftFocus },
-                            contentPadding = PaddingValues(bottom = AuraSizes.bottomBarClearance)
-                        ) {
-                            itemsIndexed(
-                                items = visibleTracks,
-                                key = { _, t -> "top_${t.id}" },
-                                contentType = { _, _ -> "track" }
-                            ) { i, track ->
-                                TrackRow(
-                                    index = i + 1,
-                                    track = track,
-                                    isCurrent = track.id == current?.id,
-                                    atmos = track.albumId?.let { it in atmosAlbumIds } == true,
-                                    accent = accent,
-                                    onClick = { player.playQueue(visibleTracks, i, resume = true) },
-                                    focusKeeper = focusKeeper,
-                                    onFocused = {
-                                        focusedId = it
-                                        logFocus("top", it)
-                                    },
-                                    onLongPress = {
-                                        com.hans.aura.ui.common.ContextMenuHost.open(
-                                            com.hans.aura.ui.common.ContextMenus.forTrack(
-                                                app, player, scope, track,
-                                                onOpenArtist = null, onOpenCollection = onOpenCollection
-                                            )
-                                        )
-                                    }
-                                )
-                            }
-                        }
-
-                        ArtistTab.SIMILAR -> LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .focusRequester(contentFocus)
-                                .focusRestorer()
-                                .focusProperties { left = leftFocus },
-                            contentPadding = PaddingValues(
-                                vertical = AuraMotion.artworkFocusInset(176.dp),
-                                horizontal = AuraSpacing.xs
-                            ),
-                            horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md),
-                            verticalArrangement = Arrangement.spacedBy(AuraSpacing.lg)
-                        ) {
-                            items(
-                                items = similarArtists,
-                                key = { "similar_${it.id}" },
-                                contentType = { "artist" }
-                            ) { similar ->
-                                ArtworkCard(
-                                    item = similar,
-                                    serverUrl = session.serverUrl,
-                                    size = 176.dp,
-                                    accent = accent,
-                                    focusKeeper = focusKeeper,
-                                    onFocused = {
-                                        focusedId = it
-                                        logFocus("similar", it)
-                                    }
-                                ) { onOpenArtist(similar) }
-                            }
-                            item { Spacer(Modifier.height(AuraSizes.bottomBarClearance)) }
-                        }
-                    }
-                }
-            }
-        }
-
-        val shownBio = bio
-        if (showBioDialog && shownBio != null) {
-            com.hans.aura.ui.common.BioDialog(
-                title = shownArtist.name,
-                subtitle = "Artist",
-                text = shownBio,
-                onDismiss = { showBioDialog = false }
             )
+
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = AuraSpacing.screenHorizontal, vertical = AuraSpacing.lg),
+                horizontalArrangement = Arrangement.spacedBy(AuraSpacing.xl)
+            ) {
+                // Left pane (~35%): circular portrait, title/logo, bio, and actions.
+                Column(
+                    modifier = Modifier
+                        .weight(0.35f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.Top
+                ) {
+                    if (artUrl != null) {
+                        AsyncImage(
+                            model = artUrl,
+                            contentDescription = shownArtist.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(180.dp)
+                                .clip(CircleShape)
+                                .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
+                        )
+                        Spacer(Modifier.height(AuraSpacing.md))
+                    }
+                    ArtistTitle(shownArtist.name, artwork.logoUrl)
+                    bio?.let { text ->
+                        Row(
+                            Modifier
+                                .padding(top = AuraSpacing.sm)
+                                .fillMaxWidth()
+                                .clickable { showBioDialog = true },
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            androidx.tv.material3.Text(
+                                text,
+                                fontSize = 13.sp,
+                                color = colors.onSurface,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            androidx.tv.material3.Text(
+                                "  More",
+                                fontSize = 13.sp,
+                                color = colors.primary
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(AuraSpacing.md))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm),
+                        verticalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
+                    ) {
+                        ArtistRadioButton(
+                            modifier = Modifier
+                                .focusRequester(leftFocus)
+                                .focusProperties { right = contentFocus },
+                            onClick = {
+                                scope.launch {
+                                    Mixes.playMix(
+                                        api = app.jellyfin.api,
+                                        userId = session.userId,
+                                        player = player,
+                                        kind = Mixes.Kind.ARTIST,
+                                        seed = shownArtist
+                                    )
+                                }
+                            }
+                        )
+                        if (!com.hans.aura.data.AtmosFilter.on) {
+                            com.hans.aura.ui.common.AtmosFilterPill(
+                                selected = state.atmosView,
+                                onClick = { viewModel.toggleAtmos() }
+                            )
+                        }
+                        androidx.tv.material3.Button(
+                            modifier = Modifier.focusProperties { right = contentFocus },
+                            onClick = onBack
+                        ) {
+                            androidx.tv.material3.Text("Back")
+                        }
+                    }
+                }
+
+                // Right pane (~65%): sub-filter pills + content list/grid.
+                Column(
+                    modifier = Modifier
+                        .weight(0.65f)
+                        .fillMaxHeight()
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        availableTabs.forEach { tab ->
+                            ArtistTabPill(
+                                label = tab.label,
+                                selected = tab == activeTab,
+                                onClick = { selectedTab = tab }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(AuraSpacing.md))
+
+                    if (state.error != null && !state.hasContent) {
+                        ErrorPane(
+                            message = "Couldn't load from server",
+                            detail = state.error,
+                            onRetry = { viewModel.retry() }
+                        )
+                    } else {
+                        when (activeTab) {
+                            ArtistTab.DISCOGRAPHY -> LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .focusRequester(contentFocus)
+                                    .focusRestorer()
+                                    .focusProperties { left = leftFocus },
+                                contentPadding = PaddingValues(
+                                    vertical = AuraMotion.artworkFocusInset(176.dp),
+                                    horizontal = AuraSpacing.xs
+                                ),
+                                horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md),
+                                verticalArrangement = Arrangement.spacedBy(AuraSpacing.lg)
+                            ) {
+                                items(
+                                    items = visibleAlbums,
+                                    key = { "album_${it.id}" },
+                                    contentType = { "album" }
+                                ) { album ->
+                                    ArtworkCard(
+                                        item = album,
+                                        serverUrl = session.serverUrl,
+                                        size = 176.dp,
+                                        badge = "ATMOS".takeIf { album.id in atmosAlbumIds },
+                                        focusKeeper = focusKeeper,
+                                        onFocused = {
+                                            focusedId = it
+                                            logFocus("albums", it)
+                                        }
+                                    ) { onOpenCollection(album) }
+                                }
+                                item { Spacer(Modifier.height(AuraSizes.bottomBarClearance)) }
+                            }
+
+                            ArtistTab.POPULAR -> LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .focusRequester(contentFocus)
+                                    .focusRestorer()
+                                    .focusProperties { left = leftFocus },
+                                contentPadding = PaddingValues(bottom = AuraSizes.bottomBarClearance)
+                            ) {
+                                itemsIndexed(
+                                    items = visibleTracks,
+                                    key = { _, t -> "top_${t.id}" },
+                                    contentType = { _, _ -> "track" }
+                                ) { i, track ->
+                                    TrackRow(
+                                        index = i + 1,
+                                        track = track,
+                                        isCurrent = track.id == current?.id,
+                                        atmos = track.albumId?.let { it in atmosAlbumIds } == true,
+                                        onClick = { player.playQueue(visibleTracks, i, resume = true) },
+                                        focusKeeper = focusKeeper,
+                                        onFocused = {
+                                            focusedId = it
+                                            logFocus("top", it)
+                                        },
+                                        onLongPress = {
+                                            com.hans.aura.ui.common.ContextMenuHost.open(
+                                                com.hans.aura.ui.common.ContextMenus.forTrack(
+                                                    app, player, scope, track,
+                                                    onOpenArtist = null, onOpenCollection = onOpenCollection
+                                                )
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+
+                            ArtistTab.SIMILAR -> LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .focusRequester(contentFocus)
+                                    .focusRestorer()
+                                    .focusProperties { left = leftFocus },
+                                contentPadding = PaddingValues(
+                                    vertical = AuraMotion.artworkFocusInset(176.dp),
+                                    horizontal = AuraSpacing.xs
+                                ),
+                                horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md),
+                                verticalArrangement = Arrangement.spacedBy(AuraSpacing.lg)
+                            ) {
+                                items(
+                                    items = similarArtists,
+                                    key = { "similar_${it.id}" },
+                                    contentType = { "artist" }
+                                ) { similar ->
+                                    ArtworkCard(
+                                        item = similar,
+                                        serverUrl = session.serverUrl,
+                                        size = 176.dp,
+                                        focusKeeper = focusKeeper,
+                                        onFocused = {
+                                            focusedId = it
+                                            logFocus("similar", it)
+                                        }
+                                    ) { onOpenArtist(similar) }
+                                }
+                                item { Spacer(Modifier.height(AuraSizes.bottomBarClearance)) }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val shownBio = bio
+            if (showBioDialog && shownBio != null) {
+                com.hans.aura.ui.common.BioDialog(
+                    title = shownArtist.name,
+                    subtitle = "Artist",
+                    text = shownBio,
+                    onDismiss = { showBioDialog = false }
+                )
+            }
         }
     }
 }
@@ -435,13 +424,14 @@ fun ArtistScreen(
 private fun ArtistTabPill(
     label: String,
     selected: Boolean,
-    accent: Color,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
+    val dynamic = LocalDynamicTheme.current
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.pill
     val bg = when {
-        selected -> accent
+        selected -> if (dynamic) colors.secondaryContainer else colors.primary
         focused -> AuraColors.FocusedFill
         else -> AuraColors.PillBackground
     }
@@ -461,8 +451,12 @@ private fun ArtistTabPill(
     ) {
         androidx.tv.material3.Text(
             text = label,
-            color = if (selected) collectionPlayContentColor(accent) else TextPrimary,
-            fontSize = 14.sp,
+            color = when {
+                selected && dynamic -> colors.onSecondaryContainer
+                selected -> colors.onPrimary
+                else -> colors.onSurface
+            },
+            style = MaterialTheme.typography.labelLarge,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
         )
     }
@@ -496,10 +490,10 @@ private fun ArtistTitle(name: String, logoUrl: String?) {
 
 @Composable
 private fun ArtistRadioButton(
-    accent: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.control
     Box(
@@ -507,14 +501,14 @@ private fun ArtistRadioButton(
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             .clip(shape)
-            .background(if (focused) TextPrimary else accent)
+            .background(if (focused) TextPrimary else colors.primary)
             .border(3.dp, if (focused) TextPrimary else Color.Transparent, shape)
             .padding(horizontal = 18.dp, vertical = 10.dp)
     ) {
         androidx.tv.material3.Text(
             "Radio",
-            color = if (focused) Canvas else collectionPlayContentColor(accent),
-            fontSize = 15.sp,
+            color = if (focused) Canvas else colors.onPrimary,
+            style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold
         )
     }

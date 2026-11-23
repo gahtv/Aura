@@ -442,49 +442,18 @@ class MediaRepository(
         limit: Int
     ): ItemsResponse {
         val uid = userId() ?: return ItemsResponse()
-        suspend fun onePage(parentId: String?, start: Int, size: Int): ItemsResponse =
-            if (kind == "Artists") {
-                api().getAlbumArtists(
-                    userId = uid,
-                    sortBy = "SortName",
-                    sortOrder = "Ascending",
-                    limit = size,
-                    startIndex = start,
-                    fields = "PrimaryImageAspectRatio",
-                    imageTypeLimit = 1,
-                    parentId = parentId,
-                    nameStartsWithOrGreater = letter
-                )
-            } else {
-                rawBrowse(LibraryFilter.ItemsQuery(
-                    includeItemTypes = "MusicAlbum",
-                    recursive = true,
-                    sortBy = "SortName",
-                    sortOrder = "Ascending",
-                    limit = size,
-                    startIndex = start,
-                    parentId = parentId,
-                    nameStartsWithOrGreater = letter
-                ))
-            }
-
-        if (!LibraryFilter.isActive()) return onePage(null, startIndex, limit)
-        val libs = LibraryFilter.visibleLibraries().filter {
-            it.collectionType == null || it.collectionType.equals("music", ignoreCase = true)
+        return if (kind == "Artists") {
+            LibraryFilter.queryAlbumArtists(
+                api(), uid, limit = limit, startIndex = startIndex, nameStartsWithOrGreater = letter
+            )
+        } else {
+            rawBrowse(LibraryFilter.ItemsQuery(
+                includeItemTypes = "MusicAlbum",
+                limit = limit,
+                startIndex = startIndex,
+                nameStartsWithOrGreater = letter
+            ))
         }
-        if (libs.isEmpty()) return ItemsResponse()
-        val wanted = startIndex + limit
-        val responses = libs.mapNotNull { lib ->
-            runCatching { onePage(lib.id, 0, wanted) }.getOrNull()
-        }
-        val all = responses.flatMap { it.items }
-            .distinctBy { it.id }
-            .sortedBy { (it.sortName ?: it.name).lowercase() }
-        return ItemsResponse(
-            items = all.drop(startIndex).take(limit),
-            totalRecordCount = responses.sumOf { it.totalRecordCount },
-            startIndex = startIndex
-        )
     }
 
     internal suspend fun rawArtists(

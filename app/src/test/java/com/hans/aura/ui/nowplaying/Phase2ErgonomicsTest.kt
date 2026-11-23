@@ -18,12 +18,16 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.test.core.app.ApplicationProvider
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.MediaSession
 import com.hans.aura.AuraApp
 import com.hans.aura.data.Fixtures
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Prefs
 import com.hans.aura.data.Session
 import com.hans.aura.playback.PlaybackService
+import com.hans.aura.player.controller.PlaybackController
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraTheme
@@ -94,6 +98,56 @@ class Phase2ErgonomicsTest {
         }
         compose.onNodeWithContentDescription("Dim mode").performClick()
         compose.runOnIdle { assertTrue(toggled) }
+    }
+
+    @Test
+    fun centerWakeDoesNotActivateTransportButNextPressDoes() {
+        val app = ApplicationProvider.getApplicationContext<AuraApp>()
+        app.jellyfin.auth.installSession(Session("http://example.test", "user", "test", "token", "device"))
+        shadowOf(app).declareComponentUnbindable(ComponentName(app, PlaybackService::class.java))
+        val player = PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session }
+        val engine = ExoPlayer.Builder(app).build()
+        val session = MediaSession.Builder(app, engine).build()
+        val future = MediaController.Builder(app, session.token).buildAsync()
+        compose.waitUntil { shadowOf(android.os.Looper.getMainLooper()).idle(); future.isDone }
+        val controller = future.get()
+        val playback = ReflectionHelpers.getField<PlaybackController>(player, "playback")
+        ReflectionHelpers.getField<MutableStateFlow<MediaController?>>(playback, "_controller").value = controller
+        ReflectionHelpers.getField<MutableStateFlow<JellyfinItem?>>(player, "_currentItem").value =
+            Fixtures.track("Ambient Song")
+        ReflectionHelpers.getField<MutableStateFlow<Boolean>>(player, "_isPlaying").value = true
+
+        try {
+            compose.mainClock.autoAdvance = false
+            compose.setContent {
+                AuraTheme {
+                    NowPlayingScreen(app = app, player = player, onBack = {}, onOpenQueue = {})
+                }
+            }
+            compose.mainClock.advanceTimeBy(500, ignoreFrameDuration = true)
+            compose.mainClock.advanceTimeByFrame()
+            compose.mainClock.advanceTimeBy(6_500, ignoreFrameDuration = true)
+            compose.mainClock.advanceTimeByFrame()
+            compose.mainClock.advanceTimeBy(400, ignoreFrameDuration = true)
+            compose.mainClock.advanceTimeByFrame()
+            compose.onAllNodesWithText("Ambient Song").assertCountEquals(2)
+
+            compose.onNodeWithContentDescription("Pause").performKeyInput { keyDown(Key.DirectionCenter) }
+            compose.mainClock.advanceTimeBy(400, ignoreFrameDuration = true)
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNodeWithContentDescription("Pause").performKeyInput { keyUp(Key.DirectionCenter) }
+            compose.runOnIdle {
+                assertFalse("Wake KeyUp must not activate the transport button", controller.playWhenReady)
+            }
+            compose.onAllNodesWithText("Ambient Song").assertCountEquals(1)
+            compose.onNodeWithContentDescription("Pause").performKeyInput { pressKey(Key.DirectionCenter) }
+            compose.runOnIdle { assertTrue("The next Center press must activate transport", controller.playWhenReady) }
+        } finally {
+            controller.release()
+            session.release()
+            engine.release()
+            player.teardown()
+        }
     }
 
     @Test

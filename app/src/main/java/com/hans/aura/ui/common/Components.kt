@@ -100,7 +100,7 @@ fun ArtworkCard(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) AuraMotion.artworkFocusedScale else 1f,
-        animationSpec = AuraMotion.artworkFocusSpring,
+        animationSpec = AuraMotion.scheme.defaultSpatialSpec(),
         label = "artworkFocusScale"
     )
     Column(
@@ -125,7 +125,11 @@ fun ArtworkCard(
                 scaleY = scale
             }
     ) {
-        val bg by animateColorAsState(if (focused) SurfaceHigh else Surface, label = "card")
+        val bg by animateColorAsState(
+            if (focused) SurfaceHigh else Surface,
+            animationSpec = AuraMotion.scheme.fastEffectsSpec(),
+            label = "card"
+        )
         val outerShape = if (circular) CircleShape else AuraShapes.card
         val innerShape = if (circular) CircleShape else CardFocusedShape
         Box(
@@ -331,8 +335,8 @@ fun TrackRow(
         // focus stays on the row itself).
         AnimatedVisibility(
             visible = focused && (favorite != null || onToggleFavorite != null || onLongPress != null),
-            enter = fadeIn(AuraMotion.effectsFast),
-            exit = fadeOut(AuraMotion.effectsFast)
+            enter = fadeIn(AuraMotion.scheme.fastEffectsSpec()),
+            exit = fadeOut(AuraMotion.scheme.fastEffectsSpec())
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

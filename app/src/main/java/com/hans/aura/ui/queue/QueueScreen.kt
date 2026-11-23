@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.tv.material3.MaterialTheme
+import com.hans.aura.ui.common.ConnectedAction
+import com.hans.aura.ui.common.ConnectedActions
 import com.hans.aura.ui.common.ContextMenuHost
 import com.hans.aura.ui.common.ContextMenus
 import com.hans.aura.ui.common.InitialFocusOnPush
@@ -89,29 +91,31 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
                 style = MaterialTheme.typography.headlineSmall, color = TextPrimary
             )
             Spacer(Modifier.weight(1f))
-            HeaderActionButton(
-                label = if (shuffle) "Shuffle on" else "Shuffle off",
-                active = shuffle,
-                onClick = { player.setShuffle(!shuffle) }
-            )
-            // Smart shuffle: least-played / longest-unplayed first, reversible.
-            Spacer(Modifier.width(AuraSpacing.xs))
-            HeaderActionButton(
-                label = if (smart) "Normal order" else "Smart",
-                active = smart,
-                onClick = {
-                    if (smart) player.restoreNormalOrder() else player.applySmartOrder()
-                }
-            )
-            Spacer(Modifier.width(AuraSpacing.xs))
-            HeaderActionButton(
-                label = when (repeatMode) {
-                    Player.REPEAT_MODE_ALL -> "Repeat all"
-                    Player.REPEAT_MODE_ONE -> "Repeat one"
-                    else -> "Repeat off"
-                },
-                active = repeatMode != Player.REPEAT_MODE_OFF,
-                onClick = { player.setRepeat(nextRepeatMode(repeatMode)) }
+            ConnectedActions(
+                actions = listOf(
+                    ConnectedAction(
+                        label = if (shuffle) "Shuffle on" else "Shuffle off",
+                        active = shuffle,
+                        onClick = { player.setShuffle(!shuffle) }
+                    ),
+                    ConnectedAction(
+                        label = if (smart) "Normal order" else "Smart",
+                        active = smart,
+                        onClick = {
+                            if (smart) player.restoreNormalOrder() else player.applySmartOrder()
+                        }
+                    ),
+                    ConnectedAction(
+                        label = when (repeatMode) {
+                            Player.REPEAT_MODE_ALL -> "Repeat all"
+                            Player.REPEAT_MODE_ONE -> "Repeat one"
+                            else -> "Repeat off"
+                        },
+                        active = repeatMode != Player.REPEAT_MODE_OFF,
+                        onClick = { player.setRepeat(nextRepeatMode(repeatMode)) }
+                    )
+                ),
+                compact = true
             )
             // Only meaningful while something is actually queued behind the
             // current track; the current track keeps playing either way.

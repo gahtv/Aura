@@ -3,6 +3,7 @@ agp = "9.1.0"
 kotlin = "2.2.10"
 composeBom = "2026.11.01"
 tvMaterial = "1.1.0"
+graphicsShapes = "1.0.1"
 media3 = "1.6.0"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
@@ -36,6 +37,7 @@ compose-material3 = { module = "androidx.compose.material3:material3" }
 
 # --- TV ---
 tv-material = { module = "androidx.tv:tv-material", version.ref = "tvMaterial" }
+androidx-graphics-shapes = { module = "androidx.graphics:graphics-shapes", version.ref = "graphicsShapes" }
 
 # --- Media3 playback ---
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }

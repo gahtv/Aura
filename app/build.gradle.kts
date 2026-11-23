@@ -120,7 +120,7 @@ dependencies {
     implementation(libs.coil.compose)
 
     // Palette extraction for dynamic per-album theming
-    implementation(libs.androidx.palette)
+    implementation(libs.material.color.utilities)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

@@ -1,6 +1,6 @@
 package com.hans.aura.ui.theme
 
-import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -9,201 +9,92 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.palette.graphics.Palette
+import androidx.compose.ui.graphics.toArgb
 import coil.imageLoader
 import coil.request.ImageRequest
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * Extracts a dominant color from an image URL for dynamic per-album theming.
- *
- * Performance matters on TV hardware: the bitmap is requested at 96px
- * (a full-size software decode here used to stall the decode pipeline),
- * a single shared Coil loader handles it, and results are cached process-wide
- * so re-entering the same album is instant.
- */
 object PaletteCache {
-    // Value packs (dominant, secondary) as two ARGB ints in a Long so both
-    // halves of the palette survive a cache hit; secondary sits in the high 32.
-    private val colors = ConcurrentHashMap<String, Long>()
+    private val seeds = ConcurrentHashMap<String, Int>()
 
-    fun get(url: String): Long? = colors[url]
-    fun put(url: String, packed: Long) { colors[url] = packed }
-
-    val size: Int get() = colors.size
-
-    /** Evicted when the session ends: a URL from another server can collide
-     *  (same item ids, different host) and paint the wrong album's accent. */
-    fun clear() = colors.clear()
+    fun get(url: String): Int? = seeds[url]
+    fun put(url: String, seed: Int) { seeds[url] = seed }
+    val size: Int get() = seeds.size
+    fun clear() = seeds.clear()
 }
 
 @Composable
-fun rememberDynamicColor(imageUrl: String?): Color? =
-    rememberDynamicColors(imageUrl)?.primary
+fun rememberArtworkSeed(imageUrl: String?): Int? {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var seed by remember(imageUrl) { mutableStateOf(imageUrl?.let(PaletteCache::get)) }
+    LaunchedEffect(imageUrl) {
+        if (imageUrl == null || seed != null) return@LaunchedEffect
+        try {
+            val request = ImageRequest.Builder(context)
+                .data(imageUrl)
+                .size(96)
+                .allowHardware(false)
+                .build()
+            val bitmap = (context.imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
+                ?: return@LaunchedEffect
+            val extracted = withContext(Dispatchers.Default) {
+                val pixels = IntArray(bitmap.width * bitmap.height)
+                bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                extractSeed(pixels)
+            }
+            PaletteCache.put(imageUrl, extracted)
+            seed = extracted
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            seed = null
+        }
+    }
+    return seed
+}
 
 data class DynamicColors(
     val primary: Color,
     val secondary: Color,
-    val surfaceContainer: Color = darken(primary, 0.72f),
-    val surfaceContainerHigh: Color = primary,
-    val onAccent: Color = readableOn(secondary),
-    val tertiary: Color = deriveTertiary(secondary)
+    val surfaceContainer: Color,
+    val surfaceContainerHigh: Color,
+    val onAccent: Color,
+    val tertiary: Color
 )
 
-/**
- * Two-color dynamic palette: the dominant color darkens into the background
- * wash; a second, distinct, sufficiently light swatch from the same art
- * becomes the accent/highlight color so it reads against the dark background.
- */
 @Composable
 fun rememberDynamicColors(imageUrl: String?): DynamicColors? {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var pair by remember(imageUrl) {
-        mutableStateOf(imageUrl?.let { u -> PaletteCache.get(u)?.let { toColors(it) } })
-    }
-
-    LaunchedEffect(imageUrl) {
-        if (imageUrl == null || pair != null) return@LaunchedEffect
-        runCatching {
-            val request = ImageRequest.Builder(context)
-                .data(imageUrl)
-                .size(96) // tiny decode; palette needs no detail
-                .allowHardware(false) // Palette needs readable pixels
-                .build()
-            val bitmap = context.imageLoader.execute(request).drawable?.let { d ->
-                if (d is android.graphics.drawable.BitmapDrawable) d.bitmap else null
-            } ?: return@LaunchedEffect
-            withContext(Dispatchers.Default) { extractColors(bitmap) } ?: return@LaunchedEffect
-        }.onSuccess { (dom, sec) ->
-            // Breadcrumb: palette extraction is silent otherwise, and a null
-            // palette looks identical to a very dark image.
-            // Strip the query string before logging: some backend artwork URLs carry the
-            // access token there, and the last 60 chars were mostly that token.
-            android.util.Log.d("AURA_THEME", "palette ${imageUrl?.substringBefore('?')?.takeLast(60)} dom=#${Integer.toHexString(dom)} sec=#${Integer.toHexString(sec)}")
-            val packed = (dom.toLong() and 0xFFFFFFFFL) or ((sec.toLong() and 0xFFFFFFFFL) shl 32)
-            imageUrl?.let { PaletteCache.put(it, packed) }
-            pair = toColors(packed)
+    val seed = rememberArtworkSeed(imageUrl)
+    return remember(seed) {
+        seed?.let {
+            val scheme = dynamicColorScheme(it)
+            DynamicColors(
+                primary = scheme.surfaceContainerHigh,
+                secondary = scheme.primary,
+                surfaceContainer = scheme.surfaceContainer,
+                surfaceContainerHigh = scheme.surfaceContainerHigh,
+                onAccent = scheme.onPrimary,
+                tertiary = scheme.tertiary
+            )
         }
     }
-    return pair
 }
 
-/**
- * Raw (dominant, secondary) ARGB ints for [bitmap]. Palette quantisation costs
- * a full frame or more on TV hardware, so call this off the main thread.
- */
-private fun extractColors(bitmap: Bitmap): Pair<Int, Int>? {
-    val palette = Palette.from(bitmap).maximumColorCount(16).generate() ?: return null
-    val dominant = palette.getDominantColor(0xFF6B5A45.toInt())
-    return dominant to pickSecondary(palette, dominant)
-}
+@Composable
+fun rememberDynamicColor(imageUrl: String?): Color? = rememberDynamicColors(imageUrl)?.primary
 
-/**
- * Secondary = the most POPULOUS saturated swatch that still belongs to the
- * image's own hue family.
- *
- * This used to score raw saturation alone, which meant one small vivid patch
- * dominated the whole accent: a muted sage artist portrait produced a neon
- * green accent that looked exactly like some other album's colour leaking into
- * the page (user-reported: "playing 360 makes the boygenius page green"). Hue
- * distance from the dominant swatch is now a heavy factor, grey swatches are
- * ignored, and the result's saturation is capped so the accent reads as part of
- * the artwork rather than as an unrelated highlight.
- */
-private fun pickSecondary(palette: Palette, dominant: Int): Int {
-    val domHsv = FloatArray(3)
-    android.graphics.Color.colorToHSV(dominant, domHsv)
-    var best = -1
-    var bestScore = -1f
-    for (swatch in palette.swatches) {
-        val c = swatch.rgb
-        if (c == dominant) continue
-        val hsv = FloatArray(3)
-        android.graphics.Color.colorToHSV(c, hsv)
-        // Greys carry no usable hue; using one turns the accent into plain white.
-        if (hsv[1] < 0.12f) continue
-        val hueGap = minOf(
-            kotlin.math.abs(hsv[0] - domHsv[0]),
-            360f - kotlin.math.abs(hsv[0] - domHsv[0])
-        )
-        // 1.0 at the dominant hue, 0 at 120 degrees away (opposite-ish).
-        val harmony = (1f - hueGap / 120f).coerceAtLeast(0f)
-        if (harmony <= 0f) continue
-        val population = swatch.population / 1000f
-        val score = harmony * harmony * population * (0.4f + 0.6f * hsv[1])
-        if (score > bestScore) { bestScore = score; best = c }
-    }
-    if (best < 0) {
-        // Nothing in-family: lean on the dominant hue, nudged so background and
-        // accent are still distinguishable.
-        val hsv = floatArrayOf(
-            (domHsv[0] + 18f) % 360f,
-            (domHsv[1] * 0.9f).coerceAtLeast(0.25f),
-            0.78f
-        )
-        best = android.graphics.Color.HSVToColor(hsv)
-    }
-    return capSaturation(best, 0.62f)
-}
-
-/** Caps vividness so an accent pulled from artwork never shouts. */
-private fun capSaturation(color: Int, maxSat: Float): Int {
-    val hsv = FloatArray(3)
-    android.graphics.Color.colorToHSV(color, hsv)
-    if (hsv[1] <= maxSat) return color
-    hsv[1] = maxSat
-    return android.graphics.Color.HSVToColor(hsv)
-}
-
-/** Packs the two raw palette ints into the cache; unpacks for consumption. */
-private fun toColors(packed: Long): DynamicColors {
-    val dom = (packed and 0xFFFFFFFFL).toInt()
-    val sec = ((packed ushr 32) and 0xFFFFFFFFL).toInt()
-    return DynamicColors(darken(Color(dom), 0.30f), ensureReadable(Color(sec)))
-}
-
-/**
- * Lightens a highlight color until it has enough contrast on a very dark
- * background (the darkened dominant wash).
- */
-private fun ensureReadable(c: Color): Color {
-    val lum = 0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue
-    if (lum >= 0.40f) return c
-    val t = (0.40f - lum) / (1f - lum).coerceAtLeast(0.001f)
-    return Color(
-        c.red + (1f - c.red) * t,
-        c.green + (1f - c.green) * t,
-        c.blue + (1f - c.blue) * t,
-        1f
-    )
-}
-
-/** Darkens a color for use as a background wash behind light text. */
 fun darken(c: Color, factor: Float = 0.38f): Color =
     Color(c.red * factor, c.green * factor, c.blue * factor, 1f)
 
-/** Picks dark or light ink with >= 4.5:1 WCAG contrast on [background]. */
 fun readableOn(background: Color): Color {
     val bgLum = background.luminance()
-    val darkInk = Color(0xFF14100C)
+    val darkInk = AuraColors.OnAccent
     val darkContrast = (maxOf(bgLum, darkInk.luminance()) + 0.05f) /
         (minOf(bgLum, darkInk.luminance()) + 0.05f)
     return if (darkContrast >= 4.5f) darkInk else Color.White
 }
 
-/** Shifts hue by +45° for a harmonious M3E tertiary highlight. */
-fun deriveTertiary(accent: Color): Color {
-    val hsv = FloatArray(3)
-    android.graphics.Color.RGBToHSV(
-        (accent.red * 255f).toInt().coerceIn(0, 255),
-        (accent.green * 255f).toInt().coerceIn(0, 255),
-        (accent.blue * 255f).toInt().coerceIn(0, 255),
-        hsv
-    )
-    hsv[0] = (hsv[0] + 45f) % 360f
-    hsv[1] = hsv[1].coerceIn(0.25f, 0.65f)
-    hsv[2] = hsv[2].coerceAtLeast(0.75f)
-    return Color(android.graphics.Color.HSVToColor(hsv))
-}
+fun deriveTertiary(accent: Color): Color = dynamicColorScheme(accent.toArgb()).tertiary

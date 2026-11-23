@@ -11,7 +11,7 @@ retrofitSerializationConverter = "1.0.0"
 lifecycle = "2.8.7"
 coroutines = "1.9.0"
 coil = "2.7.0"
-palette = "1.0.0"
+materialColorUtilities = "4.0.5"
 coreKtx = "1.15.0"
 activityCompose = "1.9.3"
 baselineProfile = "1.5.0"
@@ -57,7 +57,7 @@ kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutine
 
 # --- Images / palette / core ---
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
-androidx-palette = { module = "androidx.palette:palette", version.ref = "palette" }
+material-color-utilities = { module = "com.materialkolor:material-color-utilities", version.ref = "materialColorUtilities" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 

@@ -77,6 +77,16 @@ object Favorites {
     /** Forces a known state (e.g. seeding from a fresh server read). */
     fun adopt(itemId: String, value: Boolean) = set(itemId, value)
 
+    /**
+     * A favourite change rewrites UserData inside cached lists. Without these
+     * evictions the Home shelf and every album page keep serving the pre-toggle
+     * heart for the 24h TTL.
+     *
+     * Keys (verified against the call sites): "home_recent:<userId>",
+     * "col:<albumId>" for the album tracklist, and the library tab keys
+     * for Tracks and Liked, including hydrated Atmos favorites. Each list can
+     * be cached under multiple sorts and library selections.
+     */
     private fun evictCaches(userId: String, item: JellyfinItem) {
         LibraryCache.evict("home_recent:$userId")
         item.albumId?.let { LibraryCache.evict("col:$it") }

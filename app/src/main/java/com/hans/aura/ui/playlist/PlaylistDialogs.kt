@@ -46,11 +46,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.ui.common.countLabel
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.Border

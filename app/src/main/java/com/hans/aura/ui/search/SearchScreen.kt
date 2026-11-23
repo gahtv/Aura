@@ -54,7 +54,6 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.common.AuraTextField
@@ -63,6 +62,7 @@ import com.hans.aura.ui.common.FocusKeeper
 import com.hans.aura.ui.common.ItemShelf
 import com.hans.aura.ui.common.contextMenuKeys
 import com.hans.aura.ui.common.rememberAtmosAlbumIds
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraShapes

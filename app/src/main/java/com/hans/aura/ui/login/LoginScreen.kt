@@ -39,9 +39,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.common.AuraTextField
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes

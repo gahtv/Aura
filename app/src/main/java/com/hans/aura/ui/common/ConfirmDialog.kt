@@ -66,7 +66,7 @@ fun ConfirmDialog(
 
     val cancelFocus = remember { FocusRequester() }
     // A dialog with no focused element is dead on arrival: the cursor request
-    // also fails silently before the requester attaches, hence the retry loop.
+    // can run before the requester attaches, so retry on subsequent frames.
     LaunchedEffect(Unit) {
         cancelFocus.requestFocusOnFrame()
     }

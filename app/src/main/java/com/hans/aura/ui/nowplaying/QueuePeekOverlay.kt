@@ -37,10 +37,10 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.common.OverlayVisibility
 import com.hans.aura.ui.common.formatDuration
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes

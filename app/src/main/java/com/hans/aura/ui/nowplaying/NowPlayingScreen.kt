@@ -46,7 +46,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
-import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.AuraApp
 import com.hans.aura.data.Favorites
 import com.hans.aura.data.JellyfinItem
@@ -57,6 +56,7 @@ import com.hans.aura.ui.MirrorLink
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.common.InitialFocusOnPush
 import com.hans.aura.ui.common.MotionArtwork
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.common.resolveArtwork
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
@@ -84,7 +84,6 @@ fun NowPlayingScreen(
     app: AuraApp,
     player: PlayerConnection,
     onBack: () -> Unit,
-    initialFocus: Boolean = false,
     onOpenQueue: () -> Unit,
     onOpenAlbum: (JellyfinItem) -> Unit = {},
     onOpenArtist: (JellyfinItem) -> Unit = {}

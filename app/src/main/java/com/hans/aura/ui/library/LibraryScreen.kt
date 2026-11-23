@@ -47,12 +47,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.TextPrimary

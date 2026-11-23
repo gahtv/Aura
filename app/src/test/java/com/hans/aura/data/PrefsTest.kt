@@ -1,6 +1,8 @@
 package com.hans.aura.data
 
 import androidx.test.core.app.ApplicationProvider
+import com.hans.aura.model.Track
+import com.hans.aura.player.controller.ResumePolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -25,6 +27,29 @@ class PrefsTest {
     }
 
     // ---- resume points -----------------------------------------------------
+
+    @Test
+    fun `switching Jellyfin profiles does not share a track bookmark`() {
+        val auth = AuthStore(ApplicationProvider.getApplicationContext())
+        val alex = Session("http://jellyfin.local:8096", "alex", "Alex", "token-a", "device")
+        val sam = alex.copy(userId = "sam", userName = "Sam", accessToken = "token-b")
+        val track = Track(id = "shared-track", name = "Shared track", durationMs = 240_000L)
+        val policy = ResumePolicy()
+
+        auth.save(sam)
+        auth.save(alex)
+        ResumePoints.save(track.id, 42_000L)
+        assertEquals(42_000L, policy.positionMs(track))
+
+        assertEquals(sam, auth.switchProfile(sam.serverUrl, sam.userId))
+        assertNull("Sam has never played this track", policy.positionMs(track))
+        assertEquals(23_000L, policy.positionMs(track.copy(resumePositionMs = 23_000L)))
+        ResumePoints.save(track.id, 61_000L)
+        assertEquals(61_000L, policy.positionMs(track))
+
+        assertEquals(alex, auth.switchProfile(alex.serverUrl, alex.userId))
+        assertEquals(42_000L, policy.positionMs(track))
+    }
 
     @Test
     fun `resume point round trips`() {

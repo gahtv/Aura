@@ -269,10 +269,7 @@ object ContextMenus {
                         "newIndex=$newIndex -> code=${resp.code()}"
                 )
                 if (resp.isSuccessful) {
-                    // The playlist screen reads col:<playlistId> from
-                    // LibraryCache with a 24h TTL — without this eviction the
-                    // page keeps rendering the pre-move order for a day.
-                    LibraryCache.evict("col:${move.playlistId}")
+                    LibraryCache.invalidateAfterMutation()
                     move.onMoved()
                 } else {
                     Log.w(TAG, "playlist move rejected: HTTP ${resp.code()}")

@@ -28,6 +28,8 @@ object Favorites {
     /** id -> isFavorite, for items toggled this session. Wins over UserData. */
     private var overrides by mutableStateOf<Map<String, Boolean>>(emptyMap())
 
+    fun clear() { overrides = emptyMap() }
+
     /** True when [item] is liked: session override first, then server UserData. */
     fun isFavorite(item: JellyfinItem): Boolean =
         overrides[item.id] ?: (item.userData?.isFavorite == true)
@@ -67,38 +69,12 @@ object Favorites {
         resp.body()?.isFavorite?.let { set(item.id, it) }
         val after = isFavorite(item.id)
         Log.d(TAG, "item=${item.id} now=$after code=${resp.code()}")
-        evictCaches(userId, item)
+        LibraryCache.invalidateAfterMutation()
         return after
     }
 
     /** Forces a known state (e.g. seeding from a fresh server read). */
     fun adopt(itemId: String, value: Boolean) = set(itemId, value)
-
-    /**
-     * A favourite change rewrites UserData inside cached lists. Without these
-     * evictions the Home shelf and every album page keep serving the pre-toggle
-     * heart for the 24h TTL.
-     *
-     * Keys (verified against the call sites): "home_recent:<userId>",
-     * "col:<albumId>" for the album tracklist, and the library tab keys
-     * for Tracks and Liked, including hydrated Atmos favorites. Each list can
-     * be cached under multiple sorts and library selections.
-     */
-    private fun evictCaches(userId: String, item: JellyfinItem) {
-        LibraryCache.evict("home_recent:$userId")
-        item.albumId?.let { LibraryCache.evict("col:$it") }
-        fun isLikedAtmosKey(key: String) = key.substringBefore('#').endsWith(":fav")
-        fun isAffectedPage(key: String): Boolean =
-            key.startsWith("lib_tracks:$userId:") || key.startsWith("lib_liked:$userId:") ||
-                (key.startsWith("lib_atmos_tracks:$userId:") && isLikedAtmosKey(key))
-
-        LibraryCache.evictWhere { key ->
-            isAffectedPage(key) ||
-                (key.startsWith("atmos_audio:$userId:") && isLikedAtmosKey(key))
-        }
-        PagedLibrary.evictWhere(::isAffectedPage)
-        Log.d(TAG, "evict item=${item.id} album=${item.albumId ?: "-"} userId=$userId")
-    }
 
     /**
      * One page of liked AUDIO, in the same 60-item shape the library tabs use.

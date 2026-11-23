@@ -34,6 +34,8 @@ class CachePersistenceTest {
     }
 
     private fun coldStart() {
+        Favorites.clear()
+        PagedLibrary.clear()
         LibraryCache.install(disk)
         AtmosCatalog.install(disk)
         AtmosFilter.adopt(AtmosCatalog.Catalog())
@@ -98,6 +100,62 @@ class CachePersistenceTest {
         .baseUrl(server.url("/"))
         .addConverterFactory(jellyfinJson.asConverterFactory("application/json".toMediaType()))
         .build().create(JellyfinApi::class.java)
+
+    @Test
+    fun `favorite toggle cannot restore pre-mutation home album after cold start`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            val album = Fixtures.item("a")
+            LibraryCache.put("home_new:u", listOf(album))
+            LibraryCache.put("arbitrary-selection-key", listOf(album))
+            server.enqueue(MockResponse().setBody("""{"IsFavorite":true}"""))
+            assertEquals(true, Favorites.toggle(api(server), "u", album))
+            assertTrue(Favorites.isFavorite(album))
+            coldStart()
+            assertNull(LibraryCache.get("home_new:u"))
+            assertNull(LibraryCache.get("arbitrary-selection-key"))
+            assertFalse(Favorites.isFavorite(album))
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `rejected favorite preserves persisted lists after cold start`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            LibraryCache.put("home_new:u", items)
+            server.enqueue(MockResponse().setResponseCode(403))
+            assertNull(Favorites.toggle(api(server), "u", items.first()))
+            coldStart()
+            assertEquals(items, LibraryCache.get("home_new:u"))
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `mutation invalidation removes every selection and paged list before returning`() = runBlocking {
+        LibraryCache.put("home_recent:u", items)
+        LibraryCache.put("col:playlist", items)
+        Prefs.hiddenLibraries = setOf("hidden")
+        LibraryCache.put("lib_albums:u:sort", items)
+        PagedLibrary.put("lib_albums:u:sort", items, 2)
+        assertEquals(items, LibraryCache.get("lib_albums:u:sort"))
+        retrofit2.Response.success(Unit).invalidateLibraryOnSuccess()
+        assertNull(PagedLibrary.get("lib_albums:u:sort"))
+        assertNull(LibraryCache.peek("lib_albums:u:sort"))
+        assertTrue(disk.read { listKeys().isEmpty() })
+        coldStart()
+        assertNull(LibraryCache.get("lib_albums:u:sort"))
+        Prefs.hiddenLibraries = emptySet()
+        assertNull(LibraryCache.get("home_recent:u"))
+        assertNull(LibraryCache.get("col:playlist"))
+        retrofit2.Response.success(Unit).invalidateLibraryOnSuccess()
+        assertTrue(disk.read { listKeys().isEmpty() })
+    }
 
     @Test
     fun `cold Atmos restore adopts ids without any Items requests`() = runBlocking {

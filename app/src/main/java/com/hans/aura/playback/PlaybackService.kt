@@ -24,6 +24,7 @@ import com.hans.aura.data.APP_VERSION
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Session
+import com.hans.aura.data.invalidateLibraryOnSuccess
 import com.hans.aura.player.controller.RepeatPlaybackAnchor
 import com.hans.aura.util.AuraLog
 import com.hans.aura.util.AuraTag
@@ -340,7 +341,7 @@ internal class PlaybackReporter(
                                             positionTicks = oldTicks,
                                             mediaSourceId = oldId
                                         )
-                                    )
+                                    ).invalidateLibraryOnSuccess()
                                 }.onFailure {
                                     AuraLog.w(AuraTag.REPORT, "stop failed: ${it.message}")
                                 }
@@ -366,7 +367,7 @@ internal class PlaybackReporter(
                                         repeatMode = repeatMode,
                                         playbackOrder = playbackOrder
                                     )
-                                )
+                                ).invalidateLibraryOnSuccess()
                             }.onFailure {
                                 AuraLog.w(AuraTag.REPORT, "playbackStart failed: ${it.message}")
                             }
@@ -398,7 +399,7 @@ internal class PlaybackReporter(
                                             repeatMode = repeatMode,
                                             playbackOrder = playbackOrder
                                         )
-                                    )
+                                    ).invalidateLibraryOnSuccess()
                                 }.onFailure {
                                     AuraLog.w(AuraTag.REPORT, "progress failed: ${it.message}")
                                 }
@@ -423,7 +424,7 @@ internal class PlaybackReporter(
                                         positionTicks = ticks,
                                         mediaSourceId = oldId
                                     )
-                                )
+                                ).invalidateLibraryOnSuccess()
                             }.onFailure {
                                 AuraLog.w(AuraTag.REPORT, "stop failed: ${it.message}")
                             }

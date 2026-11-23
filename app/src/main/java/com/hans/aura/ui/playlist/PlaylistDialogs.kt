@@ -294,8 +294,7 @@ fun PlaylistPickerDialog(
                                                     "AURA_MENU",
                                                     "picker added ${tracksToAdd.size} track(s) to \"${pl.name}\" (${pl.id})"
                                                 )
-                                                LibraryCache.evict("col:${pl.id}")
-                                                LibraryCache.evict("home_playlists:$userId")
+                                                LibraryCache.invalidateAfterMutation()
                                                 onDismiss()
                                             }.onFailure { e ->
                                                 android.util.Log.w(

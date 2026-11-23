@@ -54,6 +54,7 @@ class MediaRepository(
             ))
         }
         if (!response.isSuccessful) throw HttpException(response)
+        LibraryCache.invalidateAfterMutation()
     }
 
     private fun userId(): String? = sessionProvider()?.userId
@@ -133,10 +134,7 @@ class MediaRepository(
         }
         // Serialize invalidation with LibraryViewModel's page writes on Main.
         withContext(Dispatchers.Main.immediate) {
-            LibraryCache.evict("home_playlists:$userId")
-            val prefix = LibraryCache.tabKeyPrefix("Playlists", userId)
-            LibraryCache.evictWhere { it.startsWith(prefix) }
-            PagedLibrary.evictWhere { it.startsWith(prefix) }
+            LibraryCache.invalidateAfterMutation()
             _playlistRevisions.update { it + (userId to ((it[userId] ?: 0L) + 1)) }
         }
         return created

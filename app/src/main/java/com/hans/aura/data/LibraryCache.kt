@@ -2,7 +2,10 @@ package com.hans.aura.data
 
 import android.content.Context
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
+import retrofit2.Response
 
 /**
  * Library query cache with a 24h TTL, keyed by stable request keys.
@@ -134,6 +137,15 @@ object LibraryCache {
         disk?.write { clearLists() }
     }
 
+    /** Mutations can change membership and sorting even in lists without the item. */
+    suspend fun invalidateAfterMutation() {
+        withContext(NonCancellable) {
+            clear()
+            PagedLibrary.clear()
+            disk?.read { }
+        }
+    }
+
     /** Fresh data arrived from the server. Persist at most every 30s — put() is
      *  called dozens of times per screen and each write is a disk edit. */
     private fun markLoaded() {
@@ -152,4 +164,9 @@ object LibraryCache {
             ?.putLong(KEY_LOADED, lastLoadedAtMs)
             ?.apply()
     }
+}
+
+internal suspend fun <T> Response<T>.invalidateLibraryOnSuccess(): Response<T> {
+    if (isSuccessful) LibraryCache.invalidateAfterMutation()
+    return this
 }

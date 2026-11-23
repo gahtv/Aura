@@ -3,6 +3,7 @@ package com.hans.aura.ui.shell
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.data.AuthStore
+import com.hans.aura.data.Favorites
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.PagedLibrary
 import com.hans.aura.data.Session
@@ -36,6 +37,7 @@ internal fun endSession(
     val atmos = AtmosCatalog.size
     val palette = ArtworkSeedCache.size
     LibraryCache.clear()
+    Favorites.clear()
     PagedLibrary.clear()
     AtmosCatalog.clear()
     ArtworkSeedCache.clear()
@@ -66,6 +68,7 @@ internal fun switchSession(
 ) {
     player.teardown()
     LibraryCache.clear()
+    Favorites.clear()
     PagedLibrary.clear()
     AtmosCatalog.clear()
     ArtworkSeedCache.clear()

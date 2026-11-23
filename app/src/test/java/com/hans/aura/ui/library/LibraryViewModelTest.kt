@@ -158,13 +158,9 @@ class LibraryViewModelTest {
             val created = app.container.media.createPlaylist(userId, "New playlist", listOf("track"))
 
             assertNull(LibraryCache.peek("home_playlists:$userId"))
-            for (key in listOf(activeKey, otherSortKey)) {
+            for (key in listOf(activeKey, otherSortKey, otherUserKey, albumsKey)) {
                 assertNull("Stale first page: $key", LibraryCache.peek(key))
                 assertNull("Stale accumulated pages: $key", PagedLibrary.get(key))
-            }
-            for (key in listOf(otherUserKey, albumsKey)) {
-                assertEquals(listOf(existing), LibraryCache.peek(key))
-                assertEquals(listOf(existing), PagedLibrary.get(key)?.items)
             }
             withTimeout(5000) { requests.receive() }.complete(
                 ItemsResponse(items = listOf(existing, created), totalRecordCount = 2)

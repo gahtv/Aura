@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -44,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,6 +106,7 @@ import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.max
@@ -154,9 +157,17 @@ fun LyricsPane(
     onUserInteraction: () -> Unit = {}
 ) {
     val item by player.current.collectAsState()
-    val position = player.positionMs.collectAsState()
+    val playbackSamples = remember(player) {
+        combine(player.positionMs, player.isPlaying) { position, playing ->
+            LyricPlaybackSample(position, playing, SystemClock.uptimeMillis())
+        }
+    }
+    val playback = playbackSamples.collectAsState(
+        remember(player) {
+            LyricPlaybackSample(player.positionMs.value, player.isPlaying.value, SystemClock.uptimeMillis())
+        }
+    )
     val isPlaying by player.isPlaying.collectAsState()
-    val positionAnchor = remember(position.value, isPlaying) { SystemClock.uptimeMillis() }
     val trackId = item?.id.orEmpty()
 
     var lines by remember(item?.id) { mutableStateOf<List<LyricLine>?>(null) }
@@ -175,7 +186,8 @@ fun LyricsPane(
     val scope = rememberCoroutineScope()
     var followPaused by remember(item?.id) { mutableStateOf(false) }
 
-    var offsetMs by remember(item?.id) { mutableStateOf(Prefs.lyricsOffsetMs(trackId)) }
+    val offset = remember(item?.id) { mutableStateOf(Prefs.lyricsOffsetMs(trackId)) }
+    var offsetMs by offset
     // Chip TEXT is kept after it hides so the fade-out does not empty the pill.
     var offsetChip by remember(item?.id) { mutableStateOf<String?>(null) }
     var chipVisible by remember(item?.id) { mutableStateOf(false) }
@@ -227,12 +239,12 @@ fun LyricsPane(
     }
 
     // +offset = the highlighted line is one step EARLIER than the audio clock.
-    val effectivePosition = (position.value + offsetMs).coerceAtLeast(0L)
-    val currentLineIndex = remember(lines, effectivePosition) {
-        computeCurrentLine(lines, effectivePosition)
+    val effectivePosition: () -> Long = remember(playback, offset) {
+        { (playback.value.positionMs + offset.value).coerceAtLeast(0L) }
     }
     val breaks = remember(lines) { lyricBreaks(lines.orEmpty()) }
-    val activeBreak = breaks.firstOrNull { effectivePosition in it }
+    val cursor by rememberLyricCursor(lines, breaks, effectivePosition)
+    val (currentLineIndex, activeBreak) = cursor
     val rows = remember(lines, breaks) { lyricRows(lines.orEmpty().size, breaks) }
     // During a break the dots take the current line's anchor slot.
     val followRow = activeBreak?.let { rows.indexOf(LyricRow.Break(it)) }
@@ -375,7 +387,7 @@ fun LyricsPane(
                         val (alignment, _) = lyricVoiceStyle(next?.voice, multipleVoices, highlightColor)
                         LyricBreakDots(
                             visible = row.gap == activeBreak,
-                            progress = row.gap.progress(effectivePosition),
+                            progress = { row.gap.progress(effectivePosition()) },
                             alignment = when (alignment) {
                                 TextAlign.Start -> Alignment.Start
                                 TextAlign.End -> Alignment.End
@@ -407,8 +419,10 @@ fun LyricsPane(
                             .then(if (multipleVoices) Modifier.padding(horizontal = AuraSpacing.screenHorizontal) else Modifier)
                     ) {
                         if (timed != null) {
-                            KaraokeLine(timed, effectivePosition, loadedLines.getOrNull(i + 1)?.startMs,
-                                isPlaying, positionAnchor, lineHighlight, alignment)
+                            val sample = playback.value
+                            KaraokeLine(timed, (sample.positionMs + offsetMs).coerceAtLeast(0L),
+                                loadedLines.getOrNull(i + 1)?.startMs, sample.playing,
+                                sample.anchorMs, lineHighlight, alignment)
                         } else {
                             androidx.tv.material3.Text(
                                 AnnotatedString(line.text.ifBlank { "\u00A0" }),
@@ -421,15 +435,15 @@ fun LyricsPane(
                         }
                         val adlib = line.adlib
                         if (adlib != null && adlib.text.isNotBlank()) {
-                            AdlibText(adlib, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
+                            AdlibText(adlib, adlibPosition, playback, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
                         }
                         val romanization = line.romanization
                         if (romanization != null && romanization.text.isNotBlank()) {
-                            AdlibText(romanization, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
+                            AdlibText(romanization, adlibPosition, playback, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
                         }
                         val translation = line.translation
                         if (translation != null && translation.text.isNotBlank()) {
-                            AdlibText(translation, adlibPosition, position, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
+                            AdlibText(translation, adlibPosition, playback, offsetMs, isCurrent, alignment, lineHighlight, isPlaying)
                         }
                     }
                     // After the part's last line, so the current-line anchor stays on the text.
@@ -607,6 +621,22 @@ private sealed interface LyricRow {
     data class Break(val gap: LyricBreak) : LyricRow
 }
 
+private data class LyricPlaybackSample(val positionMs: Long, val playing: Boolean, val anchorMs: Long)
+
+internal data class LyricCursor(val lineIndex: Int, val activeBreak: LyricBreak?)
+
+@Composable
+internal fun rememberLyricCursor(
+    lines: List<LyricLine>?,
+    breaks: List<LyricBreak>,
+    effectivePosition: () -> Long
+): State<LyricCursor> = remember(lines, breaks, effectivePosition) {
+    derivedStateOf(structuralEqualityPolicy()) {
+        val position = effectivePosition()
+        LyricCursor(computeCurrentLine(lines, position), breaks.firstOrNull { position in it })
+    }
+}
+
 /** Lines in order, each break slotted in right after the line it follows. */
 private fun lyricRows(lineCount: Int, breaks: List<LyricBreak>): List<LyricRow> {
     val after = breaks.associateBy { it.afterLine }
@@ -627,7 +657,7 @@ private fun lyricRows(lineCount: Int, breaks: List<LyricBreak>): List<LyricRow> 
 @Composable
 private fun LyricBreakDots(
     visible: Boolean,
-    progress: Float,
+    progress: () -> Float,
     alignment: Alignment.Horizontal,
     modifier: Modifier = Modifier
 ) {
@@ -638,7 +668,7 @@ private fun LyricBreakDots(
         exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
     ) {
         // The position only ticks every 500 ms; easing across each tick keeps the fill continuous.
-        val fill by animateFloatAsState(progress, tween(POSITION_TICK_MS, easing = LinearEasing), label = "breakFill")
+        val fill by animateFloatAsState(progress(), tween(POSITION_TICK_MS, easing = LinearEasing), label = "breakFill")
         val breath by rememberInfiniteTransition(label = "breakBreath").animateFloat(
             initialValue = 1f,
             targetValue = AuraMotion.lyricBreakBreathScale,
@@ -752,7 +782,7 @@ private fun KaraokeLine(
 private fun AdlibText(
     adlib: LyricAdlib,
     adlibPosition: State<Long?>,
-    playbackPosition: State<Long>,
+    playback: State<LyricPlaybackSample>,
     offsetMs: Long,
     leadIsCurrent: Boolean,
     alignment: TextAlign,
@@ -761,7 +791,7 @@ private fun AdlibText(
 ) {
     val modifier = Modifier.fillMaxWidth().padding(top = AuraSpacing.xxs)
     if (adlib.isTimed) {
-        val positionMs = ((adlibPosition.value ?: playbackPosition.value) + offsetMs).coerceAtLeast(0L)
+        val positionMs = ((adlibPosition.value ?: playback.value.positionMs) + offsetMs).coerceAtLeast(0L)
         val anchorMs = remember(positionMs, playing) { SystemClock.uptimeMillis() }
         KaraokeLine(TimedLyricLine(0L, adlib.text), positionMs, null, playing, anchorMs, accent, alignment,
             fontSize = AuraTypography.body, fontWeight = null, modifier = modifier,

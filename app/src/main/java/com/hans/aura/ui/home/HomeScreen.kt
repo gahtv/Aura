@@ -88,7 +88,7 @@ private data class HomeRow(
     val key: String,
     val contentType: String,
     val items: List<JellyfinItem>?,
-    val content: @Composable LazyItemScope.(Int) -> Unit
+    val content: @Composable LazyItemScope.(Int, FocusKeeper) -> Unit
 )
 
 @Composable
@@ -136,7 +136,8 @@ fun HomeScreen(
     val activePreview = previewItem ?: quickAccessItems.firstOrNull() ?: state.recentAlbums?.firstOrNull()
 
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    val focusKeeper = remember { FocusKeeper() }
+    val focusKeepers = remember { mutableMapOf<String, FocusKeeper>() }
+    fun keeperForShelf(key: String) = focusKeepers.getOrPut(key) { FocusKeeper() }
     var focusedCardId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     var focusedShelfKey by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
@@ -196,13 +197,13 @@ fun HomeScreen(
                 key: String,
                 contentType: String,
                 items: List<JellyfinItem>? = null,
-                content: @Composable LazyItemScope.(Int) -> Unit
+                content: @Composable LazyItemScope.(Int, FocusKeeper) -> Unit
             ) {
                 add(HomeRow(key, contentType, items, content))
             }
 
             if (!state.loading && state.error != null) {
-                homeItem(key = "partialError", contentType = "error") {
+                homeItem(key = "partialError", contentType = "error") { _, _ ->
                     ErrorPane(
                         message = "Some shelves couldn't load",
                         onRetry = { viewModel.retry() },
@@ -212,7 +213,7 @@ fun HomeScreen(
             }
 
             if (activePreview != null) {
-                homeItem(key = "hero", contentType = "hero") {
+                homeItem(key = "hero", contentType = "hero") { _, _ ->
                     HomeLivePreviewHero(
                         item = activePreview,
                         serverUrl = serverUrl,
@@ -223,7 +224,7 @@ fun HomeScreen(
             }
 
             if (quickAccessItems.isNotEmpty()) {
-                homeItem(key = "quickAccess", contentType = "quickAccess", items = quickAccessItems) {
+                homeItem(key = "quickAccess", contentType = "quickAccess", items = quickAccessItems) { _, focusKeeper ->
                     QuickAccessGrid(
                         items = quickAccessItems,
                         serverUrl = serverUrl,
@@ -242,7 +243,7 @@ fun HomeScreen(
 
             // History shelves only exist on a backend that records play history.
             if (!state.recentlyPlayed.isNullOrEmpty()) {
-                homeItem(key = "shelf_recent_played", contentType = "shelf", items = state.recentlyPlayed) { index ->
+                homeItem(key = "shelf_recent_played", contentType = "shelf", items = state.recentlyPlayed) { index, focusKeeper ->
                     MotionShelf(
                         animate = index in motionWindow,
                         title = "Recently played",
@@ -259,7 +260,7 @@ fun HomeScreen(
                 }
             }
             if (!state.recentArtists.isNullOrEmpty()) {
-                homeItem(key = "shelf_recent_artists", contentType = "shelf", items = state.recentArtists) { index ->
+                homeItem(key = "shelf_recent_artists", contentType = "shelf", items = state.recentArtists) { index, focusKeeper ->
                     MotionShelf(
                         animate = index in motionWindow,
                         title = "Recently played artists",
@@ -272,7 +273,7 @@ fun HomeScreen(
                     )
                 }
             }
-            homeItem(key = "shelf_recent_albums", contentType = "shelf", items = state.recentAlbums) { index ->
+            homeItem(key = "shelf_recent_albums", contentType = "shelf", items = state.recentAlbums) { index, focusKeeper ->
                 MotionShelf(
                     animate = index in motionWindow,
                     title = "Recently added",
@@ -285,7 +286,7 @@ fun HomeScreen(
                     onOpen = { item, _ -> onOpenCollection(item) }
                 )
             }
-            homeItem(key = "shelf_atmos", contentType = "shelf", items = state.atmosAlbums) { index ->
+            homeItem(key = "shelf_atmos", contentType = "shelf", items = state.atmosAlbums) { index, focusKeeper ->
                 MotionShelf(
                     animate = index in motionWindow,
                     title = "Your Atmos",
@@ -299,7 +300,7 @@ fun HomeScreen(
                     onOpen = { item, _ -> onOpenCollection(item) }
                 )
             }
-            homeItem(key = "shelf_artists", contentType = "shelf", items = state.artists) { index ->
+            homeItem(key = "shelf_artists", contentType = "shelf", items = state.artists) { index, focusKeeper ->
                 MotionShelf(
                     animate = index in motionWindow,
                     title = "Artists",
@@ -312,7 +313,7 @@ fun HomeScreen(
                 )
             }
             if (!state.playlists.isNullOrEmpty()) {
-                homeItem(key = "shelf_playlists", contentType = "shelf", items = state.playlists) { index ->
+                homeItem(key = "shelf_playlists", contentType = "shelf", items = state.playlists) { index, focusKeeper ->
                     MotionShelf(
                         animate = index in motionWindow,
                         title = "Playlists",
@@ -326,7 +327,7 @@ fun HomeScreen(
                     )
                 }
             }
-            homeItem(key = "bottomSpacer", contentType = "spacer") {
+            homeItem(key = "bottomSpacer", contentType = "spacer") { _, _ ->
                 Spacer(Modifier.height(140.dp)) // clear of the now-playing bar
             }
         }
@@ -334,7 +335,7 @@ fun HomeScreen(
             .any { it.id == focusedCardId?.removePrefix("qa:") && AtmosFilter.keep(it) }
         val shelfReady = homeShelfReady(focusTick, listState, rows.map { it.key }, focusedShelfKey,
             savedCardAvailable)
-        RestoreFocusOnBack(focusTick, contentFocus, focusedCardId, focusKeeper,
+        RestoreFocusOnBack(focusTick, contentFocus, focusedCardId, focusedShelfKey?.let { keeperForShelf(it) },
             ready = (quickAccessItems.isNotEmpty() || itemsById.values.any { AtmosFilter.keep(it) }) &&
                 (focusedCardId == null || (savedCardAvailable && shelfReady) ||
                     (!savedCardAvailable && !state.loading)),
@@ -342,7 +343,7 @@ fun HomeScreen(
                 itemsById.values.none { AtmosFilter.keep(it) })
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             itemsIndexed(rows, key = { _, row -> row.key }, contentType = { _, row -> row.contentType }) { index, row ->
-                row.content(this, index)
+                row.content(this, index, keeperForShelf(row.key))
             }
         }
     }

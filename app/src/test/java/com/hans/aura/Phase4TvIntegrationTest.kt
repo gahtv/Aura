@@ -73,7 +73,10 @@ class Phase4TvIntegrationTest {
         assertTrue(cursor.moveToFirst())
         assertEquals("Brat", cursor.getString(cursor.getColumnIndexOrThrow(SearchManager.SUGGEST_COLUMN_TEXT_1)))
         assertEquals("Charli xcx", cursor.getString(cursor.getColumnIndexOrThrow(SearchManager.SUGGEST_COLUMN_TEXT_2)))
-        assertEquals("MusicAlbum/alb1", cursor.getString(cursor.getColumnIndexOrThrow(SearchManager.SUGGEST_COLUMN_INTENT_DATA_ID)))
+        assertEquals(
+            "content://com.hans.aura.search/item/MusicAlbum/alb1",
+            cursor.getString(cursor.getColumnIndexOrThrow(SearchManager.SUGGEST_COLUMN_INTENT_DATA))
+        )
         cursor.close()
     }
 

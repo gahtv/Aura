@@ -336,7 +336,7 @@ internal fun LibraryScreen(
                 ) {
                     itemsIndexed(
                         items = tracks,
-                        key = if (state.sort == SortMode.RANDOM) null else { _, track -> track.id },
+                        key = { _, track -> track.id },
                         contentType = { _, _ -> "track" }
                     ) { i, track ->
                         TrackRow(
@@ -386,7 +386,7 @@ internal fun LibraryScreen(
                 ) {
                     itemsIndexed(
                         items = items,
-                        key = if (state.sort == SortMode.RANDOM) null else { _, item -> "${kind}_${item.id}" },
+                        key = { _, item -> "${kind}_${item.id}" },
                         contentType = { _, _ -> kind }
                     ) { index, item ->
                         ArtworkCard(

@@ -365,12 +365,13 @@ class MediaRepository(
 
     fun hasCachedPage(key: String): Boolean = rawCachedPage(key) != null
 
-    suspend fun cachedLibraryPage(key: String): MediaPage<MediaItem>? {
+    suspend fun cachedLibraryPage(key: String, sortBy: String): MediaPage<MediaItem>? {
         cachedPage(key)?.let { return it }
         val cached = rawCached(key)
         if (cached.isNullOrEmpty()) return null
-        rawStorePage(key, cached, Int.MAX_VALUE, requiresRefresh = true)
-        return MediaPage(items = cached.toDomainItems(), total = Int.MAX_VALUE)
+        val items = if (sortBy == "Random") cached.distinctBy { it.id } else cached
+        rawStorePage(key, items, Int.MAX_VALUE, requiresRefresh = true)
+        return MediaPage(items = items.toDomainItems(), total = Int.MAX_VALUE)
     }
 
     suspend fun libraryPage(
@@ -387,31 +388,54 @@ class MediaRepository(
         valid: () -> Boolean = { true }
     ): MediaPage<MediaItem> = withContext(Dispatchers.IO) {
         val order = if (desc) "Descending" else "Ascending"
-        val result = when {
+        suspend fun fetchPage(offset: Int): ItemsResponse = when {
             atmos -> if (kind == "Tracks") {
-                rawAtmosTracks(sortBy, desc, likedOnly, startIndex, limit)
+                rawAtmosTracks(sortBy, desc, likedOnly, offset, limit)
             } else {
-                rawAtmosAlbums(sortBy, desc, likedOnly, startIndex, limit)
+                rawAtmosAlbums(sortBy, desc, likedOnly, offset, limit)
             }
-            likedOnly -> rawBrowseLiked(sortBy, order, startIndex, limit)
-            letter != null -> rawLetterPage(kind, letter, startIndex, limit)
+            likedOnly -> rawBrowseLiked(sortBy, order, offset, limit)
+            letter != null -> rawLetterPage(kind, letter, offset, limit)
             kind == "Artists" -> MusicSources.current?.takeIf { it.id != "jellyfin" }
-                ?.artists(sortBy, order, limit, startIndex)
-                ?: rawArtists(sortBy, order, limit, startIndex)
+                ?.artists(sortBy, order, limit, offset)
+                ?: rawArtists(sortBy, order, limit, offset)
             kind == "Albums" -> rawBrowse(LibraryFilter.ItemsQuery(
                 includeItemTypes = "MusicAlbum", recursive = true,
-                sortBy = sortBy, sortOrder = order, limit = limit, startIndex = startIndex
+                sortBy = sortBy, sortOrder = order, limit = limit, startIndex = offset
             ))
             kind == "Tracks" -> rawBrowse(LibraryFilter.ItemsQuery(
                 includeItemTypes = "Audio", recursive = true,
-                sortBy = sortBy, sortOrder = order, limit = limit, startIndex = startIndex
+                sortBy = sortBy, sortOrder = order, limit = limit, startIndex = offset
             ))
             kind == "Playlists" -> rawBrowse(LibraryFilter.ItemsQuery(
                 includeItemTypes = "Playlist", recursive = true,
-                sortBy = sortBy, sortOrder = order, limit = limit, startIndex = startIndex
+                sortBy = sortBy, sortOrder = order, limit = limit, startIndex = offset
             ))
             else -> throw IllegalArgumentException("Unknown kind $kind")
         }
+        if (sortBy == "Random") {
+            val previous = if (replace) null else rawCachedPage(key)
+            val merged = previous?.items.orEmpty().toMutableList()
+            val seen = merged.mapTo(HashSet()) { it.id }
+            var nextStartIndex = previous?.nextStartIndex ?: startIndex
+            var remaining: Int
+            do {
+                val result = fetchPage(nextStartIndex)
+                if (!valid()) throw CancellationException("stale library page")
+                nextStartIndex += result.items.size
+                remaining = if (result.items.isEmpty()) 0
+                    else (result.totalRecordCount - nextStartIndex).coerceAtLeast(0)
+                val added = result.items.filter { seen.add(it.id) }
+                merged.addAll(added)
+                // The screen asks again on list growth, so skip pages that add no visible rows.
+            } while (remaining > 0 && added.none { it.toDomainItem() != null })
+            val items = merged.toDomainItems()
+            val total = items.size + remaining
+            PagedLibrary.put(key, merged, total, nextStartIndex = nextStartIndex)
+            rawCache(key, merged.take(60))
+            return@withContext MediaPage(items = items, total = total)
+        }
+        val result = fetchPage(startIndex)
         if (!valid()) throw CancellationException("stale library page")
         val previous = if (replace) emptyList() else rawCachedPage(key)?.items.orEmpty()
         val merged = if (replace) result.items else previous + result.items

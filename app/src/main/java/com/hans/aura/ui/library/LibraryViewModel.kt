@@ -25,7 +25,7 @@ private const val TAG = "AURA_LIB"
 private const val PAGE_SIZE = 60
 
 /** Server-side sort fields (Jellyfin SortBy). Random pages independently, so
- *  consecutive pages under Random may overlap or miss items — accepted. */
+ *  some items can be missed even after overlapping results are deduplicated. */
 enum class SortMode(val label: String, val sortBy: String, val defaultDesc: Boolean) {
     TITLE("Title", "SortName", false),
     ALBUM("Album", "Album", false),
@@ -239,7 +239,7 @@ class LibraryViewModel(
         scanAtmos(generation)
         loadJob = viewModelScope.launch {
             if (!isCurrentLoad(generation)) return@launch
-            val cached = app.container.media.cachedLibraryPage(key)
+            val cached = app.container.media.cachedLibraryPage(key, current.sort.sortBy)
             if (cached != null) {
                 _state.update { it.copy(items = cached.items, total = cached.total, initialized = true) }
                 return@launch

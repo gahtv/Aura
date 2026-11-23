@@ -102,6 +102,20 @@ class Phase2ErgonomicsTest {
 
     @Test
     fun centerWakeDoesNotActivateTransportButNextPressDoes() {
+        assertWakeDoesNotActivateTransport(Key.DirectionCenter)
+    }
+
+    @Test
+    fun leftWakeDoesNotActivateTransportButNextPressDoes() {
+        assertWakeDoesNotActivateTransport(Key.DirectionLeft)
+    }
+
+    @Test
+    fun rightWakeDoesNotActivateTransportButNextPressDoes() {
+        assertWakeDoesNotActivateTransport(Key.DirectionRight)
+    }
+
+    private fun assertWakeDoesNotActivateTransport(wakeKey: Key) {
         val app = ApplicationProvider.getApplicationContext<AuraApp>()
         app.jellyfin.auth.installSession(Session("http://example.test", "user", "test", "token", "device"))
         shadowOf(app).declareComponentUnbindable(ComponentName(app, PlaybackService::class.java))
@@ -132,10 +146,10 @@ class Phase2ErgonomicsTest {
             compose.mainClock.advanceTimeByFrame()
             compose.onAllNodesWithText("Ambient Song").assertCountEquals(2)
 
-            compose.onNodeWithContentDescription("Pause").performKeyInput { keyDown(Key.DirectionCenter) }
+            compose.onNodeWithContentDescription("Pause").performKeyInput { keyDown(wakeKey) }
             compose.mainClock.advanceTimeBy(400, ignoreFrameDuration = true)
             compose.mainClock.advanceTimeByFrame()
-            compose.onNodeWithContentDescription("Pause").performKeyInput { keyUp(Key.DirectionCenter) }
+            compose.onNodeWithContentDescription("Pause").performKeyInput { keyUp(wakeKey) }
             compose.runOnIdle {
                 assertFalse("Wake KeyUp must not activate the transport button", controller.playWhenReady)
             }

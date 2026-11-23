@@ -7,6 +7,7 @@ import com.hans.aura.AuraApp
 import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +35,8 @@ data class ArtistUiState(
     val topTracks: List<JellyfinItem>? = null,
     val similar: List<JellyfinItem>? = null,
     val atmosAlbumIds: Set<String> = emptySet(),
+    val contentLoading: Boolean = true,
+    val atmosLoading: Boolean = true,
     val atmosView: Boolean = false,
     val error: String? = null
 ) {
@@ -66,6 +69,9 @@ data class ArtistUiState(
 
     val hasContent: Boolean
         get() = !albums.isNullOrEmpty() || !topTracks.isNullOrEmpty() || !similar.isNullOrEmpty()
+
+    val focusContentSettled: Boolean
+        get() = !contentLoading && (!atmosOnly || !atmosLoading)
 }
 
 class ArtistViewModel(
@@ -104,6 +110,7 @@ class ArtistViewModel(
 
     private fun load(force: Boolean) {
         loadJob?.cancel()
+        _state.update { it.copy(contentLoading = true) }
         val uid = userId
         loadJob = viewModelScope.launch {
             DetailPresenter.hydrateItem(app.jellyfin.api, uid, artistId)?.let { full ->
@@ -136,6 +143,10 @@ class ArtistViewModel(
                     _state.update { it.copy(error = e.message ?: "Couldn't load from server") }
                 }
             }
+        }.also { job ->
+            job.invokeOnCompletion { cause ->
+                if (cause !is CancellationException) _state.update { it.copy(contentLoading = false) }
+            }
         }
     }
 
@@ -150,6 +161,7 @@ class ArtistViewModel(
                     "state albums=${_state.value.albums?.size ?: -1} atmos=${ids.size}"
                 )
             }.onFailure { Log.w(TAG, "atmos scan failed: ${it.message}") }
+            _state.update { it.copy(atmosLoading = false) }
         }
     }
 }

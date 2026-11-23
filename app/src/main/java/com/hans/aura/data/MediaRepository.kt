@@ -611,7 +611,7 @@ class MediaRepository(
     suspend fun refreshLibraryList(): List<LibraryRef> = withContext(Dispatchers.IO) {
         MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.refreshLibraryList() }
         val uid = userId() ?: return@withContext emptyList()
-        runCatching { LibraryFilter.refreshLibraryList(api(), uid) }.getOrDefault(emptyList())
+        LibraryFilter.refreshLibraryList(api(), uid)
     }
 
     fun knownLibraries(): List<LibraryRef> = Prefs.knownLibraries

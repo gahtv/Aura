@@ -255,7 +255,7 @@ class PlayerConnection(
         resume: Boolean? = null
     ) {
         val c = controller() ?: return
-        val serverUrl = sessionProvider()?.serverUrl ?: return
+        val session = sessionProvider() ?: return
 
         // Pressing the track that is ALREADY playing from this same list must not
         // restart it from zero — treat it as "show me what's playing". Requires
@@ -279,7 +279,7 @@ class PlayerConnection(
         registry.normalOrderIds = null
 
         val resumeAllowed = resumePolicy.allowsResume(startIndex, items.size, playWhenReady, resume)
-        val resumeMs = if (resumeAllowed) resumePolicy.positionMs(tapped) else null
+        val resumeMs = if (resumeAllowed) resumePolicy.positionMs(session, tapped) else null
         if (tapped != null && resumeAllowed) {
             if (resumeMs != null) {
                 AuraLog.d(
@@ -292,14 +292,14 @@ class PlayerConnection(
                 // copy fetched BEFORE this track was last played (a cached
                 // position of 0 is stale, not "never played"). One item fetch
                 // settles it, and it only happens on an explicit tap.
-                resumeAfterFetch(c, tapped)
+                resumeAfterFetch(c, session, tapped)
             }
         }
 
         registry.putAll(items)
         registry.setQueue(items.map { it.id })
         c.setMediaItems(
-            items.map { toMediaItem(it, serverUrl) },
+            items.map { toMediaItem(it, session.serverUrl) },
             startIndex,
             resumeMs ?: 0L
         )
@@ -308,7 +308,7 @@ class PlayerConnection(
     }
 
     /** Late resume for items whose server playback state the browse query didn't return. */
-    private fun resumeAfterFetch(c: MediaController, item: Track) {
+    private fun resumeAfterFetch(c: MediaController, session: Session, item: Track) {
         scope.launch {
             val full = runCatching {
                 SourceQueries.item(item.id) as? Track
@@ -319,7 +319,7 @@ class PlayerConnection(
                 "fetched item=${item.id} resume=${full.resumePositionMs ?: -1} " +
                     "dur=${full.durationMs}"
             )
-            val ms = resumePolicy.positionMs(full) ?: return@launch
+            val ms = resumePolicy.positionMs(session, full) ?: return@launch
             onMainThread {
                 // Only when the track actually started from the top; a user who
                 // already scrubbed or skipped must not be moved back.

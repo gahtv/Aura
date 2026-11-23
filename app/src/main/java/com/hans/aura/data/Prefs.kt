@@ -2,6 +2,7 @@ package com.hans.aura.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import android.util.Log
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -245,12 +246,13 @@ object Prefs {
  * posting spec-shaped reports with a 70 s position and reading the item back
  * (still 0). So "resume where you left off" has to be remembered by Aura.
  *
- * Stored as one JSON map itemId -> "positionMs:epochMs", pruned to the newest
- * [POSITION_LIMIT] entries and expired after [POSITION_TTL_MS].
+ * Stored as a map keyed by server, user and item, pruned to the newest
+ * [POSITION_LIMIT] entries per profile and expired after [POSITION_TTL_MS].
  */
 object ResumePoints {
     private const val TAG = "AURA_RESUME"
-    private const val KEY = "resume_points"
+    private const val KEY = "resume_points_by_profile"
+    private const val LEGACY_KEY = "resume_points"
     private const val POSITION_LIMIT = 400
     private const val POSITION_TTL_MS = 30L * 24 * 60 * 60 * 1000
 
@@ -259,11 +261,19 @@ object ResumePoints {
 
     private fun prefs() = Prefs.file()
 
+    private fun profilePrefix(session: Session): String =
+        "${Uri.encode(session.serverUrl.trimEnd('/'))}/${Uri.encode(session.userId)}/"
+
+    private fun key(session: Session, itemId: String): String =
+        profilePrefix(session) + Uri.encode(itemId)
+
     private fun load(): MutableMap<String, String> = synchronized(lock) {
         cache?.let { return it }
-        val raw = prefs()?.getString(KEY, null)
-        // Entries are "itemId:positionMs:epochMs" — the id is everything before
-        // the FIRST colon (a Guid cannot contain one), the value is the rest.
+        val prefs = prefs()
+        // Legacy bookmarks have no owner and cannot be safely assigned.
+        if (prefs?.contains(LEGACY_KEY) == true) prefs.edit().remove(LEGACY_KEY).apply()
+        val raw = prefs?.getString(KEY, null)
+        // Entries are "key:positionMs:epochMs"; the encoded key has no colons or pipes.
         val parsed = if (raw.isNullOrBlank()) mutableMapOf() else
             runCatching {
                 raw.split('|').mapNotNull { entry ->
@@ -277,34 +287,37 @@ object ResumePoints {
     }
 
     /** Remember where [itemId] was left. Called from the reporter every ~10 s. */
-    fun save(itemId: String, positionMs: Long) {
+    fun save(session: Session, itemId: String, positionMs: Long) {
         if (itemId.isBlank() || positionMs < 5_000L) return
         synchronized(lock) {
             val map = load()
-            map[itemId] = "$positionMs:${System.currentTimeMillis()}"
+            val prefix = profilePrefix(session)
+            map[prefix + Uri.encode(itemId)] = "$positionMs:${System.currentTimeMillis()}"
             if (map.size > POSITION_LIMIT) {
-                // Drop the oldest by timestamp, not by insertion order.
-                val keep = map.entries.sortedByDescending { it.value.substringAfter(':').toLongOrNull() ?: 0L }
-                    .take(POSITION_LIMIT).associate { it.key to it.value }
-                map.clear(); map.putAll(keep)
+                val profileEntries = map.entries.filter { it.key.startsWith(prefix) }
+                if (profileEntries.size > POSITION_LIMIT) {
+                    profileEntries.sortedByDescending { it.value.substringAfter(':').toLongOrNull() ?: 0L }
+                        .drop(POSITION_LIMIT)
+                        .forEach { map.remove(it.key) }
+                }
             }
             prefs()?.edit()?.putString(KEY, map.entries.joinToString("|") { "${it.key}:${it.value}" })?.apply()
         }
     }
 
     /** Saved position for [itemId], or null when stale/unknown. */
-    fun position(itemId: String): Long? = synchronized(lock) {
-        val entry = load()[itemId] ?: return null
+    fun position(session: Session, itemId: String): Long? = synchronized(lock) {
+        val entry = load()[key(session, itemId)] ?: return null
         val ms = entry.substringBefore(':').toLongOrNull() ?: return null
         val at = entry.substringAfter(':').toLongOrNull() ?: return null
         if (System.currentTimeMillis() - at > POSITION_TTL_MS) return null
         ms
     }
 
-    fun forget(itemId: String) {
+    fun forget(session: Session, itemId: String) {
         synchronized(lock) {
             val map = load()
-            if (map.remove(itemId) != null) {
+            if (map.remove(key(session, itemId)) != null) {
                 prefs()?.edit()?.putString(KEY, map.entries.joinToString("|") { "${it.key}:${it.value}" })?.apply()
             }
         }

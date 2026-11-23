@@ -17,6 +17,7 @@ import com.hans.aura.ui.nav.NavSpec
 import com.hans.aura.ui.nav.NavState
 import com.hans.aura.ui.nav.Screen
 import com.hans.aura.ui.search.RemoteSearchTipBanner
+import com.hans.aura.ui.shell.RailDestination
 import com.hans.aura.ui.theme.AuraTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -62,15 +63,15 @@ class Phase3LayoutTest {
     }
 
     @Test
-    fun unifiedLibraryTabRemembersLastCategoryAndPreservesNavSpec() {
+    fun libraryRailEntryRemembersLastCategoryAndPreservesNavSpec() {
         val nav = NavState()
         assertEquals(Screen.Home, nav.top)
-        assertEquals(listOf(Screen.Home, Screen.Albums), NavSpec.tabs)
         assertTrue(NavSpec.isLibraryScreen(Screen.Albums))
         assertTrue(NavSpec.isLibraryScreen(Screen.Artists))
         assertTrue(NavSpec.isLibraryScreen(Screen.Tracks))
         assertTrue(NavSpec.isLibraryScreen(Screen.Playlists))
-        assertTrue(NavSpec.isLibraryScreen(Screen.Genres))
+        assertFalse(NavSpec.isLibraryScreen(Screen.Genres))
+        assertFalse(NavSpec.isLibraryScreen(Screen.Liked))
         assertFalse(NavSpec.isLibraryScreen(Screen.Home))
 
         nav.selectTab(Screen.Albums)
@@ -82,7 +83,7 @@ class Phase3LayoutTest {
         nav.selectTab(Screen.Home)
         assertEquals(Screen.Home, nav.top)
 
-        // Selecting the Library tab returns to the last chosen category (Tracks).
+        // Selecting Library returns to the last chosen category (Tracks).
         nav.selectTab(Screen.Albums)
         assertEquals(Screen.Tracks, nav.top)
 
@@ -91,6 +92,31 @@ class Phase3LayoutTest {
         assertEquals("albums", NavSpec.key(Screen.Albums))
         assertEquals("col:a1", NavSpec.key(Screen.Collection(Fixtures.album("a1"))))
         assertEquals("artist:ar1", NavSpec.key(Screen.Artist(Fixtures.artist("ar1"))))
+    }
+
+    @Test
+    fun railDestinationsDoNotChangeLibraryCategoryOrDetailBackStack() {
+        val nav = NavState()
+        nav.switchLibraryCategory(Screen.Artists)
+        nav.selectTab(Screen.Liked)
+        assertEquals(RailDestination.Liked, RailDestination.forStack(nav.stack))
+        assertEquals("liked", NavSpec.key(nav.top))
+        assertEquals("Tracks", NavSpec.libraryKind(nav.top))
+        assertEquals("tracks" to null, NavSpec.mirrorPublish(nav.top))
+        nav.openNowPlaying()
+        nav.back()
+        assertEquals(Screen.Liked, nav.top)
+
+        nav.selectTab(Screen.Genres)
+        nav.actions.onOpenGenre("Jazz")
+        assertEquals(RailDestination.Genres, RailDestination.forStack(nav.stack))
+        nav.back()
+        assertEquals(Screen.Genres, nav.top)
+        nav.back()
+        assertEquals(Screen.Home, nav.top)
+
+        nav.selectTab(Screen.Albums)
+        assertEquals(Screen.Artists, nav.top)
     }
 
     @Test

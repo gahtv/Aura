@@ -55,14 +55,8 @@ fun sortModesFor(kind: String): List<SortMode> = when (kind) {
 /** Session-scoped: the chosen sort survives navigating away and back. */
 private object LibrarySortPrefs {
     private val byKind = mutableMapOf<String, SortMode>()
-    fun get(kind: String): SortMode = byKind[kind] ?: sortModesFor(kind).first()
+    fun get(key: String, kind: String): SortMode = byKind[key] ?: sortModesFor(kind).first()
     fun set(kind: String, mode: SortMode) { byKind[kind] = mode }
-}
-
-/** Session-scoped "Liked" filter for the Tracks tab (a pill, not a 6th tab —
- *  the 960dp top bar has no room for another tab). */
-private object LibraryLikedPrefs {
-    var on: Boolean = false
 }
 
 /**
@@ -108,19 +102,21 @@ data class LibraryUiState(
 
 class LibraryViewModel(
     private val app: AuraApp,
-    private val kind: String
+    private val kind: String,
+    likedOnly: Boolean = false
 ) : ViewModel() {
 
+    private val preferenceKey = if (likedOnly) "Liked" else kind
     private val capable = kind == "Albums" || kind == "Tracks"
-    private val initialSort = LibrarySortPrefs.get(kind)
+    private val initialSort = LibrarySortPrefs.get(preferenceKey, kind)
 
     private val _state = MutableStateFlow(
         LibraryUiState(
             kind = kind,
             sort = initialSort,
             desc = initialSort.defaultDesc,
-            likedOnly = kind == "Tracks" && LibraryLikedPrefs.on,
-            atmosView = capable && LibraryAtmosPrefs.get(kind)
+            likedOnly = likedOnly,
+            atmosView = capable && LibraryAtmosPrefs.get(preferenceKey)
         )
     )
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
@@ -159,6 +155,19 @@ class LibraryViewModel(
 
     fun retry() = reload()
 
+    fun refreshLikedIfEvicted() {
+        val current = _state.value
+        if (!current.likedOnly || !current.initialized || current.loading ||
+            current.error != null || PagedLibrary.get(current.cacheKey) != null
+        ) return
+
+        val generation = ++loadGeneration
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            loadPage(current.cacheKey, generation, replaceLoadedRange = true)
+        }
+    }
+
     fun loadNextPage() {
         val snapshot = _state.value
         if (snapshot.loading || snapshot.items.size >= snapshot.total) return
@@ -174,7 +183,7 @@ class LibraryViewModel(
         if (mode == current.sort && mode != SortMode.RANDOM) {
             _state.update { it.copy(letter = null, desc = !it.desc) }
         } else if (mode != current.sort) {
-            LibrarySortPrefs.set(kind, mode)
+            LibrarySortPrefs.set(preferenceKey, mode)
             _state.update { it.copy(letter = null, sort = mode, desc = mode.defaultDesc) }
         } else {
             _state.update { it.copy(letter = null) }
@@ -182,20 +191,11 @@ class LibraryViewModel(
         reload()
     }
 
-    fun toggleLiked() {
-        val current = _state.value
-        current.letter?.let { logAz("cleared reason=Liked kind=$kind was=$it") }
-        val next = !current.likedOnly
-        LibraryLikedPrefs.on = next
-        _state.update { it.copy(letter = null, likedOnly = next) }
-        reload()
-    }
-
     fun toggleAtmos() {
         val current = _state.value
         current.letter?.let { logAz("cleared reason=atmos kind=$kind was=$it") }
         val next = !current.atmosView
-        LibraryAtmosPrefs.set(kind, next)
+        LibraryAtmosPrefs.set(preferenceKey, next)
         Log.d("AURA_ATMOS", "view=${if (next) "on" else "off"} kind=$kind")
         _state.update { it.copy(letter = null, atmosView = next) }
         reload()
@@ -269,17 +269,19 @@ class LibraryViewModel(
     private fun isCurrentLoad(generation: Long): Boolean =
         generation == loadGeneration && playlistRevisionSeen == currentPlaylistRevision()
 
-    private suspend fun loadPage(key: String, generation: Long) {
+    private suspend fun loadPage(key: String, generation: Long, replaceLoadedRange: Boolean = false) {
         if (!isCurrentLoad(generation)) return
         val snapshot = _state.value
-        if (snapshot.loading || snapshot.items.size >= snapshot.total) return
+        if (snapshot.loading || (!replaceLoadedRange && snapshot.items.size >= snapshot.total)) return
         _state.update { it.copy(loading = true) }
-        val startIndex = snapshot.items.size
+        // Keep the saved scroll position and keyed rows available while Liked refreshes.
+        val startIndex = if (replaceLoadedRange) 0 else snapshot.items.size
+        val limit = if (replaceLoadedRange) maxOf(PAGE_SIZE, snapshot.items.size) else PAGE_SIZE
         runCatching {
-            withContext(Dispatchers.IO) { fetchPage(snapshot, startIndex) }
+            withContext(Dispatchers.IO) { fetchPage(snapshot, startIndex, limit) }
         }.onSuccess { result ->
             if (!isCurrentLoad(generation)) return@onSuccess
-            val merged = snapshot.items + result.items
+            val merged = if (replaceLoadedRange) result.items else snapshot.items + result.items
             // A-Z jump skips the count: pagination ends on a short page instead
             // of trusting a total that belongs to the whole (unfiltered) list.
             val total = if (snapshot.letter != null) {
@@ -300,48 +302,48 @@ class LibraryViewModel(
         }
     }
 
-    private suspend fun fetchPage(snapshot: LibraryUiState, startIndex: Int): ItemsResponse {
+    private suspend fun fetchPage(snapshot: LibraryUiState, startIndex: Int, limit: Int): ItemsResponse {
         val order = if (snapshot.desc) "Descending" else "Ascending"
         val letter = snapshot.letter
         return when {
             snapshot.atmosEffective -> if (kind == "Tracks") {
                 AtmosBrowse.tracks(
                     api = api, userId = userId, sortBy = snapshot.sort.sortBy, desc = snapshot.desc,
-                    favoritesOnly = snapshot.likedOnly, startIndex = startIndex, limit = PAGE_SIZE
+                    favoritesOnly = snapshot.likedOnly, startIndex = startIndex, limit = limit
                 )
             } else {
                 AtmosBrowse.albums(
                     api = api, userId = userId, sortBy = snapshot.sort.sortBy, desc = snapshot.desc,
-                    favoritesOnly = snapshot.likedOnly, startIndex = startIndex, limit = PAGE_SIZE
+                    favoritesOnly = snapshot.likedOnly, startIndex = startIndex, limit = limit
                 )
             }
             snapshot.likedOnly -> Favorites.browseLiked(
                 api = api, userId = userId, sortBy = snapshot.sort.sortBy, sortOrder = order,
-                startIndex = startIndex, limit = PAGE_SIZE
+                startIndex = startIndex, limit = limit
             )
             letter != null -> pageFromLetter(
                 api = api, userId = userId, kind = kind, letter = letter,
-                limit = PAGE_SIZE, startIndex = startIndex
+                limit = limit, startIndex = startIndex
             )
             kind == "Artists" -> SourceQueries.artists(sortBy = snapshot.sort.sortBy, sortOrder = order,
-                limit = PAGE_SIZE, startIndex = startIndex
+                limit = limit, startIndex = startIndex
             )
             kind == "Albums" -> SourceQueries.items(LibraryFilter.ItemsQuery(
                     includeItemTypes = "MusicAlbum", recursive = true,
                     sortBy = snapshot.sort.sortBy, sortOrder = order,
-                    limit = PAGE_SIZE, startIndex = startIndex
+                    limit = limit, startIndex = startIndex
                 )
             )
             kind == "Tracks" -> SourceQueries.items(LibraryFilter.ItemsQuery(
                     includeItemTypes = "Audio", recursive = true,
                     sortBy = snapshot.sort.sortBy, sortOrder = order,
-                    limit = PAGE_SIZE, startIndex = startIndex
+                    limit = limit, startIndex = startIndex
                 )
             )
             kind == "Playlists" -> SourceQueries.items(
                 userId = userId, includeItemTypes = "Playlist", recursive = true,
                 sortBy = snapshot.sort.sortBy, sortOrder = order,
-                limit = PAGE_SIZE, startIndex = startIndex
+                limit = limit, startIndex = startIndex
             )
             else -> throw IllegalArgumentException("Unknown kind $kind")
         }

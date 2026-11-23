@@ -15,13 +15,10 @@ import com.hans.aura.data.JellyfinItem
  */
 internal interface NavActions {
     fun onBack()
-    fun onSelectTab(tab: Screen)
     fun onSwitchLibraryCategory(target: Screen)
     fun onOpenSearch()
-    fun onOpenSettings()
     fun onOpenNowPlaying()
     fun onOpenQueue()
-    fun onOpenGenres()
     fun onOpenGenre(name: String)
     fun onOpenCollection(item: JellyfinItem)
     fun onOpenArtist(item: JellyfinItem)
@@ -64,6 +61,10 @@ internal class NavState {
         }
     }
 
+    fun back() {
+        if (stack.size > 1) pop() else if (top != Screen.Home) resetToHome()
+    }
+
     /** Tab switch resets the stack to that tab. */
     fun selectTab(tab: Screen) {
         val target = if (tab == Screen.Albums) lastLibraryTab else tab
@@ -73,15 +74,9 @@ internal class NavState {
         }
     }
 
-    /** Switch between Library categories (Albums/Artists/Tracks/Playlists/Genres). */
+    /** Switch between Library categories without changing the rail destination. */
     fun switchLibraryCategory(target: Screen) {
-        if (target == Screen.Genres) {
-            push(Screen.Genres)
-            return
-        }
-        if (target == Screen.Albums || target == Screen.Artists ||
-            target == Screen.Tracks || target == Screen.Playlists
-        ) {
+        if (NavSpec.isLibraryScreen(target)) {
             lastLibraryTab = target
             if (target::class != top::class) {
                 pendingFocus = false
@@ -94,13 +89,6 @@ internal class NavState {
         if (top != Screen.Search) {
             pendingFocus = true
             stack = listOf(Screen.Search)
-        }
-    }
-
-    fun openSettings() {
-        if (top != Screen.Settings) {
-            pendingFocus = false
-            stack = listOf(Screen.Settings)
         }
     }
 
@@ -129,14 +117,11 @@ internal class NavState {
     }
 
     val actions: NavActions = object : NavActions {
-        override fun onBack() = pop()
-        override fun onSelectTab(tab: Screen) = selectTab(tab)
+        override fun onBack() = back()
         override fun onSwitchLibraryCategory(target: Screen) = switchLibraryCategory(target)
         override fun onOpenSearch() = openSearch()
-        override fun onOpenSettings() = openSettings()
         override fun onOpenNowPlaying() = openNowPlaying()
         override fun onOpenQueue() = push(Screen.Queue)
-        override fun onOpenGenres() = push(Screen.Genres)
         override fun onOpenGenre(name: String) = push(Screen.Genre(name))
         override fun onOpenCollection(item: JellyfinItem) = push(Screen.Collection(item))
         override fun onOpenArtist(item: JellyfinItem) = push(Screen.Artist(item))

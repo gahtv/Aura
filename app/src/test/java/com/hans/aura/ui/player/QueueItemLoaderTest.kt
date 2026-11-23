@@ -1,7 +1,8 @@
 package com.hans.aura.ui.player
 
 import com.hans.aura.data.Fixtures
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.toDomainItem
+import com.hans.aura.model.Track
 import com.hans.aura.player.controller.QUEUE_ITEM_PARALLELISM
 import com.hans.aura.player.controller.QueueItemLoader
 import com.hans.aura.player.controller.QueueRegistry
@@ -24,13 +25,13 @@ import org.junit.Test
 class QueueItemLoaderTest {
     private class Requests {
         val ids = mutableListOf<String>()
-        private val pending = mutableMapOf<String, CompletableDeferred<JellyfinItem>>()
+        private val pending = mutableMapOf<String, CompletableDeferred<Track>>()
         var active = 0
             private set
         var peak = 0
             private set
 
-        suspend fun fetch(id: String): JellyfinItem {
+        suspend fun fetch(id: String): Track {
             ids += id
             active++
             peak = maxOf(peak, active)
@@ -42,7 +43,7 @@ class QueueItemLoaderTest {
         }
 
         fun complete(id: String) {
-            pending.remove(id)!!.complete(Fixtures.item(id))
+            pending.remove(id)!!.complete(Fixtures.item(id, type = "Audio").toDomainItem() as Track)
         }
 
         fun fail(id: String, cause: IOException) {

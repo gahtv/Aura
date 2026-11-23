@@ -93,10 +93,10 @@ class TransportBarFocusTest {
         val app = ApplicationProvider.getApplicationContext<AuraApp>()
         app.jellyfin.auth.installSession(Session("http://example.test", "user", "test", "token", "device"))
         val player = newPlayer(app)
-        ReflectionHelpers.getField<MutableStateFlow<List<JellyfinItem>>>(player, "_queue").value =
-            listOf(Fixtures.track("Current track"), Fixtures.track("Queued track"))
-        ReflectionHelpers.getField<MutableStateFlow<List<IndexedValue<JellyfinItem>>>>(player, "_upcoming").value =
-            listOf(IndexedValue(1, Fixtures.track("Queued track")))
+        ReflectionHelpers.getField<MutableStateFlow<List<com.hans.aura.model.Track>>>(player, "_queue").value =
+            listOf(Fixtures.domainTrack("Current track"), Fixtures.domainTrack("Queued track"))
+        ReflectionHelpers.getField<MutableStateFlow<List<IndexedValue<com.hans.aura.model.Track>>>>(player, "_upcoming").value =
+            listOf(IndexedValue(1, Fixtures.domainTrack("Queued track")))
         compose.setContent {
             AuraTheme {
                 NowPlayingScreen(app = app, player = player, onBack = {}, onOpenQueue = {})

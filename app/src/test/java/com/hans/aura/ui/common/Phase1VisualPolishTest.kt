@@ -33,7 +33,7 @@ class Phase1VisualPolishTest {
 
     @Test
     fun circularArtistCardAcceptsFocus() {
-        val artist = JellyfinItem(id = "art1", name = "boygenius", type = "MusicArtist")
+        val artist = com.hans.aura.model.Artist(id = "art1", name = "boygenius")
         val keeper = FocusKeeper()
         compose.setContent {
             AuraTheme {
@@ -53,7 +53,7 @@ class Phase1VisualPolishTest {
 
     @Test
     fun trackRowRevealsInlineActionHintsOnlyWhenFocused() {
-        val track = Fixtures.track("Atmos Track")
+        val track = Fixtures.domainTrack("Atmos Track")
         val keeper = FocusKeeper()
         val otherFocus = FocusRequester()
         compose.setContent {

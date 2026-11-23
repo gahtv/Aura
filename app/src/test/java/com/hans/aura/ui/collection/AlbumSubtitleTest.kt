@@ -1,7 +1,8 @@
 package com.hans.aura.ui.collection
 
 import com.hans.aura.data.Fixtures
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
+import com.hans.aura.model.Playlist
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -12,15 +13,14 @@ import org.junit.Test
  */
 class AlbumSubtitleTest {
 
-    private fun album(count: Int?) = JellyfinItem(
+    private fun album(count: Int?) = Album(
         id = "1690839749",
         name = "Speak Now (Taylor's Version)",
-        type = "MusicAlbum",
         albumArtist = "Taylor Swift",
         childCount = count
     )
 
-    private fun tracks(n: Int) = List(n) { Fixtures.track("t$it") }
+    private fun tracks(n: Int) = List(n) { Fixtures.domainTrack("t$it") }
 
     @Test
     fun `count matches what is served when the catalog agrees`() {
@@ -51,24 +51,19 @@ class AlbumSubtitleTest {
 
     @Test
     fun `an empty playlist ignores its old catalog count`() {
-        val playlist = JellyfinItem(id = "p1", type = "Playlist", childCount = 1)
+        val playlist = Playlist(id = "p1", name = "p1", childCount = 1)
         assertEquals("0 tracks", subtitle(playlist, tracks(0)))
     }
 
     @Test
     fun `a playlist with a removed entry shows only the remaining count`() {
-        val playlist = JellyfinItem(id = "p1", type = "Playlist", childCount = 2)
+        val playlist = Playlist(id = "p1", name = "p1", childCount = 2)
         assertEquals("1 track", subtitle(playlist, tracks(1)))
     }
 
     @Test
     fun `playlists say tracks, not songs`() {
-        val playlist = JellyfinItem(
-            id = "p1",
-            name = "Late night",
-            type = "Playlist",
-            childCount = 3
-        )
+        val playlist = Playlist(id = "p1", name = "Late night", childCount = 3)
         assertEquals("3 tracks", subtitle(playlist, tracks(3)))
     }
 }

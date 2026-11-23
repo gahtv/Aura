@@ -171,6 +171,7 @@ class CachePersistenceTest {
         server.start()
         try {
             val album = Fixtures.item("a")
+            val domainAlbum = album.toDomainItem()!!
             LibraryCache.put("home_new:u", listOf(album))
             LibraryCache.put("arbitrary-selection-key", listOf(album))
             LibraryCache.put("home_recent:u", items)
@@ -178,8 +179,8 @@ class CachePersistenceTest {
             PagedLibrary.put("lib_albums:u:SortName:false", listOf(album), 1)
             PagedLibrary.put("lib_tracks:u:SortName:false", items, 2)
             server.enqueue(MockResponse().setBody("""{"IsFavorite":true}"""))
-            assertEquals(true, Favorites.toggle(api(server), "u", album))
-            assertTrue(Favorites.isFavorite(album))
+            assertEquals(true, Favorites.toggle(api(server), "u", domainAlbum))
+            assertTrue(Favorites.isFavorite(domainAlbum))
             assertEquals(listOf(album), LibraryCache.peek("home_new:u"))
             assertEquals(listOf(album), LibraryCache.peek("arbitrary-selection-key"))
             assertEquals(listOf(album), PagedLibrary.get("lib_albums:u:SortName:false")?.items)
@@ -190,7 +191,7 @@ class CachePersistenceTest {
             coldStart()
             assertNull(LibraryCache.get("home_new:u"))
             assertNull(LibraryCache.get("arbitrary-selection-key"))
-            assertFalse(Favorites.isFavorite(album))
+            assertFalse(Favorites.isFavorite(domainAlbum))
         } finally {
             server.shutdown()
         }
@@ -203,7 +204,7 @@ class CachePersistenceTest {
         try {
             LibraryCache.put("home_new:u", items)
             server.enqueue(MockResponse().setResponseCode(403))
-            assertNull(Favorites.toggle(api(server), "u", items.first()))
+            assertNull(Favorites.toggle(api(server), "u", items.first().toDomainItem()!!))
             coldStart()
             assertEquals(items, LibraryCache.get("home_new:u"))
         } finally {

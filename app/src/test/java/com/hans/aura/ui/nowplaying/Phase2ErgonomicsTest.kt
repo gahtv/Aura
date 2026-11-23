@@ -129,8 +129,8 @@ class Phase2ErgonomicsTest {
         val controller = future.get()
         val playback = ReflectionHelpers.getField<PlaybackController>(player, "playback")
         ReflectionHelpers.getField<MutableStateFlow<MediaController?>>(playback, "_controller").value = controller
-        ReflectionHelpers.getField<MutableStateFlow<JellyfinItem?>>(player, "_currentItem").value =
-            Fixtures.track("Ambient Song")
+        ReflectionHelpers.getField<MutableStateFlow<com.hans.aura.model.Track?>>(player, "_currentItem").value =
+            Fixtures.domainTrack("Ambient Song")
         ReflectionHelpers.getField<MutableStateFlow<Boolean>>(player, "_isPlaying").value = true
 
         try {
@@ -172,8 +172,8 @@ class Phase2ErgonomicsTest {
         app.jellyfin.auth.installSession(Session("http://example.test", "user", "test", "token", "device"))
         shadowOf(app).declareComponentUnbindable(ComponentName(app, PlaybackService::class.java))
         val player = PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session }
-        ReflectionHelpers.getField<MutableStateFlow<JellyfinItem?>>(player, "_currentItem").value =
-            Fixtures.track("Ambient Song")
+        ReflectionHelpers.getField<MutableStateFlow<com.hans.aura.model.Track?>>(player, "_currentItem").value =
+            Fixtures.domainTrack("Ambient Song")
         ReflectionHelpers.getField<MutableStateFlow<Boolean>>(player, "_isPlaying").value = true
 
         compose.mainClock.autoAdvance = false

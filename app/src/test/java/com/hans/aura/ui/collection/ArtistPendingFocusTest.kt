@@ -1,5 +1,6 @@
 package com.hans.aura.ui.collection
 
+import com.hans.aura.data.Fixtures
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
@@ -40,9 +41,10 @@ class ArtistPendingFocusTest {
 
     private fun pendingArtist(atmos: Boolean, terminal: Boolean = false, error: Boolean = false) {
         compose.mainClock.autoAdvance = false
-        val item = JellyfinItem(id = "album", albumId = "album")
+        val album = Fixtures.domainAlbum("album")
+        val track = Fixtures.domainTrack("track").copy(albumId = "album")
         val state = mutableStateOf(ArtistUiState(
-            albums = if (atmos) listOf(item) else emptyList(),
+            albums = if (atmos) listOf(album) else emptyList(),
             similar = emptyList(), topTracks = if (atmos || terminal) emptyList() else null,
             contentLoading = !(atmos || terminal),
             error = if (error) "failed" else null,
@@ -65,7 +67,7 @@ class ArtistPendingFocusTest {
         compose.onNodeWithTag("outside").assertIsFocused()
         compose.runOnIdle {
             state.value = if (atmos) state.value.copy(atmosAlbumIds = setOf("album"), atmosLoading = false)
-                else state.value.copy(topTracks = listOf(item), contentLoading = false)
+                else state.value.copy(topTracks = listOf(track), contentLoading = false)
         }
         repeat(6) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
         compose.onNodeWithTag(if (terminal) "outside" else "content").assertIsFocused()

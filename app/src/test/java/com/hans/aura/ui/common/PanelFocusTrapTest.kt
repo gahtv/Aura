@@ -91,7 +91,7 @@ class PanelFocusTrapTest {
                         Panel.Login -> LoginScreen(app, {}, debugDemoCode = "123456")
                         Panel.Queue -> {
                             BackHandler { open.value = false }
-                            QueuePeekOverlay(listOf(Fixtures.track("Queued track")), 1, 1, 0L,
+                            QueuePeekOverlay(listOf(Fixtures.domainTrack("Queued track")), 1, 1, 0L,
                                 onExtend = {}, onCollapse = {}, onJump = {})
                         }
                     }

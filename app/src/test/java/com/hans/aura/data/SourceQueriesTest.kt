@@ -105,7 +105,7 @@ class SourceQueriesTest {
         LibraryCache.clear()
         Dispatchers.setMain(Dispatchers.Unconfined)
         try {
-            val vm = com.hans.aura.ui.collection.CollectionViewModel(app, "playlist", "Playlist")
+            val vm = com.hans.aura.ui.collection.CollectionViewModel(app, com.hans.aura.model.Playlist(id = "playlist", name = "playlist"))
             withTimeout(10_000) { vm.state.first { it.tracks != null } }
             val original = vm.state.value.tracks
             requests.clear()
@@ -163,7 +163,7 @@ class SourceQueriesTest {
 
         val state = loadHome(cachedRecent = tracks)
 
-        assertEquals(tracks, state.recentlyPlayed)
+        assertEquals(tracks.toDomainItems(), state.recentlyPlayed)
         assertEquals(listOf("c", "b"), state.recentArtists!!.map { it.id })
         assertEquals("100", requests.single { it.queryParameter("SortBy") == "DatePlayed" }
             .queryParameter("Limit"))
@@ -193,8 +193,8 @@ class SourceQueriesTest {
             override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
                 queries.add(query)
                 return ItemsResponse(items = when (query.includeItemTypes) {
-                    "Audio" -> listOf(JellyfinItem(id = "track"))
-                    "MusicArtist" -> listOf(JellyfinItem(id = "artist"))
+                    "Audio" -> listOf(JellyfinItem(id = "track", type = "Audio"))
+                    "MusicArtist" -> listOf(JellyfinItem(id = "artist", type = "MusicArtist"))
                     else -> emptyList()
                 })
             }
@@ -221,7 +221,7 @@ class SourceQueriesTest {
     }
 
     private fun historyTrack(id: String, vararg artists: String) =
-        JellyfinItem(id = id, artistItems = artists.map { NameId(id = it) })
+        JellyfinItem(id = id, type = "Audio", artistItems = artists.map { NameId(id = it) })
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
@@ -369,7 +369,7 @@ class SourceQueriesTest {
             override suspend fun recentArtists(limit: Int) = super<MusicSource>.recentArtists(limit)
             override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
                 queries.add(query)
-                return ItemsResponse(items = listOf(JellyfinItem(id = "album")))
+                return ItemsResponse(items = listOf(JellyfinItem(id = "album", type = "MusicAlbum")))
             }
         }
         MusicSources.install(source)
@@ -465,7 +465,7 @@ class SourceQueriesTest {
 
     @Test
     fun `item details use the item path and preserve user data`() = runTest {
-        body = """{"Id":"track","UserData":{"IsFavorite":true,"PlaybackPositionTicks":100}}"""
+        body = """{"Id":"track","Type":"Audio","UserData":{"IsFavorite":true,"PlaybackPositionTicks":100}}"""
 
         val item = SourceQueries.item("track")
 
@@ -473,8 +473,8 @@ class SourceQueriesTest {
         assertEquals("/Items/track", request.encodedPath)
         assertEquals("u", request.queryParameter("userId"))
         assertEquals("track", item?.id)
-        assertEquals(true, item?.userData?.isFavorite)
-        assertEquals(100L, item?.userData?.playbackPositionTicks)
+        assertEquals(true, (item as? com.hans.aura.model.Track)?.isFavorite)
+        assertEquals(0L, (item as? com.hans.aura.model.Track)?.resumePositionMs)
     }
 
     @Test

@@ -2,6 +2,7 @@
 
 package com.hans.aura.ui.collection
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,6 +49,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,6 +71,7 @@ import com.hans.aura.data.artistArtwork
 import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
+import com.hans.aura.ui.common.filterPillShape
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
@@ -439,12 +443,12 @@ private fun ArtistTabPill(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = AuraShapes.pill
-    val bg = when {
-        selected -> accent
-        focused -> AuraColors.FocusedFill
-        else -> AuraColors.PillBackground
-    }
+    val shape = filterPillShape(selected, focused)
+    val fill by animateColorAsState(
+        if (focused) AuraColors.FocusedFill else AuraColors.PillBackground,
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
+        label = "artistTabFill"
+    )
     val borderColor = when {
         focused -> TextPrimary
         selected -> Color.Transparent
@@ -452,8 +456,9 @@ private fun ArtistTabPill(
     }
     Box(
         Modifier
+            .semantics { this.selected = selected }
             .clip(shape)
-            .background(bg)
+            .background(if (selected) accent else fill)
             .border(if (focused) AuraSizes.focusBorder else AuraSizes.hairline, borderColor, shape)
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }

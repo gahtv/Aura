@@ -342,7 +342,7 @@ private fun GenreTile(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.04f else 1f,
-        animationSpec = AuraMotion.spatialFast,
+        animationSpec = AuraMotion.scheme.fastSpatialSpec(),
         label = "genreScale"
     )
     val base = remember(name) { genreCardColor(name) }

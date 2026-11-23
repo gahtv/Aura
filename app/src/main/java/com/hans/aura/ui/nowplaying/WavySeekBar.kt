@@ -1,8 +1,6 @@
 package com.hans.aura.ui.nowplaying
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,6 +29,7 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.Border
 import kotlin.math.PI
@@ -51,7 +50,7 @@ internal fun WavySeekBar(
     val wavePath = remember { Path() }
     val amplitude by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0f,
-        animationSpec = tween(500, easing = FastOutSlowInEasing),
+        animationSpec = AuraMotion.scheme.defaultSpatialSpec(),
         label = "seekAmplitude"
     )
     LaunchedEffect(isPlaying) {
@@ -94,7 +93,7 @@ internal fun WavySeekBar(
         val point = start + (end - start) * fraction
         val gap = AuraSizes.seekGap.toPx()
         val wavelength = AuraSizes.seekWavelength.toPx()
-        val waveHeight = AuraSizes.seekAmplitude.toPx() * amplitude
+        val waveHeight = AuraSizes.seekAmplitude.toPx() * amplitude.coerceAtLeast(0f)
         val activeEnd = if (focused) point - gap - stroke else point
         if (activeEnd > start) {
             wavePath.rewind()

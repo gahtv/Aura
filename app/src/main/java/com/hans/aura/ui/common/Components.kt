@@ -407,8 +407,8 @@ fun ItemShelf(
     badgeFor: ((JellyfinItem) -> String?)? = null,
     onLongPress: ((JellyfinItem) -> Unit)? = null,
     // True while this row is in the lazy list's motion window. Inside, the
-    // horizontal scroll offset narrows it again
-    // to the covers actually in view: a 20-card row must not request 20 slots.
+    // horizontal scroll offset narrows it to the covers actually in view:
+    // a 20-card row must not request 20 slots.
     animate: Boolean = false,
     // Applied to the scrolling row.
     modifier: Modifier = Modifier

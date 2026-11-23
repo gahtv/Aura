@@ -1,11 +1,13 @@
 package com.hans.aura.ui.nav
 
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Artist as MediaArtist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.MediaItem
 
 /**
  * Every destination the app can show. Screens carry only their payload; all
  * per-screen metadata (saveable-state key, remote vocabulary, debug alias,
- * library kind, tab label) lives in [ScreenMeta] so no mapping is duplicated.
+ * library kind) lives in [ScreenMeta] so no mapping is duplicated.
  */
 internal sealed interface Screen {
     val meta: ScreenMeta
@@ -24,6 +26,10 @@ internal sealed interface Screen {
 
     data object Tracks : Screen {
         override val meta = ScreenMeta.TRACKS
+    }
+
+    data object Liked : Screen {
+        override val meta = ScreenMeta.LIKED
     }
 
     data object Playlists : Screen {
@@ -54,11 +60,11 @@ internal sealed interface Screen {
         override val meta = ScreenMeta.GENRE
     }
 
-    data class Collection(val item: JellyfinItem) : Screen {
+    data class Collection(val item: CollectionItem) : Screen {
         override val meta = ScreenMeta.COLLECTION
     }
 
-    data class Artist(val item: JellyfinItem) : Screen {
+    data class Artist(val item: MediaArtist) : Screen {
         override val meta = ScreenMeta.ARTIST
     }
 }
@@ -75,8 +81,7 @@ internal sealed interface Screen {
  *  - [routeName]    the route a remote may navigate TO (null = not addressable).
  *  - [debugAlias]   the name accepted by `--es aura_debug_screen` (null = none).
  *  - [libraryKind]  LibraryScreen kind when this screen lists a library.
- *  - [tabLabel]     top-bar label when this screen is a root tab.
- *  - [takesItem]    the screen wraps a JellyfinItem that must be resolved first.
+ *  - [takesItem]    the screen wraps a domain item that must be resolved first.
  */
 internal enum class ScreenMeta(
     val keyPrefix: String,
@@ -84,19 +89,19 @@ internal enum class ScreenMeta(
     val routeName: String? = null,
     val debugAlias: String? = null,
     val libraryKind: String? = null,
-    val tabLabel: String? = null,
     val takesItem: Boolean = false
 ) {
-    HOME("home", "home", "home", "home", tabLabel = "Home"),
-    ARTISTS("artists", "artists", "artists", "artists", libraryKind = "Artists", tabLabel = "Artists"),
-    ALBUMS("albums", "albums", "albums", "albums", libraryKind = "Albums", tabLabel = "Albums"),
-    TRACKS("tracks", "tracks", "tracks", "tracks", libraryKind = "Tracks", tabLabel = "Tracks"),
-    PLAYLISTS("playlists", "playlists", "playlists", "playlists", libraryKind = "Playlists", tabLabel = "Playlists"),
+    HOME("home", "home", "home", "home"),
+    ARTISTS("artists", "artists", "artists", "artists", libraryKind = "Artists"),
+    ALBUMS("albums", "albums", "albums", "albums", libraryKind = "Albums"),
+    TRACKS("tracks", "tracks", "tracks", "tracks", libraryKind = "Tracks"),
+    LIKED("liked", "tracks", debugAlias = "liked", libraryKind = "Tracks"),
+    PLAYLISTS("playlists", "playlists", "playlists", "playlists", libraryKind = "Playlists"),
     SEARCH("search", "search", "search", "search"),
     SETTINGS("settings", "settings", "settings", "settings"),
     NOWPLAYING("nowplaying", "nowplaying", "nowplaying", "nowplaying"),
     QUEUE("queue", "queue", "queue", "queue"),
-    GENRES("genres", "albums"),
+    GENRES("genres", "albums", debugAlias = "genres"),
     GENRE("genre", "albums"),
     COLLECTION("col", "collection", "collection", takesItem = true),
     ARTIST("artist", "artist", "artist", takesItem = true);
@@ -108,21 +113,18 @@ internal object NavSpec {
     /** Screens with no payload, in one place so meta lookups stay data-driven. */
     private val simpleScreens: List<Screen> = listOf(
         Screen.Home, Screen.Artists, Screen.Albums, Screen.Tracks, Screen.Playlists,
-        Screen.Search, Screen.Settings, Screen.NowPlaying, Screen.Queue, Screen.Genres
+        Screen.Search, Screen.Settings, Screen.NowPlaying, Screen.Queue, Screen.Genres, Screen.Liked
     )
 
-    /** Root tabs shown in the top bar (Search/Settings are icon buttons). */
-    val tabs: List<Screen> = listOf(
-        Screen.Home, Screen.Artists, Screen.Albums, Screen.Tracks, Screen.Playlists
-    )
+    fun isLibraryScreen(screen: Screen): Boolean =
+        screen is Screen.Albums || screen is Screen.Artists ||
+            screen is Screen.Tracks || screen is Screen.Playlists
 
     /** Remote routes that replace the stack instead of pushing onto it. */
     private val rootRoutes = setOf(
         ScreenMeta.HOME, ScreenMeta.ARTISTS, ScreenMeta.ALBUMS, ScreenMeta.TRACKS,
         ScreenMeta.PLAYLISTS, ScreenMeta.SEARCH, ScreenMeta.SETTINGS
     )
-
-    fun tabLabel(screen: Screen): String = screen.meta.tabLabel ?: screen.meta.keyPrefix
 
     /**
      * Saveable-state key. Format is byte-identical to the pre-refactor keys:
@@ -152,7 +154,7 @@ internal object NavSpec {
         route != null && ScreenMeta.entries.any { it.routeName == route && it.takesItem }
 
     /** Screen for a remote route; item screens need [resolvedItem] for [itemId]. */
-    fun fromMirrorRoute(route: String?, itemId: String?, resolvedItem: JellyfinItem?): Screen? {
+    fun fromMirrorRoute(route: String?, itemId: String?, resolvedItem: MediaItem?): Screen? {
         if (route == null) return null
         val meta = ScreenMeta.entries.firstOrNull { it.routeName == route } ?: return null
         if (!meta.takesItem) return meta.resolve(null)
@@ -168,9 +170,9 @@ internal object NavSpec {
         return meta.resolve(null)
     }
 
-    private fun ScreenMeta.resolve(item: JellyfinItem?): Screen? = when (this) {
-        ScreenMeta.COLLECTION -> item?.let { Screen.Collection(it) }
-        ScreenMeta.ARTIST -> item?.let { Screen.Artist(it) }
+    private fun ScreenMeta.resolve(item: MediaItem?): Screen? = when (this) {
+        ScreenMeta.COLLECTION -> (item as? CollectionItem)?.let { Screen.Collection(it) }
+        ScreenMeta.ARTIST -> (item as? MediaArtist)?.let { Screen.Artist(it) }
         else -> simpleScreens.firstOrNull { it.meta == this }
     }
 }

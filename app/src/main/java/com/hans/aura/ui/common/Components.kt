@@ -2,16 +2,18 @@
 
 package com.hans.aura.ui.common
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -21,17 +23,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.currentCompositeKeyHashCode
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
@@ -41,13 +46,19 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.Genre
+import com.hans.aura.model.MediaItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
@@ -59,17 +70,15 @@ import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 
-/** D-pad-focusable square artwork card, Spotify-grid style. */
+private val CardFocusedShape = RoundedCornerShape(AuraShapes.cardRadius - AuraSizes.focusBorder)
+
+/** D-pad-focusable artwork card, circular for artists and rounded-square for albums/playlists. */
 @Composable
 fun ArtworkCard(
-    item: JellyfinItem,
+    item: MediaItem,
     serverUrl: String,
     size: Dp,
     badge: String? = null,
-    // Optional per-screen tint (artist pages derive it from the artist image);
-    // defaults to the app-wide amber so no other screen changes.
-    badgeColor: Color = com.hans.aura.ui.theme.Accent,
-    accent: Color = com.hans.aura.ui.theme.Accent,
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
@@ -83,18 +92,26 @@ fun ArtworkCard(
     animate: Boolean = false,
     // Rank used by the budget to prefer on-screen rows over prefetch rows.
     motionPriority: Int = 0,
+    circular: Boolean = item is Artist,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
+    val artworkSource = LocalArtworkSource.current
+    val artworkToken = currentCompositeKeyHashCode
+    val sharedArtwork = if (!circular && artworkSource?.value == artworkToken) {
+        Modifier.sharedArtwork(item.id, AuraShapes.cardRadius)
+    } else Modifier.clip(if (circular) CircleShape else AuraShapes.card)
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) AuraMotion.artworkFocusedScale else 1f,
-        animationSpec = AuraMotion.artworkFocusSpring,
+        animationSpec = AuraMotion.scheme.defaultSpatialSpec(),
         label = "artworkFocusScale"
     )
     Column(
+        horizontalAlignment = if (circular) Alignment.CenterHorizontally else Alignment.Start,
         modifier = Modifier
             .width(size)
-            .zIndex(if (focused) 2f else if (scale > 1f) 1f else 0f)
+            .zIndex(if (focused) 2f else 0f)
             .then(
                 if (focusKeeper != null) {
                     Modifier.focusRequester(focusKeeper.requesterFor(item.id))
@@ -103,36 +120,46 @@ fun ArtworkCard(
             .contextMenuKeys(onLongPress)
             .onFocusChanged {
                 focused = it.isFocused
-                if (it.isFocused) onFocused?.invoke(item.id)
+                if (it.isFocused) {
+                    artworkSource?.value = artworkToken
+                    onFocused?.invoke(item.id)
+                }
             }
-            .clickable { onClick() }
+            .clickable {
+                artworkSource?.value = artworkToken
+                onClick()
+            }
             // Keep the spring inside the focus target so TV scrolling sees stable bounds.
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
     ) {
-        val bg by animateColorAsState(if (focused) SurfaceHigh else Surface, label = "card")
-        val focusedShape = RoundedCornerShape(AuraShapes.cardRadius - AuraSizes.focusBorder)
+        val bg by animateColorAsState(
+            if (focused) SurfaceHigh else Surface,
+            animationSpec = AuraMotion.scheme.fastEffectsSpec(),
+            label = "card"
+        )
+        val innerShape = if (circular) CircleShape else CardFocusedShape
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .clip(AuraShapes.card)
+                .then(sharedArtwork)
                 .background(bg)
                 .padding(if (focused) AuraSizes.focusBorder else 0.dp)
                 .then(
                     // Unmistakable focus outline: accent ring on the artwork.
-                    if (focused) Modifier.clip(focusedShape).border(
+                    if (focused) Modifier.clip(innerShape).border(
                         width = AuraSizes.focusBorderLoud,
-                        color = accent,
-                        shape = focusedShape
+                        color = colors.primary,
+                        shape = innerShape
                     ) else Modifier
                 )
         ) {
-            val artwork = item.resolveArtwork()
+            val artwork = item.artwork
             if (artwork != null) {
                 Box {
-                    val still = artwork.url(serverUrl, maxWidth = 480)
+                    val still = artworkRequest(artwork.url(serverUrl, maxWidth = 480))
                     if (animate) {
                         // Same still image, with the motion loop over it when the
                         // budget grants a slot. Losing the slot changes nothing
@@ -159,14 +186,14 @@ fun ArtworkCard(
                                 .align(Alignment.BottomEnd)
                                 .padding(AuraSpacing.xxs)
                                 .background(
-                                    AuraColors.BadgeScrim,
+                                    colors.tertiaryContainer,
                                     AuraShapes.badge
                                 )
                                 .padding(horizontal = AuraSpacing.xxs, vertical = 2.dp)
                         ) {
                             androidx.tv.material3.Text(
                                 label,
-                                color = badgeColor,
+                                color = colors.onTertiaryContainer,
                                 fontSize = AuraTypography.caption,
                                 fontWeight = FontWeight.Bold
                             )
@@ -179,7 +206,6 @@ fun ArtworkCard(
                     if (favorite == true) {
                         HeartToggle(
                             favorite = favorite,
-                            accent = accent,
                             interactive = false,
                             modifier = Modifier.align(Alignment.TopEnd).padding(AuraSpacing.xxs)
                         )
@@ -201,35 +227,37 @@ fun ArtworkCard(
             fontSize = AuraTypography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = AuraSpacing.xs)
+            textAlign = if (circular) TextAlign.Center else TextAlign.Start,
+            modifier = Modifier.fillMaxWidth().padding(top = AuraSpacing.xs)
         )
         androidx.tv.material3.Text(
             subtitleOf(item),
             color = TextSecondary,
             fontSize = AuraTypography.caption,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            textAlign = if (circular) TextAlign.Center else TextAlign.Start,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
 
-private fun subtitleOf(item: JellyfinItem): String = when (item.type) {
-    "MusicAlbum" -> item.albumArtist ?: item.artistNames.ifBlank { "Album" }
-    "MusicArtist" -> "Artist"
-    "Playlist" -> "Playlist"
-    else -> item.artistNames.ifBlank { "" }
+private fun subtitleOf(item: MediaItem): String = when (item) {
+    is Album -> item.albumArtist ?: item.artistNames.ifBlank { "Album" }
+    is Artist -> "Artist"
+    is Playlist -> "Playlist"
+    is Track -> item.artistNames.ifBlank { "" }
+    is Genre -> ""
 }
 
 /** One track row: index/title left, artist, duration right. */
 @Composable
 fun TrackRow(
     index: Int,
-    track: JellyfinItem,
+    track: Track,
     isCurrent: Boolean,
     onClick: () -> Unit,
     atmos: Boolean = false,
-    // Per-screen tint (artist pages); app amber elsewhere.
-    accent: Color = com.hans.aura.ui.theme.Accent,
     focusKeeper: FocusKeeper? = null,
     onFocused: ((String) -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
@@ -239,12 +267,11 @@ fun TrackRow(
     favorite: Boolean? = null,
     onToggleFavorite: (() -> Unit)? = null
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val bg by animateColorAsState(
         when {
-            // Tinted by the screen's accent so the "now playing" row belongs to
-            // an album whose colour isn't the app amber.
-            isCurrent -> accent.copy(alpha = 0.16f)
+            isCurrent -> colors.secondaryContainer
             focused -> SurfaceHigh
             else -> Color.Transparent
         },
@@ -275,13 +302,13 @@ fun TrackRow(
                 Modifier
                     .width(AuraSizes.rowAccentBarWidth)
                     .height(AuraSizes.rowAccentBarHeight)
-                    .background(accent)
+                    .background(colors.primary)
             )
             Spacer(Modifier.width(AuraSpacing.md))
         }
         androidx.tv.material3.Text(
             text = if (isCurrent) "\u25B6" else index.toString(),
-            color = if (isCurrent) accent else TextSecondary,
+            color = if (isCurrent) colors.onSecondaryContainer else TextSecondary,
             fontSize = AuraTypography.bodySmall,
             modifier = Modifier.width(AuraSizes.trackIndexWidth)
         )
@@ -289,7 +316,7 @@ fun TrackRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 androidx.tv.material3.Text(
                     track.name,
-                    color = if (isCurrent) accent else TextPrimary,
+                    color = if (isCurrent) colors.onSecondaryContainer else TextPrimary,
                     fontSize = AuraTypography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -297,7 +324,7 @@ fun TrackRow(
                 )
                 if (atmos) {
                     Spacer(Modifier.width(AuraSpacing.xs))
-                    AtmosChip(color = accent)
+                    AtmosChip()
                 }
             }
             if (track.artistNames.isNotBlank()) {
@@ -308,6 +335,38 @@ fun TrackRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+        }
+        // Focus-revealed inline action hints (strictly non-focusable so D-pad
+        // focus stays on the row itself).
+        AnimatedVisibility(
+            visible = focused && (favorite != null || onToggleFavorite != null || onLongPress != null),
+            enter = fadeIn(AuraMotion.scheme.fastEffectsSpec()),
+            exit = fadeOut(AuraMotion.scheme.fastEffectsSpec())
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AuraSpacing.xs),
+                modifier = Modifier.padding(start = AuraSpacing.sm)
+            ) {
+                if (favorite != null || onToggleFavorite != null) {
+                    androidx.tv.material3.Text(
+                        text = "\u2665",
+                        color = if (favorite == true) colors.primary else TextSecondary,
+                        fontSize = AuraTypography.label
+                    )
+                }
+                if (onLongPress != null) {
+                    androidx.tv.material3.Text(
+                        text = "\u2022\u2022\u2022",
+                        color = TextSecondary,
+                        fontSize = AuraTypography.label,
+                        modifier = Modifier
+                            .clip(AuraShapes.badge)
+                            .background(AuraColors.FocusedFillSubtle)
+                            .padding(horizontal = AuraSpacing.xs, vertical = 2.dp)
+                    )
+                }
             }
         }
         androidx.tv.material3.Text(
@@ -322,7 +381,6 @@ fun TrackRow(
             Spacer(Modifier.width(AuraSpacing.xs))
             HeartToggle(
                 favorite = favorite,
-                accent = accent,
                 interactive = false
             )
         }
@@ -348,27 +406,25 @@ fun TrackRow(
 @Composable
 fun ItemShelf(
     title: String,
-    items: List<JellyfinItem>?,
+    items: List<MediaItem>?,
     serverUrl: String,
     focusKeeper: FocusKeeper,
     onFocused: (String) -> Unit,
-    onOpen: (JellyfinItem, Int) -> Unit,
+    onOpen: (MediaItem, Int) -> Unit,
     size: Dp = AuraSizes.shelfCardWidth,
     showLoading: Boolean = true,
-    badgeFor: ((JellyfinItem) -> String?)? = null,
-    onLongPress: ((JellyfinItem) -> Unit)? = null,
-    // True only while this row is on screen (Home passes the flag from
-    // rememberOnScreen). Inside, the horizontal scroll offset narrows it again
-    // to the covers actually in view: a 20-card row must not request 20 slots.
+    badgeFor: ((MediaItem) -> String?)? = null,
+    onLongPress: ((MediaItem) -> Unit)? = null,
+    // True while this row is in the lazy list's motion window. Inside, the
+    // horizontal scroll offset narrows it to the covers actually in view:
+    // a 20-card row must not request 20 slots.
     animate: Boolean = false,
-    // Attached to the scrolling row so Home can measure whether the shelf is
-    // inside the window at all.
+    // Applied to the scrolling row.
     modifier: Modifier = Modifier
 ) {
-    // "Only Atmos" (Settings) filters shelves without a second request: artists
-    // pass through, albums/tracks must be in the Atmos catalog.
-    val shown = items?.let { list -> list.filter { com.hans.aura.data.AtmosFilter.keep(it) } }
-    val scroll = rememberScrollState()
+    // "Only Atmos" (Settings) filters shelves without a second request.
+    val shown = items?.filter { com.hans.aura.data.AtmosFilter.keep(it) }
+    val listState = rememberLazyListState()
     when {
         items == null -> {
             if (showLoading) {
@@ -387,36 +443,34 @@ fun ItemShelf(
             )
             Spacer(Modifier.height(AuraSpacing.sm))
 
-            val stepPx = with(LocalDensity.current) {
-                size.toPx() + AuraSpacing.md.toPx()
-            }
-            var viewportPx by remember { mutableStateOf(0) }
-            // derivedStateOf, not a plain read: scroll.value changes on every
-            // scrolled pixel, but this only changes when a whole card passes.
-            val animatableRange by remember(scroll, stepPx, animate) {
+            // derivedStateOf: only updates when visible item indices change.
+            val animatableRange by remember(listState, animate) {
                 derivedStateOf {
-                    if (!animate || stepPx <= 0f || viewportPx <= 0) {
+                    if (!animate) {
                         IntRange.EMPTY
                     } else {
-                        val first = (scroll.value / stepPx).toInt()
-                        // One screen of covers plus two: the lookahead that lets
-                        // the next card start before it is fully scrolled in.
-                        val count = (viewportPx / stepPx).toInt() + 2
-                        first..(first + count)
+                        val visible = listState.layoutInfo.visibleItemsInfo
+                        if (visible.isEmpty()) IntRange.EMPTY
+                        else visible.first().index..(visible.last().index + 2)
                     }
                 }
             }
-            Row(
-                modifier
+            LazyRow(
+                state = listState,
+                modifier = modifier
                     .fillMaxWidth()
-                    .onGloballyPositioned { viewportPx = it.size.width }
-                    .horizontalScroll(scroll)
-                    .padding(vertical = AuraMotion.artworkFocusInset(size))
                     .focusRestorer(),
+                contentPadding = PaddingValues(
+                    horizontal = AuraSizes.shelfEdgeSpacer,
+                    vertical = AuraMotion.artworkFocusInset(size)
+                ),
                 horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md)
             ) {
-                Spacer(Modifier.width(AuraSizes.shelfEdgeSpacer))
-                shown.forEachIndexed { idx, item ->
+                itemsIndexed(
+                    items = shown,
+                    key = { _, item -> item.id },
+                    contentType = { _, item -> item::class }
+                ) { idx, item ->
                     ArtworkCard(
                         item = item,
                         serverUrl = serverUrl,
@@ -424,7 +478,7 @@ fun ItemShelf(
                         badge = badgeFor?.invoke(item),
                         focusKeeper = focusKeeper,
                         onFocused = onFocused,
-                        animate = item.type == "MusicAlbum" && idx in animatableRange,
+                        animate = item is Album && idx in animatableRange,
                         // Earlier cards outrank later ones, so the budget keeps
                         // the left edge of the visible row moving.
                         motionPriority = -idx,
@@ -433,7 +487,6 @@ fun ItemShelf(
                         onOpen(item, idx)
                     }
                 }
-                Spacer(Modifier.width(AuraSizes.shelfEdgeSpacer))
             }
             Spacer(Modifier.height(AuraSpacing.md))
         }

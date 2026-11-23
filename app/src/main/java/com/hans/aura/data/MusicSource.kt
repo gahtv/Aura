@@ -166,13 +166,17 @@ interface MusicSource {
     // ---- Browse (mirrors MediaRepository, main-safe there) ------------------
 
     /** Last cached copy of [prefix] (null when absent or expired). */
-    fun cached(prefix: String): List<JellyfinItem>?
+    suspend fun cached(prefix: String): List<JellyfinItem>?
 
     /** Stores a browse result under [prefix]. */
     fun cache(prefix: String, items: List<JellyfinItem>)
 
     /** Runs one browse query, filtered by the current library selection. */
     suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String? = null): ItemsResponse
+
+    /** Playlist rows in server order; the default approximates them through the parent browse query. */
+    suspend fun playlistItems(playlistId: String): List<JellyfinItem> =
+        browse(LibraryFilter.ItemsQuery(parentId = playlistId, includeItemTypes = "Audio", limit = 500)).items
 
     /** Remove the zero-based occurrence of an item among same-id rows; failures propagate. */
     suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) {
@@ -193,7 +197,7 @@ interface MusicSource {
     /** Paged list store: accumulated page for a screen key, or null. */
     fun cachedPage(key: String): PagedLibrary.Page?
 
-    fun storePage(key: String, items: List<JellyfinItem>, total: Int)
+    fun storePage(key: String, items: List<JellyfinItem>, total: Int, requiresRefresh: Boolean = false)
 
     /** Single item detail (never filtered: detail screens open for any id). */
     suspend fun item(itemId: String): JellyfinItem?

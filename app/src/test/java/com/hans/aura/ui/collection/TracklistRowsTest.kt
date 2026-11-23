@@ -7,7 +7,7 @@ import org.junit.Test
 class TracklistRowsTest {
 
     private fun track(id: String, disc: Int?, number: Int?) =
-        Fixtures.track(id).copy(discNumber = disc, trackNumber = number)
+        Fixtures.domainTrack(id).copy(discNumber = disc, trackNumber = number)
 
     /** Rows as compact labels: "Disc 2" for separators, "<label>:<id>@<position>" for tracks. */
     private fun labels(rows: List<TracklistRow>) = rows.map { row ->

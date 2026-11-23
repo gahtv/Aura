@@ -5,6 +5,7 @@ package com.hans.aura.ui.nowplaying
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,8 +37,9 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import com.hans.aura.data.JellyfinItem
+import androidx.tv.material3.MaterialTheme
+import com.hans.aura.model.Track
+import com.hans.aura.ui.common.InitialFocusOnPush
 import com.hans.aura.ui.common.OverlayVisibility
 import com.hans.aura.ui.common.formatDuration
 import com.hans.aura.ui.theme.AuraColors
@@ -50,7 +52,6 @@ import com.hans.aura.ui.theme.FocusOutline
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
-import kotlinx.coroutines.delay
 
 /**
  * Inline queue peek (B14): the next few tracks as a compact list over the
@@ -72,15 +73,15 @@ import kotlinx.coroutines.delay
  */
 @Composable
 internal fun QueuePeekOverlay(
-    upcoming: List<JellyfinItem>,
+    upcoming: List<Track>,
     total: Int,
-    accent: Color,
     focusToken: Int,
     graceUntil: Long,
     onExtend: () -> Unit,
     onCollapse: () -> Unit,
     onJump: (Int) -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     // The app-level now-playing bar must not draw over the peek while it is up.
     OverlayVisibility.dialogOpen = true
     DisposableEffect(Unit) { onDispose { OverlayVisibility.dialogOpen = false } }
@@ -100,12 +101,8 @@ internal fun QueuePeekOverlay(
     }
     // focusToken changes on every OPEN (not on extend), so extending does not
     // yank focus back to the top row.
-    LaunchedEffect(focusToken) {
-        delay(100)
-        repeat(6) {
-            if (runCatching { firstFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(100)
-        }
+    androidx.compose.runtime.key(focusToken) {
+        InitialFocusOnPush(true, firstFocus, ready = upcoming.isNotEmpty())
     }
 
     Box(
@@ -140,7 +137,8 @@ internal fun QueuePeekOverlay(
                 .background(AuraColors.PeekScrim)
                 .border(AuraSizes.hairline, Border, AuraShapes.sheet)
                 // Focus can never leave the panel while it is up.
-                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusProperties { onExit = { cancelFocusChange() } }
+                .focusGroup()
                 .padding(vertical = AuraSpacing.xs)
         ) {
             Row(
@@ -156,7 +154,7 @@ internal fun QueuePeekOverlay(
                 androidx.tv.material3.Text(
                     "Up next",
                     fontSize = AuraTypography.caption,
-                    color = accent,
+                    color = colors.primary,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.weight(1f))
@@ -170,7 +168,6 @@ internal fun QueuePeekOverlay(
             upcoming.forEachIndexed { i, track ->
                 PeekRow(
                     track = track,
-                    accent = accent,
                     modifier = Modifier.focusRequester(rowFocus[i]).focusProperties {
                         up = rowFocus.getOrNull(i - 1) ?: FocusRequester.Cancel
                         down = rowFocus.getOrNull(i + 1) ?: FocusRequester.Cancel
@@ -192,11 +189,11 @@ internal fun QueuePeekOverlay(
  */
 @Composable
 private fun PeekRow(
-    track: JellyfinItem,
-    accent: Color,
+    track: Track,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.control
     Row(
@@ -218,7 +215,7 @@ private fun PeekRow(
                 .width(AuraSizes.accentBar)
                 .height(AuraSpacing.lg)
                 .background(
-                    if (focused) accent else Color.Transparent,
+                    if (focused) colors.primary else Color.Transparent,
                     AuraShapes.pill
                 )
         )

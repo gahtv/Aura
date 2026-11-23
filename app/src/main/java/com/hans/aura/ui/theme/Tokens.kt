@@ -1,7 +1,7 @@
 package com.hans.aura.ui.theme
 
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MotionScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -12,7 +12,7 @@ import androidx.tv.material3.Typography
 
 object AuraMotion {
     const val artworkFocusedScale = 1.06f
-    val artworkFocusSpring = spring<Float>(dampingRatio = 0.75f, stiffness = 400f)
+    val scheme = MotionScheme.expressive()
 
     /** Full growth reserves room for the caption and the spring's overshoot. */
     fun artworkFocusInset(size: Dp): Dp = size * (artworkFocusedScale - 1f)
@@ -166,6 +166,13 @@ object AuraTypography {
 object AuraShapes {
     val cardRadius = 12.dp
     val card = RoundedCornerShape(cardRadius)
+    val cardHeroRadius = 20.dp
+    val cardHero = RoundedCornerShape(cardHeroRadius)
+    val quickTile = RoundedCornerShape(14.dp)
+    val pillRestRadius = 24.dp
+    val pillFocusRadius = 8.dp
+    val pillSelectedFocusRadius = 4.dp
+    val connectedInnerRadius = 4.dp
     val sheet = RoundedCornerShape(16.dp)
     val dialog = RoundedCornerShape(28.dp)
     val control = card

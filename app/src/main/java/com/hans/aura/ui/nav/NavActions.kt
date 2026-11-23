@@ -6,7 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Artist as MediaArtist
+import com.hans.aura.model.CollectionItem
 
 /**
  * The navigation surface screens get. Implemented over a back stack today
@@ -15,15 +16,13 @@ import com.hans.aura.data.JellyfinItem
  */
 internal interface NavActions {
     fun onBack()
-    fun onSelectTab(tab: Screen)
+    fun onSwitchLibraryCategory(target: Screen)
     fun onOpenSearch()
-    fun onOpenSettings()
     fun onOpenNowPlaying()
     fun onOpenQueue()
-    fun onOpenGenres()
     fun onOpenGenre(name: String)
-    fun onOpenCollection(item: JellyfinItem)
-    fun onOpenArtist(item: JellyfinItem)
+    fun onOpenCollection(item: CollectionItem)
+    fun onOpenArtist(item: MediaArtist)
 }
 
 /**
@@ -47,6 +46,9 @@ internal class NavState {
     var focusTick by mutableStateOf(0)
         private set
 
+    var lastLibraryTab: Screen = Screen.Albums
+        private set
+
     fun push(screen: Screen) {
         pendingFocus = true
         stack = stack + screen
@@ -60,11 +62,27 @@ internal class NavState {
         }
     }
 
+    fun back() {
+        if (stack.size > 1) pop() else if (top != Screen.Home) resetToHome()
+    }
+
     /** Tab switch resets the stack to that tab. */
     fun selectTab(tab: Screen) {
-        if (tab::class != top::class) {
+        val target = if (tab == Screen.Albums) lastLibraryTab else tab
+        if (target::class != top::class) {
             pendingFocus = false
-            stack = listOf(tab)
+            stack = listOf(target)
+        }
+    }
+
+    /** Switch between Library categories without changing the rail destination. */
+    fun switchLibraryCategory(target: Screen) {
+        if (NavSpec.isLibraryScreen(target)) {
+            lastLibraryTab = target
+            if (target::class != top::class) {
+                pendingFocus = false
+                stack = listOf(target)
+            }
         }
     }
 
@@ -72,13 +90,6 @@ internal class NavState {
         if (top != Screen.Search) {
             pendingFocus = true
             stack = listOf(Screen.Search)
-        }
-    }
-
-    fun openSettings() {
-        if (top != Screen.Settings) {
-            pendingFocus = false
-            stack = listOf(Screen.Settings)
         }
     }
 
@@ -107,16 +118,14 @@ internal class NavState {
     }
 
     val actions: NavActions = object : NavActions {
-        override fun onBack() = pop()
-        override fun onSelectTab(tab: Screen) = selectTab(tab)
+        override fun onBack() = back()
+        override fun onSwitchLibraryCategory(target: Screen) = switchLibraryCategory(target)
         override fun onOpenSearch() = openSearch()
-        override fun onOpenSettings() = openSettings()
         override fun onOpenNowPlaying() = openNowPlaying()
         override fun onOpenQueue() = push(Screen.Queue)
-        override fun onOpenGenres() = push(Screen.Genres)
         override fun onOpenGenre(name: String) = push(Screen.Genre(name))
-        override fun onOpenCollection(item: JellyfinItem) = push(Screen.Collection(item))
-        override fun onOpenArtist(item: JellyfinItem) = push(Screen.Artist(item))
+        override fun onOpenCollection(item: CollectionItem) = push(Screen.Collection(item))
+        override fun onOpenArtist(item: MediaArtist) = push(Screen.Artist(item))
     }
 }
 

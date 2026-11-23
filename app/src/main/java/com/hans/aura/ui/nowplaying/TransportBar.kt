@@ -17,7 +17,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.GenericShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toPath
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +36,8 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -39,13 +46,16 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.Morph
 import androidx.media3.common.Player
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
 import com.hans.aura.ui.common.formatDuration
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.ui.player.rememberPlaybackPosition
 import com.hans.aura.ui.player.nextRepeatMode
 import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
@@ -61,17 +71,110 @@ import com.hans.aura.ui.theme.TextSecondary
  * playing, so the control simply is not drawn).
  */
 @Composable
+internal fun LiveTransportBar(
+    player: PlayerConnection,
+    isPlaying: Boolean,
+    playPauseFocus: FocusRequester,
+    onOpenPeek: (FocusRequester) -> Boolean,
+    favorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null,
+    onRadio: (() -> Unit)? = null,
+    dimMode: Boolean = false,
+    onToggleDimMode: (() -> Unit)? = null
+) {
+    TransportBarContent(
+        player = player,
+        isPlaying = isPlaying,
+        playPauseFocus = playPauseFocus,
+        onOpenPeek = onOpenPeek,
+        favorite = favorite,
+        onToggleFavorite = onToggleFavorite,
+        onRadio = onRadio,
+        dimMode = dimMode,
+        onToggleDimMode = onToggleDimMode,
+        seekSection = {
+            val position = rememberPlaybackPosition(player)
+            val duration by player.durationMs.collectAsState()
+            SeekSection({ position.value }, duration, isPlaying, playPauseFocus, player::seekBy)
+        }
+    )
+}
+
+@Composable
 internal fun TransportBar(
     player: PlayerConnection,
     position: Long,
     duration: Long,
     isPlaying: Boolean,
     playPauseFocus: FocusRequester,
-    accent: Color,
     onOpenPeek: (FocusRequester) -> Boolean,
     favorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
-    onRadio: (() -> Unit)? = null
+    onRadio: (() -> Unit)? = null,
+    dimMode: Boolean = false,
+    onToggleDimMode: (() -> Unit)? = null
+) {
+    TransportBarContent(
+        player = player,
+        isPlaying = isPlaying,
+        playPauseFocus = playPauseFocus,
+        onOpenPeek = onOpenPeek,
+        favorite = favorite,
+        onToggleFavorite = onToggleFavorite,
+        onRadio = onRadio,
+        dimMode = dimMode,
+        onToggleDimMode = onToggleDimMode,
+        seekSection = {
+            SeekSection({ position }, duration, isPlaying, playPauseFocus, player::seekBy)
+        }
+    )
+}
+
+@Composable
+private fun SeekSection(
+    position: () -> Long,
+    duration: Long,
+    isPlaying: Boolean,
+    playPauseFocus: FocusRequester,
+    onSeek: (Long) -> Unit
+) {
+    WavySeekBar(
+        progress = { if (duration > 0) position().toFloat() / duration else 0f },
+        isPlaying = isPlaying,
+        modifier = Modifier.focusProperties { down = playPauseFocus },
+        onSeek = onSeek
+    )
+    Spacer(Modifier.height(AuraSpacing.xs))
+    val elapsed by remember(position) { derivedStateOf { formatDuration(position()) } }
+    val remaining by remember(position, duration) {
+        derivedStateOf { "-${formatDuration((duration - position()).coerceAtLeast(0))}" }
+    }
+    Row(Modifier.fillMaxWidth()) {
+        androidx.tv.material3.Text(
+            elapsed,
+            color = TextSecondary,
+            fontSize = AuraTypography.caption
+        )
+        Spacer(Modifier.weight(1f))
+        androidx.tv.material3.Text(
+            remaining,
+            color = TextSecondary, fontSize = AuraTypography.caption
+        )
+    }
+}
+
+@Composable
+private fun TransportBarContent(
+    player: PlayerConnection,
+    isPlaying: Boolean,
+    playPauseFocus: FocusRequester,
+    onOpenPeek: (FocusRequester) -> Boolean,
+    favorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null,
+    onRadio: (() -> Unit)? = null,
+    dimMode: Boolean = false,
+    onToggleDimMode: (() -> Unit)? = null,
+    seekSection: @Composable () -> Unit
 ) {
     val shuffleEnabled by player.shuffleEnabled.collectAsState()
     val repeatMode by player.repeatMode.collectAsState()
@@ -86,47 +189,28 @@ internal fun TransportBar(
         }
 
     Column {
-        WavySeekBar(
-            progress = if (duration > 0) position.toFloat() / duration else 0f,
-            isPlaying = isPlaying,
-            accent = accent,
-            modifier = Modifier.focusProperties { down = playPauseFocus },
-            onSeek = player::seekBy
-        )
-        Spacer(Modifier.height(AuraSpacing.xs))
-        Row(Modifier.fillMaxWidth()) {
-            androidx.tv.material3.Text(
-                formatDuration(position),
-                color = TextSecondary,
-                fontSize = AuraTypography.caption
-            )
-            Spacer(Modifier.weight(1f))
-            androidx.tv.material3.Text(
-                "-${formatDuration((duration - position).coerceAtLeast(0))}",
-                color = TextSecondary, fontSize = AuraTypography.caption
-            )
-        }
+        seekSection()
         Spacer(Modifier.height(AuraSpacing.lg))
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TransportIconButton(R.drawable.ic_skip_previous, "Previous", accent = accent) {
+            TransportIconButton(R.drawable.ic_skip_previous, "Previous") {
                 player.previous()
             }
             Spacer(Modifier.width(AuraSpacing.md))
-            TransportIconButton(R.drawable.ic_replay_10, "Back 10 seconds", accent = accent) {
-                player.seekTo((position - 10_000).coerceAtLeast(0))
+            TransportIconButton(R.drawable.ic_replay_10, "Back 10 seconds") {
+                player.seekTo((player.currentPositionMs() - 10_000).coerceAtLeast(0))
             }
             Spacer(Modifier.width(AuraSpacing.md))
             // Big emphasized play/pause.
             TransportIconButton(
                 icon = if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play_arrow,
                 label = if (isPlaying) "Pause" else "Play",
-                accent = accent,
                 iconSize = AuraSizes.transportIconLarge,
                 filled = true,
+                squircle = isPlaying,
                 modifier = Modifier
                     .focusRequester(playPauseFocus)
                     .focusProperties { down = shuffleFocus }
@@ -134,11 +218,12 @@ internal fun TransportBar(
                 player.playPause()
             }
             Spacer(Modifier.width(AuraSpacing.md))
-            TransportIconButton(R.drawable.ic_forward_10, "Forward 10 seconds", accent = accent) {
-                player.seekTo((position + 10_000).coerceIn(0, duration.coerceAtLeast(1)))
+            TransportIconButton(R.drawable.ic_forward_10, "Forward 10 seconds") {
+                val dur = player.durationMs.value.coerceAtLeast(1)
+                player.seekTo((player.currentPositionMs() + 10_000).coerceIn(0, dur))
             }
             Spacer(Modifier.width(AuraSpacing.md))
-            TransportIconButton(R.drawable.ic_skip_next, "Next", accent = accent) {
+            TransportIconButton(R.drawable.ic_skip_next, "Next") {
                 player.next()
             }
         }
@@ -151,7 +236,6 @@ internal fun TransportBar(
             TransportIconButton(
                 icon = R.drawable.ic_shuffle,
                 label = "Shuffle",
-                accent = accent,
                 active = shuffleEnabled,
                 modifier = peekOnDown(shuffleFocus)
             ) {
@@ -165,7 +249,6 @@ internal fun TransportBar(
                     Player.REPEAT_MODE_ALL -> "Repeat all"
                     else -> "Repeat off"
                 },
-                accent = accent,
                 active = repeatMode != Player.REPEAT_MODE_OFF,
                 modifier = peekOnDown(repeatFocus)
             ) {
@@ -176,7 +259,6 @@ internal fun TransportBar(
                 // Heart for the CURRENT track: filled accent when liked.
                 TransportHeartButton(
                     favorite = favorite,
-                    accent = accent,
                     onClick = onToggleFavorite
                 )
             }
@@ -187,6 +269,16 @@ internal fun TransportBar(
                 // `active` state — pressing it starts a new mix, it is not a
                 // toggle.
                 NpControlButton(label = "Radio", onClick = radio)
+            }
+            onToggleDimMode?.let { toggleDim ->
+                Spacer(Modifier.width(AuraSpacing.lg))
+                TransportIconButton(
+                    icon = R.drawable.ic_bedtime,
+                    label = "Dim mode",
+                    active = dimMode
+                ) {
+                    toggleDim()
+                }
             }
         }
     }
@@ -200,31 +292,42 @@ internal fun TransportBar(
 private fun TransportIconButton(
     icon: Int,
     label: String,
-    accent: Color,
     iconSize: Dp = AuraSizes.transportIcon,
     filled: Boolean = false,
     active: Boolean = false,
+    squircle: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
-    val plate = when {
-        filled -> accent
-        focused -> accent.copy(alpha = 0.34f)
-        active -> accent.copy(alpha = 0.18f)
-        else -> Color.Transparent
-    }
+    val plate by animateColorAsState(
+        when {
+            filled -> colors.primary
+            focused -> colors.secondaryContainer
+            active -> colors.secondaryContainer
+            else -> Color.Transparent
+        },
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
+        label = "transportPlate"
+    )
     val tint by animateColorAsState(
         when {
-            filled -> AuraColors.OnAccent
-            active || focused -> accent
+            filled -> colors.onPrimary
+            active || focused -> colors.onSecondaryContainer
             else -> TextPrimary
         },
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
         label = "transportTint"
     )
     // Focus grows the glyph (~15%) as well as ringing it: on a dark 10-foot
     // screen a 3dp accent ring alone was too easy to miss.
-    val grow by animateFloatAsState(if (focused) 1.15f else 1f, label = "transportGrow")
+    val grow by animateFloatAsState(
+        if (focused) 1.15f else 1f,
+        animationSpec = AuraMotion.scheme.fastSpatialSpec(),
+        label = "transportGrow"
+    )
+    val buttonShape = if (filled) playPauseShape(squircle) else CircleShape
     Box(
         modifier
             .size(iconSize + AuraSizes.transportPlateExtra)
@@ -232,12 +335,11 @@ private fun TransportIconButton(
                 scaleX = grow
                 scaleY = grow
             }
-            .clip(CircleShape)
+            .clip(buttonShape)
             .background(plate)
-            .border(
-                width = if (focused) AuraSizes.focusBorderLoud else 0.dp,
-                color = if (focused) AuraColors.CursorRing else Color.Transparent,
-                shape = CircleShape
+            .then(
+                if (focused) Modifier.border(AuraSizes.focusBorderLoud, AuraColors.CursorRing, buttonShape)
+                else Modifier
             )
             // onFocusChanged must sit BEFORE the focus target (clickable):
             // placed after it, it observes the un-focusable layout child and
@@ -255,24 +357,54 @@ private fun TransportIconButton(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+private val playPauseMorph by lazy { Morph(MaterialShapes.Circle, MaterialShapes.Square) }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun playPauseShape(playing: Boolean): Shape {
+    val progress by animateFloatAsState(
+        if (playing) 1f else 0f,
+        animationSpec = AuraMotion.scheme.defaultSpatialSpec(),
+        label = "playPauseShape"
+    )
+    val fraction = progress.coerceIn(0f, 1f)
+    return remember(fraction) {
+        GenericShape { size, _ ->
+            playPauseMorph.toPath(fraction, path = this)
+            transform(Matrix().apply { scale(size.width, size.height) })
+        }
+    }
+}
+
 /**
  * Heart variant of the transport button. Same plate/ring/scale language as
  * TransportIconButton, but the glyph is a text heart because there is no heart
  * vector drawable in res/. `active` (liked) keeps the accent tint at rest.
  */
 @Composable
-private fun TransportHeartButton(favorite: Boolean, accent: Color, onClick: () -> Unit) {
+private fun TransportHeartButton(favorite: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
-    val plate = when {
-        focused -> accent.copy(alpha = 0.34f)
-        favorite -> accent.copy(alpha = 0.18f)
-        else -> Color.Transparent
-    }
+    val plate by animateColorAsState(
+        when {
+            focused -> colors.secondaryContainer
+            favorite -> colors.secondaryContainer
+            else -> Color.Transparent
+        },
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
+        label = "heartPlate"
+    )
     val tint by animateColorAsState(
-        if (favorite || focused) accent else TextPrimary,
+        if (favorite || focused) colors.onSecondaryContainer else TextPrimary,
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
         label = "heartTint"
     )
-    val grow by animateFloatAsState(if (focused) 1.15f else 1f, label = "heartGrow")
+    val grow by animateFloatAsState(
+        if (focused) 1.15f else 1f,
+        animationSpec = AuraMotion.scheme.fastSpatialSpec(),
+        label = "heartGrow"
+    )
     val label = if (favorite) "Remove from favorites" else "Add to favorites"
     Box(
         Modifier
@@ -284,7 +416,7 @@ private fun TransportHeartButton(favorite: Boolean, accent: Color, onClick: () -
             .clip(CircleShape)
             .background(plate)
             .border(
-                width = if (focused) AuraSizes.focusBorderLoud else 0.dp,
+                width = AuraSizes.focusBorderLoud,
                 color = if (focused) AuraColors.CursorRing else Color.Transparent,
                 shape = CircleShape
             )

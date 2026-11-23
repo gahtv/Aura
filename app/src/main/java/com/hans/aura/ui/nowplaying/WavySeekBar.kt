@@ -1,8 +1,6 @@
 package com.hans.aura.ui.nowplaying
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,7 +16,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -31,6 +28,8 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.tv.material3.MaterialTheme
+import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.Border
 import kotlin.math.PI
@@ -39,18 +38,19 @@ import kotlin.math.sin
 
 @Composable
 internal fun WavySeekBar(
-    progress: Float,
+    progress: () -> Float,
     isPlaying: Boolean,
-    accent: Color,
     modifier: Modifier = Modifier,
     onSeek: (Long) -> Unit = {}
 ) {
-    val fraction = if (progress.isNaN()) 0f else progress.coerceIn(0f, 1f)
+    val colors = MaterialTheme.colorScheme
+    fun fraction() = progress().let { if (it.isNaN()) 0f else it.coerceIn(0f, 1f) }
     var focused by remember { mutableStateOf(false) }
     var phase by remember { mutableFloatStateOf(0f) }
+    val wavePath = remember { Path() }
     val amplitude by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0f,
-        animationSpec = tween(500, easing = FastOutSlowInEasing),
+        animationSpec = AuraMotion.scheme.defaultSpatialSpec(),
         label = "seekAmplitude"
     )
     LaunchedEffect(isPlaying) {
@@ -80,10 +80,11 @@ internal fun WavySeekBar(
             }
             .semantics {
                 contentDescription = "Playback position"
-                progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
+                progressBarRangeInfo = ProgressBarRangeInfo(fraction(), 0f..1f)
             }
             .focusable()
     ) {
+        val fraction = fraction()
         val stroke = AuraSizes.seekStroke.toPx()
         val radius = stroke / 2
         val start = radius
@@ -93,28 +94,28 @@ internal fun WavySeekBar(
         val point = start + (end - start) * fraction
         val gap = AuraSizes.seekGap.toPx()
         val wavelength = AuraSizes.seekWavelength.toPx()
-        val waveHeight = AuraSizes.seekAmplitude.toPx() * amplitude
+        val waveHeight = AuraSizes.seekAmplitude.toPx() * amplitude.coerceAtLeast(0f)
         val activeEnd = if (focused) point - gap - stroke else point
         if (activeEnd > start) {
-            val path = Path()
+            wavePath.rewind()
             var x = start
             while (true) {
                 val taper = ((x - start) / (wavelength / 2)).coerceIn(0f, 1f)
                 val y = centerY + sin(((x - start) / wavelength - phase) * 2 * PI).toFloat() * waveHeight * taper
-                if (x == start) path.moveTo(x, y) else path.lineTo(x, y)
+                if (x == start) wavePath.moveTo(x, y) else wavePath.lineTo(x, y)
                 if (x >= activeEnd) break
-                x = min(x + 1f, activeEnd)
+                x = min(x + 4f, activeEnd)
             }
-            drawPath(path, accent, style = Stroke(stroke, cap = StrokeCap.Round))
+            drawPath(wavePath, colors.primary, style = Stroke(stroke, cap = StrokeCap.Round))
         }
         val inactiveStart = point + gap + stroke
         if (inactiveStart < end) {
             drawLine(Border, Offset(inactiveStart, centerY), Offset(end, centerY), stroke, StrokeCap.Round)
         }
-        drawCircle(accent, radius, Offset(end, centerY))
+        drawCircle(colors.primary, radius, Offset(end, centerY))
         if (focused) {
             val halfHandle = (AuraSizes.seekHandleHeight.toPx() - stroke) / 2
-            drawLine(accent, Offset(point, centerY - halfHandle), Offset(point, centerY + halfHandle), stroke, StrokeCap.Round)
+            drawLine(colors.primary, Offset(point, centerY - halfHandle), Offset(point, centerY + halfHandle), stroke, StrokeCap.Round)
         }
     }
 }

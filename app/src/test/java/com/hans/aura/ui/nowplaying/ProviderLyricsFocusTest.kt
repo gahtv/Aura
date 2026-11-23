@@ -6,7 +6,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasScrollAction
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.ComposeUiTestConfig
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
@@ -29,7 +31,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w960dp-h540dp-land")
 class ProviderLyricsFocusTest {
-    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>(
+        ComposeUiTestConfig(inputMode = InputMode.Keyboard)
+    )
 
     @Test
     fun backFromPreviewRestoresTheFocusedResultAndItsScrollPosition() {
@@ -45,7 +49,7 @@ class ProviderLyricsFocusTest {
         }
         compose.setContent {
             AuraTheme {
-                ProviderLyricsDialog(source, JellyfinItem("track", "Test track"), {}, {})
+                ProviderLyricsDialog(source, com.hans.aura.model.Track("track", "Test track"), {}, {})
             }
         }
         fun result(index: Int) = compose.onNodeWithText("Match $index · Synced")

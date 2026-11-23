@@ -1,5 +1,10 @@
 package com.hans.aura.data
 
+import com.hans.aura.model.Album
+import com.hans.aura.model.MediaItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
+
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,9 +33,19 @@ object Favorites {
     /** id -> isFavorite, for items toggled this session. Wins over UserData. */
     private var overrides by mutableStateOf<Map<String, Boolean>>(emptyMap())
 
+    fun clear() { overrides = emptyMap() }
+
     /** True when [item] is liked: session override first, then server UserData. */
-    fun isFavorite(item: JellyfinItem): Boolean =
+    internal fun isFavoriteRaw(item: JellyfinItem): Boolean =
         overrides[item.id] ?: (item.userData?.isFavorite == true)
+
+    fun isFavorite(item: MediaItem): Boolean =
+        overrides[item.id] ?: when (item) {
+            is Track -> item.isFavorite
+            is Album -> item.isFavorite
+            is Playlist -> item.isFavorite
+            else -> false
+        }
 
     /** Same, for code that only has the id (after a toggle it is always known). */
     fun isFavorite(itemId: String): Boolean = overrides[itemId] == true
@@ -46,7 +61,7 @@ object Favorites {
      * Retrofit's Response never throws on 4xx/5xx, so the code decides — and a
      * failed toggle must undo the heart rather than leave the UI lying.
      */
-    suspend fun toggle(api: JellyfinApi, userId: String, item: JellyfinItem): Boolean? {
+    suspend fun toggle(api: JellyfinApi, userId: String, item: MediaItem): Boolean? {
         val before = isFavorite(item)
         val now = !before
         set(item.id, now)
@@ -68,6 +83,7 @@ object Favorites {
         val after = isFavorite(item.id)
         Log.d(TAG, "item=${item.id} now=$after code=${resp.code()}")
         evictCaches(userId, item)
+        LibraryCache.clearDiskLists()
         return after
     }
 
@@ -81,15 +97,23 @@ object Favorites {
      *
      * Keys (verified against the call sites): "home_recent:<userId>",
      * "col:<albumId>" for the album tracklist, and the library tab keys
-     * "lib_tracks:<userId>:<sort>:<desc>" / "lib_liked:<userId>:<sort>:<desc>"
-     * — the sort+direction part means a family eviction, not one key.
+     * for Tracks and Liked, including hydrated Atmos favorites. Each list can
+     * be cached under multiple sorts and library selections.
      */
-    private fun evictCaches(userId: String, item: JellyfinItem) {
+    private fun evictCaches(userId: String, item: MediaItem) {
         LibraryCache.evict("home_recent:$userId")
-        item.albumId?.let { LibraryCache.evict("col:$it") }
-        LibraryCache.evictWhere { it.startsWith("lib_tracks:") || it.startsWith("lib_liked:") }
-        PagedLibrary.evictWhere { it.startsWith("lib_tracks:") || it.startsWith("lib_liked:") }
-        Log.d(TAG, "evict item=${item.id} album=${item.albumId ?: "-"} userId=$userId")
+        (item as? Track)?.albumId?.let { LibraryCache.evict("col:$it") }
+        fun isLikedAtmosKey(key: String) = key.substringBefore('#').endsWith(":fav")
+        fun isAffectedPage(key: String): Boolean =
+            key.startsWith("lib_tracks:$userId:") || key.startsWith("lib_liked:$userId:") ||
+                (key.startsWith("lib_atmos_tracks:$userId:") && isLikedAtmosKey(key))
+
+        LibraryCache.evictWhere { key ->
+            isAffectedPage(key) ||
+                (key.startsWith("atmos_audio:$userId:") && isLikedAtmosKey(key))
+        }
+        PagedLibrary.evictWhere(::isAffectedPage)
+        Log.d(TAG, "evict item=${item.id} album=${(item as? Track)?.albumId ?: "-"} userId=$userId")
     }
 
     /**
@@ -140,7 +164,7 @@ object Favorites {
                 )
             )
             total = page.totalRecordCount
-            liked += page.items.filter { isFavorite(it) }
+            liked += page.items.filter { isFavoriteRaw(it) }
             offset += page.items.size
             if (page.items.isEmpty() || offset >= total) break
         }

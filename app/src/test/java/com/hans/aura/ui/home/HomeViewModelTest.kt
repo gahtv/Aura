@@ -11,6 +11,7 @@ import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
+import com.hans.aura.data.toDomainItem
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -39,7 +40,7 @@ class HomeViewModelTest {
     private val artists = CompletableDeferred<ItemsResponse>()
     private val playlists = CompletableDeferred<ItemsResponse>()
     private val albumQueries = AtomicInteger()
-    private val album = JellyfinItem(id = "album")
+    private val album = JellyfinItem(id = "album", type = "MusicAlbum")
 
     @Before
     fun setUp() {
@@ -75,8 +76,8 @@ class HomeViewModelTest {
         val model = model()
         recent.complete(ItemsResponse(items = listOf(album)))
         withTimeout(5000) { scanStarted.await() }
-        artists.complete(ItemsResponse(items = listOf(JellyfinItem(id = "artist"))))
-        playlists.complete(ItemsResponse(items = listOf(JellyfinItem(id = "playlist"))))
+        artists.complete(ItemsResponse(items = listOf(JellyfinItem(id = "artist", type = "MusicArtist"))))
+        playlists.complete(ItemsResponse(items = listOf(JellyfinItem(id = "playlist", type = "Playlist"))))
         val partial = withTimeout(5000) { model.state.first { it.artists != null && it.playlists != null } }
         assertEquals("artist", partial.artists!!.single().id)
         assertEquals("playlist", partial.playlists!!.single().id)
@@ -84,7 +85,7 @@ class HomeViewModelTest {
         assertTrue(partial.loading)
         scan.complete(setOf(album.id))
         val done = withTimeout(5000) { model.state.first { !it.loading } }
-        assertEquals(listOf(album), done.atmosAlbums)
+        assertEquals(listOf(album.toDomainItem()), done.atmosAlbums)
         assertEquals(1, albumQueries.get())
         assertNull(done.error)
     }
@@ -101,7 +102,7 @@ class HomeViewModelTest {
         assertTrue(model.state.value.loading)
         recent.complete(ItemsResponse(items = listOf(album)))
         val done = withTimeout(5000) { model.state.first { !it.loading } }
-        assertEquals(listOf(album), done.atmosAlbums)
+        assertEquals(listOf(album.toDomainItem()), done.atmosAlbums)
         assertEquals(1, albumQueries.get())
     }
 
@@ -115,7 +116,7 @@ class HomeViewModelTest {
         artists.complete(ItemsResponse())
         playlists.complete(ItemsResponse())
         val done = withTimeout(5000) { model.state.first { !it.loading } }
-        assertEquals(listOf(album), done.atmosAlbums)
+        assertEquals(listOf(album.toDomainItem()), done.atmosAlbums)
         assertEquals(0, albumQueries.get())
     }
 
@@ -128,7 +129,7 @@ class HomeViewModelTest {
         scan.complete(emptySet())
         val done = withTimeout(5000) { model.state.first { !it.loading } }
         assertNull(done.artists)
-        assertNull(LibraryCache.get("home_artists:"))
+        assertNull(LibraryCache.peek("home_artists:"))
         assertEquals(emptyList<JellyfinItem>(), done.playlists)
         assertEquals(emptyList<JellyfinItem>(), done.recentAlbums)
         assertEquals(emptyList<JellyfinItem>(), done.atmosAlbums)

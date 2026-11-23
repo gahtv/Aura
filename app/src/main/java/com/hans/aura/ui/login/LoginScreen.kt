@@ -4,15 +4,20 @@ package com.hans.aura.ui.login
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -29,14 +34,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.common.AuraTextField
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -82,11 +86,7 @@ fun LoginScreen(
     val usernameFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         if (initialServerUrl.isNullOrBlank()) return@LaunchedEffect
-        kotlinx.coroutines.delay(300)
-        repeat(8) {
-            if (runCatching { usernameFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-            kotlinx.coroutines.delay(100)
-        }
+        usernameFocus.requestFocusOnFrame()
     }
 
     fun cancelQuickConnect() {
@@ -234,7 +234,52 @@ fun LoginScreen(
                 fontSize = AuraTypography.body,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(AuraSpacing.xxl))
+            val savedProfiles = remember(serverUrl) {
+                app.jellyfin.auth.profilesForServer(serverUrl)
+            }
+            if (savedProfiles.isNotEmpty()) {
+                Spacer(Modifier.height(AuraSpacing.lg))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(AuraSpacing.md),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    savedProfiles.forEach { profile ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clip(AuraShapes.control)
+                                .clickable {
+                                    app.jellyfin.auth.save(profile)
+                                    onSignedIn()
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(com.hans.aura.ui.theme.Accent),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = profile.userName.take(1).uppercase(),
+                                    color = AuraColors.OnAccent,
+                                    fontSize = AuraTypography.title
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = profile.userName,
+                                color = com.hans.aura.ui.theme.TextPrimary,
+                                fontSize = AuraTypography.caption
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(AuraSpacing.lg))
+            } else {
+                Spacer(Modifier.height(AuraSpacing.xxl))
+            }
 
             AuraTextField(
                 value = serverUrl,
@@ -256,9 +301,9 @@ fun LoginScreen(
                 value = password,
                 onValueChange = { password = it },
                 placeholder = "Password",
-                visualTransformation = PasswordVisualTransformation(),
+                secure = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { submitPassword() }),
+                onKeyboardAction = { submitPassword() },
                 modifier = Modifier.width(AuraSizes.loginFormWidth)
             )
             Spacer(Modifier.height(AuraSpacing.lg))
@@ -290,11 +335,7 @@ fun LoginScreen(
         qcPanel?.let { panel ->
             BackHandler { cancelQuickConnect() }
             LaunchedEffect(panel) {
-                delay(100)
-                repeat(6) {
-                    if (runCatching { cancelFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-                    delay(100)
-                }
+                cancelFocus.requestFocusOnFrame()
             }
             Box(
                 Modifier
@@ -314,7 +355,8 @@ fun LoginScreen(
                         )
                         // Trap the cursor inside the panel; DOWN must not fall
                         // back into the login form behind the scrim.
-                        .focusProperties { exit = { FocusRequester.Cancel } }
+                        .focusProperties { onExit = { cancelFocusChange() } }
+                        .focusGroup()
                         .padding(AuraSpacing.xl),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {

@@ -47,9 +47,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
-import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LibraryCache
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.countLabel
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.Border
@@ -66,7 +67,7 @@ import com.hans.aura.data.SourceQueries
 @Composable
 fun PlaylistPickerDialog(
     app: AuraApp,
-    tracksToAdd: List<JellyfinItem>,
+    tracksToAdd: List<Track>,
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -80,14 +81,9 @@ fun PlaylistPickerDialog(
     // button that opened the dialog keeps focus and OK keeps hitting it.
     val firstFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(100)
-        repeat(5) {
-            val ok = runCatching { firstFocus.requestFocus() }.isSuccess
-            if (ok) return@LaunchedEffect
-            kotlinx.coroutines.delay(100)
-        }
+        firstFocus.requestFocusOnFrame()
     }
-    var playlists by remember { mutableStateOf<List<JellyfinItem>?>(null) }
+    var playlists by remember { mutableStateOf<List<Playlist>?>(null) }
     var creatingName by remember { mutableStateOf<String?>(null) }
     var newName by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
@@ -127,24 +123,15 @@ fun PlaylistPickerDialog(
     // Put the cursor in the name field as soon as create mode opens.
     LaunchedEffect(creatingName) {
         if (creatingName != null) {
-            kotlinx.coroutines.delay(120)
-            repeat(5) {
-                if (runCatching { fieldFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-                kotlinx.coroutines.delay(100)
-            }
+            fieldFocus.requestFocusOnFrame()
         }
     }
 
     LaunchedEffect(Unit) {
         runCatching {
-            SourceQueries.items(
-                userId = userId,
-                includeItemTypes = "Playlist", recursive = true,
-                sortBy = "SortName", limit = 100
-            ).items
+            SourceQueries.playlists(limit = 100).items
         }.onSuccess {
             playlists = it
-            LibraryCache.put("home_playlists:$userId", it)
         }.onFailure { playlists = emptyList() }
     }
 
@@ -161,7 +148,7 @@ fun PlaylistPickerDialog(
                 .fillMaxWidth()
                 .clip(AuraShapes.dialog)
                 .background(Surface)
-                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusProperties { onExit = { cancelFocusChange() } }
                 .focusGroup()
                 .padding(AuraSpacing.xl)
         ) {
@@ -279,32 +266,13 @@ fun PlaylistPickerDialog(
                                     .clickable {
                                         scope.launch {
                                             runCatching {
-                                                val resp = app.jellyfin.api.addToPlaylist(
-                                                    playlistId = pl.id,
-                                                    ids = tracksToAdd.joinToString(",") { it.id },
-                                                    userId = userId
-                                                )
-                                                // Retrofit's Response<T> does NOT throw on
-                                                // 4xx/5xx — without this check a rejected
-                                                // add looked identical to success and the
-                                                // dialog just closed.
-                                                android.util.Log.d(
-                                                    "AURA_MENU",
-                                                    "picker add -> HTTP ${resp.code()} for \"${pl.name}\"" +
-                                                        (resp.errorBody()?.string()?.take(160)?.let { " body=$it" } ?: "")
-                                                )
-                                                if (!resp.isSuccessful) {
-                                                    throw IllegalStateException("HTTP ${resp.code()}")
-                                                }
-                                                resp
+                                                app.container.media.addToPlaylist(pl.id, tracksToAdd.map { it.id })
                                             }.onSuccess {
                                                 android.util.Log.d(
                                                     "AURA_MENU",
                                                     "picker added ${tracksToAdd.size} track(s) to \"${pl.name}\" (${pl.id})"
                                                 )
-                                                LibraryCache.evict("col:${pl.id}")
-                                                LibraryCache.evict("home_playlists:$userId")
-                                                onDismiss()
+                                                                                                onDismiss()
                                             }.onFailure { e ->
                                                 android.util.Log.w(
                                                     "AURA_MENU",

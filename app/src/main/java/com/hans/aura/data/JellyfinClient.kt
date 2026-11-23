@@ -10,6 +10,16 @@ import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFact
 
 const val APP_NAME = "Aura"
 
+internal val jellyfinJson = Json {
+    ignoreUnknownKeys = true
+    explicitNulls = false
+    coerceInputValues = true
+    // Fields with defaults (e.g. CanSeek on playback reports) must still be
+    // serialized: the server resets session PlayState.CanSeek when the field
+    // is absent, which makes Jellyfin Web refuse remote seeks.
+    encodeDefaults = true
+}
+
 /**
  * Reported to the server as the client version.
  *
@@ -25,15 +35,7 @@ class JellyfinClient(context: Context) {
     val deviceId = AuthStore.newDeviceId(context)
     val auth = AuthStore(context)
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-        explicitNulls = false
-        coerceInputValues = true
-        // Fields with defaults (e.g. CanSeek on playback reports) must still be
-        // serialized: the server resets session PlayState.CanSeek when the field
-        // is absent, which makes Jellyfin Web refuse remote seeks.
-        encodeDefaults = true
-    }
+    private val json = jellyfinJson
 
     private val authInterceptor = okhttp3.Interceptor { chain ->
         val session = auth.session

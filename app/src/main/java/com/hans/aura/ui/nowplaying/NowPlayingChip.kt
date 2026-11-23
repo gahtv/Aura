@@ -18,7 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
@@ -35,7 +35,7 @@ import com.hans.aura.ui.theme.TextSecondary
  * edges (no start/bottom padding) by design.
  */
 @Composable
-fun BoxScope.NowPlayingChip(currentItem: JellyfinItem?, artworkUrl: String?) {
+fun BoxScope.NowPlayingChip(currentItem: Track?, artworkUrl: String?) {
     Row(
         Modifier
             .align(Alignment.BottomStart)

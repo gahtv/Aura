@@ -8,27 +8,35 @@ val envProps = Properties().apply {
 }
 
 plugins {
+    alias(libs.plugins.ksp)
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.androidx.baselineprofile)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.hans.aura"
-    compileSdk = 35
+    compileSdk {
+        version = release(37) { minorApiLevel = 1 }
+    }
 
     defaultConfig {
         applicationId = "com.hans.aura"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.6.0-alpha.1"
+        versionCode = 9
+        versionName = "0.7.0-alpha.1"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Personal project: sign release with the debug key so R8-optimized
             // builds are installable directly (debug builds run markedly slower
@@ -39,9 +47,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
@@ -82,7 +87,22 @@ android {
     }
 }
 
+composeCompiler {
+    stabilityConfigurationFiles.add(layout.projectDirectory.file("compose-stability.conf"))
+}
+
+baselineProfile {
+    saveInSrc = true
+    automaticGenerationDuringBuild = false
+}
+
 dependencies {
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+    baselineProfile(project(":baselineprofile"))
+    implementation(libs.androidx.profileinstaller)
+
     // Compose for TV
     implementation(libs.tv.material)
     implementation(platform(libs.compose.bom))
@@ -90,6 +110,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
+    implementation(libs.androidx.graphics.shapes)
 
     // Media3 playback
     implementation(libs.media3.exoplayer)
@@ -112,7 +133,7 @@ dependencies {
     implementation(libs.coil.compose)
 
     // Palette extraction for dynamic per-album theming
-    implementation(libs.androidx.palette)
+    implementation(libs.material.color.utilities)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

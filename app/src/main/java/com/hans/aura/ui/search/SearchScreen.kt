@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -55,13 +54,18 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hans.aura.AuraApp
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.AuraTextField
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.FocusKeeper
 import com.hans.aura.ui.common.ItemShelf
 import com.hans.aura.ui.common.contextMenuKeys
 import com.hans.aura.ui.common.rememberAtmosAlbumIds
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraShapes
@@ -80,8 +84,8 @@ fun SearchScreen(
     app: AuraApp,
     player: PlayerConnection,
     onBack: () -> Unit,
-    onOpenCollection: (JellyfinItem) -> Unit,
-    onOpenArtist: (JellyfinItem) -> Unit,
+    onOpenCollection: (CollectionItem) -> Unit,
+    onOpenArtist: (Artist) -> Unit,
     /** A catalog import finished: re-read the libraries (AppRoot's refresh key). */
     onLibraryChanged: () -> Unit = {},
     viewModel: SearchViewModel = viewModel(
@@ -97,13 +101,20 @@ fun SearchScreen(
     var focusFieldTick by remember { mutableIntStateOf(0) }
     var voiceMessage by remember { mutableStateOf<String?>(null) }
     val current by player.current.collectAsState()
-    val atmosAlbumIds = rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
+    val atmosAlbumIds = rememberAtmosAlbumIds(session.userId)
     val focusKeeper = remember { FocusKeeper() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     // Only catalog-capable sources opt in; for the server-backed build this is false and
     // every catalog branch below disappears.
     val canImportCatalog = app.container.source.supportsCatalogImport
+
+    LaunchedEffect(Unit) {
+        com.hans.aura.ui.AppIntents.consumeSearchQuery()?.let { incoming ->
+            viewModel.onQueryChange(incoming)
+            viewModel.submit()
+        }
+    }
 
     // An import reached "ready": the ViewModel has dropped the source caches, so
     // the navigation host only has to re-read the library screens.
@@ -179,22 +190,13 @@ fun SearchScreen(
         val searchFieldFocus = remember { FocusRequester() }
         val recentFocus = remember { FocusRequester() }
         LaunchedEffect(Unit) {
-            var tries = 0
-            while (tries < 10) {
-                try { searchFieldFocus.requestFocus(); break } catch (_: Exception) { }
-                delay(100)
-                tries++
-            }
+            searchFieldFocus.requestFocusOnFrame()
         }
         // Return focus to the field after a chip tap / voice result removed the
         // focused chip; a submit must never leave the screen focus-less.
         LaunchedEffect(focusFieldTick) {
             if (focusFieldTick == 0) return@LaunchedEffect
-            delay(80)
-            repeat(5) {
-                if (runCatching { searchFieldFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-                delay(80)
-            }
+            searchFieldFocus.requestFocusOnFrame()
         }
 
         val showRecent = query.isBlank() && state.recentSearches.isNotEmpty()
@@ -208,10 +210,7 @@ fun SearchScreen(
                 onValueChange = { viewModel.onQueryChange(it) },
                 placeholder = "Artists, albums, tracks, playlists",
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(
-                    onSearch = { viewModel.submit() },
-                    onDone = { viewModel.submit() }
-                ),
+                onKeyboardAction = { viewModel.submit() },
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(searchFieldFocus)
@@ -242,6 +241,15 @@ fun SearchScreen(
             Text(
                 msg, color = TextSecondary, fontSize = 13.sp,
                 modifier = Modifier.padding(horizontal = 56.dp, vertical = 6.dp)
+            )
+        }
+        var tipDismissed by remember { mutableStateOf(com.hans.aura.data.Prefs.searchRemoteTipDismissed) }
+        if (!tipDismissed) {
+            RemoteSearchTipBanner(
+                onDismiss = {
+                    tipDismissed = true
+                    com.hans.aura.data.Prefs.searchRemoteTipDismissed = true
+                }
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -303,7 +311,7 @@ fun SearchScreen(
                 serverUrl = session.serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { },
-                onOpen = { item, _ -> onOpenArtist(item) }
+                onOpen = { item, _ -> (item as? Artist)?.let(onOpenArtist) }
             )
 
             ItemShelf(
@@ -312,9 +320,9 @@ fun SearchScreen(
                 serverUrl = session.serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { },
-                badgeFor = { if (it.type == "MusicAlbum" && it.id in atmosAlbumIds) "ATMOS" else null },
+                badgeFor = { if (it is Album && it.id in atmosAlbumIds) "ATMOS" else null },
                 onLongPress = { item ->
-                    if (item.type == "MusicAlbum" || item.type == "Playlist") {
+                    if (item is Album || item is Playlist) {
                         com.hans.aura.ui.common.ContextMenuHost.open(
                             com.hans.aura.ui.common.ContextMenus.forAlbum(
                                 app, player, scope, item, onOpenArtist = onOpenArtist
@@ -322,7 +330,7 @@ fun SearchScreen(
                         )
                     }
                 },
-                onOpen = { item, _ -> onOpenCollection(item) }
+                onOpen = { item, _ -> (item as? CollectionItem)?.let(onOpenCollection) }
             )
 
             ItemShelf(
@@ -333,15 +341,17 @@ fun SearchScreen(
                 onFocused = { },
                 showLoading = false,
                 badgeFor = { track ->
-                    if (track.albumId != null && track.albumId in atmosAlbumIds) "ATMOS" else null
+                    if ((track as? Track)?.albumId?.let { it in atmosAlbumIds } == true) "ATMOS" else null
                 },
                 onLongPress = { item ->
-                    com.hans.aura.ui.common.ContextMenuHost.open(
-                        com.hans.aura.ui.common.ContextMenus.forTrack(
-                            app, player, scope, item,
-                            onOpenArtist = onOpenArtist, onOpenCollection = onOpenCollection
+                    (item as? Track)?.let { track ->
+                        com.hans.aura.ui.common.ContextMenuHost.open(
+                            com.hans.aura.ui.common.ContextMenus.forTrack(
+                                app, player, scope, track,
+                                onOpenArtist = onOpenArtist, onOpenCollection = onOpenCollection
+                            )
                         )
-                    )
+                    }
                 },
                 onOpen = { _, idx ->
                     // Play the clicked track with the rest of the track results queued behind it.
@@ -400,6 +410,48 @@ private fun RecentQueryChip(
 }
 
 /** Mic beside the query field; same focus language as the chips. */
+/** Dismissible coachmark reminding users they can type searches from Aura Remote. */
+@Composable
+internal fun RemoteSearchTipBanner(onDismiss: () -> Unit) {
+    var dismissFocused by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 56.dp, vertical = 8.dp)
+            .clip(AuraShapes.control)
+            .background(SurfaceHigh.copy(alpha = 0.7f))
+            .border(1.dp, Border, AuraShapes.control)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "Tip: Search faster from your phone with Aura Remote",
+            color = TextSecondary,
+            fontSize = 13.sp,
+            modifier = Modifier.weight(1f)
+        )
+        Box(
+            modifier = Modifier
+                .clip(AuraShapes.pill)
+                .background(if (dismissFocused) Accent else SurfaceHigh)
+                .border(
+                    width = if (dismissFocused) 2.dp else 1.dp,
+                    color = if (dismissFocused) TextPrimary else Border,
+                    shape = AuraShapes.pill
+                )
+                .onFocusChanged { dismissFocused = it.isFocused }
+                .clickable { onDismiss() }
+                .padding(horizontal = 14.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = "Dismiss",
+                color = if (dismissFocused) com.hans.aura.ui.theme.AuraColors.OnAccent else TextPrimary,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
+
 @Composable
 private fun VoiceSearchButton(onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }

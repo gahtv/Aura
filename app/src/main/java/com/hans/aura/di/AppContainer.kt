@@ -1,6 +1,10 @@
 package com.hans.aura.di
 
 import android.content.Context
+import androidx.room.Room
+import com.hans.aura.data.CacheDatabase
+import com.hans.aura.data.CacheDisk
+import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.BuildConfig
 import com.hans.aura.data.AtmosFilter
 import com.hans.aura.data.JellyfinClient
@@ -31,6 +35,8 @@ import com.hans.aura.remote.MirrorServer
 class AppContainer(context: Context) {
 
     private val appContext: Context = context.applicationContext
+    val cacheDatabase = Room.databaseBuilder(appContext, CacheDatabase::class.java, "aura-cache.db").build()
+    private val cacheDisk = CacheDisk(cacheDatabase.cacheDao())
 
     /** Retrofit-backed Jellyfin client (auth store, api, device id). */
     val jellyfin: JellyfinClient
@@ -51,6 +57,8 @@ class AppContainer(context: Context) {
     init {
         Prefs.init(appContext)
         LibraryCache.init(appContext)
+        LibraryCache.install(cacheDisk)
+        AtmosCatalog.install(cacheDisk)
         AtmosFilter.load()
         MirrorServer.init(appContext)
 

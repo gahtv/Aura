@@ -43,7 +43,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -75,13 +75,13 @@ data class ContextMenuSpec(
 /** Global host: any screen can open the menu; AppRoot renders it on top. */
 object ContextMenuHost {
     var current by mutableStateOf<ContextMenuSpec?>(null)
-    var pickerTracks by mutableStateOf<List<JellyfinItem>?>(null)
+    var pickerTracks by mutableStateOf<List<Track>?>(null)
 
     fun open(spec: ContextMenuSpec) {
         android.util.Log.d("AURA_MENU", "host.open \"${spec.title}\" actions=${spec.actions.map { it.label }}")
         current = spec
     }
-    fun openPicker(tracks: List<JellyfinItem>) {
+    fun openPicker(tracks: List<Track>) {
         android.util.Log.d("AURA_MENU", "picker open for ${tracks.size} track(s): ${tracks.map { it.name }}")
         pickerTracks = tracks
     }
@@ -162,12 +162,7 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
     }
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(100)
-        repeat(5) {
-            val ok = runCatching { firstFocus.requestFocus() }.isSuccess
-            if (ok) return@LaunchedEffect
-            kotlinx.coroutines.delay(100)
-        }
+        firstFocus.requestFocusOnFrame()
     }
     DisposableEffect(Unit) { onDispose { OverlayVisibility.dialogOpen = false } }
 
@@ -178,7 +173,7 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
                 .widthIn(max = AuraSizes.contextMenuWidth)
                 .clip(AuraShapes.sheet)
                 .background(Surface)
-                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusProperties { onExit = { cancelFocusChange() } }
                 .padding(AuraSpacing.lg)
         ) {
             androidx.tv.material3.Text(spec.title, fontSize = AuraTypography.title, color = TextPrimary,

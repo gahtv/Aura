@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.hans.aura.ui.theme.AuraShapes
-import kotlinx.coroutines.delay
+import com.hans.aura.ui.common.requestFocusOnFrame
 
 /**
  * On-TV consent prompt for a device that wants to control Aura.
@@ -65,9 +65,7 @@ fun MirrorPairingOverlay(
 
     val allowFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        // The focus requester is not attached on the first frame.
-        delay(120)
-        runCatching { allowFocus.requestFocus() }
+        allowFocus.requestFocusOnFrame()
     }
 
     Box(

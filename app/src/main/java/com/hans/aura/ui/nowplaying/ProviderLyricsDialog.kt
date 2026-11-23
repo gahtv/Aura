@@ -31,7 +31,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.Text
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 import com.hans.aura.data.MusicSource
 import com.hans.aura.data.ProviderLyricMatch
 import com.hans.aura.data.ProviderLyricsResult
@@ -48,7 +48,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun ProviderLyricsDialog(
     source: MusicSource,
-    track: JellyfinItem,
+    track: Track,
     onDismiss: () -> Unit,
     onSaved: () -> Unit
 ) {

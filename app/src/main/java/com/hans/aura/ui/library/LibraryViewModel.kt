@@ -1,19 +1,14 @@
 package com.hans.aura.ui.library
 
 import android.util.Log
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
-import com.hans.aura.data.AtmosBrowse
-import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.data.AtmosFilter
-import com.hans.aura.data.Favorites
-import com.hans.aura.data.ItemsResponse
-import com.hans.aura.data.JellyfinApi
-import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
-import com.hans.aura.data.LibraryFilter
-import com.hans.aura.data.PagedLibrary
+import com.hans.aura.data.SourceQueries
+import com.hans.aura.model.MediaItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,7 +18,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.hans.aura.data.SourceQueries
 
 private const val TAG = "AURA_LIB"
 
@@ -31,7 +25,7 @@ private const val TAG = "AURA_LIB"
 private const val PAGE_SIZE = 60
 
 /** Server-side sort fields (Jellyfin SortBy). Random pages independently, so
- *  consecutive pages under Random may overlap or miss items — accepted. */
+ *  some items can be missed even after overlapping results are deduplicated. */
 enum class SortMode(val label: String, val sortBy: String, val defaultDesc: Boolean) {
     TITLE("Title", "SortName", false),
     ALBUM("Album", "Album", false),
@@ -55,14 +49,8 @@ fun sortModesFor(kind: String): List<SortMode> = when (kind) {
 /** Session-scoped: the chosen sort survives navigating away and back. */
 private object LibrarySortPrefs {
     private val byKind = mutableMapOf<String, SortMode>()
-    fun get(kind: String): SortMode = byKind[kind] ?: sortModesFor(kind).first()
+    fun get(key: String, kind: String): SortMode = byKind[key] ?: sortModesFor(kind).first()
     fun set(kind: String, mode: SortMode) { byKind[kind] = mode }
-}
-
-/** Session-scoped "Liked" filter for the Tracks tab (a pill, not a 6th tab —
- *  the 960dp top bar has no room for another tab). */
-private object LibraryLikedPrefs {
-    var on: Boolean = false
 }
 
 /**
@@ -79,13 +67,11 @@ private object LibraryAtmosPrefs {
 /**
  * State of one browse tab: paging, the four filter/sort axes (sort, direction,
  * Liked, per-view Atmos, A-Z letter) and the Atmos badge catalog.
- *
- * The cache key is derived here so a filter change reloads exactly one list and
- * BACK restores the list + scroll of the sort that was active.
  */
+@Immutable
 data class LibraryUiState(
     val kind: String = "Albums",
-    val items: List<JellyfinItem> = emptyList(),
+    val items: List<MediaItem> = emptyList(),
     val total: Int = Int.MAX_VALUE,
     val initialized: Boolean = false,
     val loading: Boolean = false,
@@ -108,19 +94,21 @@ data class LibraryUiState(
 
 class LibraryViewModel(
     private val app: AuraApp,
-    private val kind: String
+    private val kind: String,
+    likedOnly: Boolean = false
 ) : ViewModel() {
 
+    private val preferenceKey = if (likedOnly) "Liked" else kind
     private val capable = kind == "Albums" || kind == "Tracks"
-    private val initialSort = LibrarySortPrefs.get(kind)
+    private val initialSort = LibrarySortPrefs.get(preferenceKey, kind)
 
     private val _state = MutableStateFlow(
         LibraryUiState(
             kind = kind,
             sort = initialSort,
             desc = initialSort.defaultDesc,
-            likedOnly = kind == "Tracks" && LibraryLikedPrefs.on,
-            atmosView = capable && LibraryAtmosPrefs.get(kind)
+            likedOnly = likedOnly,
+            atmosView = capable && LibraryAtmosPrefs.get(preferenceKey)
         )
     )
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
@@ -132,7 +120,6 @@ class LibraryViewModel(
     private var refreshKeySeen = 0
 
     private val userId: String get() = app.jellyfin.auth.session?.userId ?: ""
-    private val api: JellyfinApi get() = app.jellyfin.api
     private val playlistUserId = userId.takeIf { kind == "Playlists" }
     private var playlistRevisionSeen = 0L
 
@@ -159,6 +146,19 @@ class LibraryViewModel(
 
     fun retry() = reload()
 
+    fun refreshLikedIfEvicted() {
+        val current = _state.value
+        if (!current.likedOnly || !current.initialized || current.loading ||
+            current.error != null || app.container.media.hasCachedPage(current.cacheKey)
+        ) return
+
+        val generation = ++loadGeneration
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            loadPage(current.cacheKey, generation, replaceLoadedRange = true)
+        }
+    }
+
     fun loadNextPage() {
         val snapshot = _state.value
         if (snapshot.loading || snapshot.items.size >= snapshot.total) return
@@ -174,7 +174,7 @@ class LibraryViewModel(
         if (mode == current.sort && mode != SortMode.RANDOM) {
             _state.update { it.copy(letter = null, desc = !it.desc) }
         } else if (mode != current.sort) {
-            LibrarySortPrefs.set(kind, mode)
+            LibrarySortPrefs.set(preferenceKey, mode)
             _state.update { it.copy(letter = null, sort = mode, desc = mode.defaultDesc) }
         } else {
             _state.update { it.copy(letter = null) }
@@ -182,20 +182,11 @@ class LibraryViewModel(
         reload()
     }
 
-    fun toggleLiked() {
-        val current = _state.value
-        current.letter?.let { logAz("cleared reason=Liked kind=$kind was=$it") }
-        val next = !current.likedOnly
-        LibraryLikedPrefs.on = next
-        _state.update { it.copy(letter = null, likedOnly = next) }
-        reload()
-    }
-
     fun toggleAtmos() {
         val current = _state.value
         current.letter?.let { logAz("cleared reason=atmos kind=$kind was=$it") }
         val next = !current.atmosView
-        LibraryAtmosPrefs.set(kind, next)
+        LibraryAtmosPrefs.set(preferenceKey, next)
         Log.d("AURA_ATMOS", "view=${if (next) "on" else "off"} kind=$kind")
         _state.update { it.copy(letter = null, atmosView = next) }
         reload()
@@ -248,17 +239,9 @@ class LibraryViewModel(
         scanAtmos(generation)
         loadJob = viewModelScope.launch {
             if (!isCurrentLoad(generation)) return@launch
-            // Session-scoped paged store first: keeps deep-scroll state alive
-            // across BACK so focus restoration can find the exact item.
-            val paged = PagedLibrary.get(key)
-            if (paged != null) {
-                _state.update { it.copy(items = paged.items, total = paged.total, initialized = true) }
-                return@launch
-            }
-            val cached = runCatching { LibraryCache.get(key) }.getOrNull()
-            if (!cached.isNullOrEmpty()) {
-                _state.update { it.copy(items = cached, initialized = true) }
-                PagedLibrary.put(key, cached, Int.MAX_VALUE)
+            val cached = app.container.media.cachedLibraryPage(key, current.sort.sortBy)
+            if (cached != null) {
+                _state.update { it.copy(items = cached.items, total = cached.total, initialized = true) }
                 return@launch
             }
             _state.update { it.copy(initialized = true) }
@@ -269,27 +252,38 @@ class LibraryViewModel(
     private fun isCurrentLoad(generation: Long): Boolean =
         generation == loadGeneration && playlistRevisionSeen == currentPlaylistRevision()
 
-    private suspend fun loadPage(key: String, generation: Long) {
+    private suspend fun loadPage(key: String, generation: Long, replaceLoadedRange: Boolean = false) {
         if (!isCurrentLoad(generation)) return
         val snapshot = _state.value
-        if (snapshot.loading || snapshot.items.size >= snapshot.total) return
+        val refreshCachedPage = app.container.media.cachedPageRequiresRefresh(key)
+        val accumulatedPageMissing = !replaceLoadedRange && snapshot.items.isNotEmpty() &&
+            !app.container.media.hasCachedPage(key)
+        val replace = replaceLoadedRange || refreshCachedPage || accumulatedPageMissing
+        if (snapshot.loading || (!replace && snapshot.items.size >= snapshot.total)) return
         _state.update { it.copy(loading = true) }
-        val startIndex = snapshot.items.size
+        val startIndex = if (replace) 0 else snapshot.items.size
+        val limit = when {
+            refreshCachedPage || accumulatedPageMissing -> snapshot.items.size + PAGE_SIZE
+            replaceLoadedRange -> maxOf(PAGE_SIZE, snapshot.items.size)
+            else -> PAGE_SIZE
+        }
         runCatching {
-            withContext(Dispatchers.IO) { fetchPage(snapshot, startIndex) }
+            app.container.media.libraryPage(
+                key = key,
+                kind = kind,
+                sortBy = snapshot.sort.sortBy,
+                desc = snapshot.desc,
+                likedOnly = snapshot.likedOnly,
+                atmos = snapshot.atmosEffective,
+                letter = snapshot.letter,
+                startIndex = startIndex,
+                limit = limit,
+                replace = replace,
+                valid = { isCurrentLoad(generation) }
+            )
         }.onSuccess { result ->
             if (!isCurrentLoad(generation)) return@onSuccess
-            val merged = snapshot.items + result.items
-            // A-Z jump skips the count: pagination ends on a short page instead
-            // of trusting a total that belongs to the whole (unfiltered) list.
-            val total = if (snapshot.letter != null) {
-                if (result.items.size < PAGE_SIZE) startIndex + result.items.size else Int.MAX_VALUE
-            } else {
-                result.totalRecordCount
-            }
-            _state.update { it.copy(items = merged, total = total, loading = false, error = null) }
-            PagedLibrary.put(key, merged, total)
-            LibraryCache.put(key, merged.take(PAGE_SIZE))
+            _state.update { it.copy(items = result.items, total = result.total, loading = false, error = null) }
         }.onFailure { e ->
             if (e is CancellationException) throw e
             if (!isCurrentLoad(generation)) return@onFailure
@@ -297,53 +291,6 @@ class LibraryViewModel(
             _state.update {
                 it.copy(loading = false, error = e.message ?: "Couldn't load from server")
             }
-        }
-    }
-
-    private suspend fun fetchPage(snapshot: LibraryUiState, startIndex: Int): ItemsResponse {
-        val order = if (snapshot.desc) "Descending" else "Ascending"
-        val letter = snapshot.letter
-        return when {
-            snapshot.atmosEffective -> if (kind == "Tracks") {
-                AtmosBrowse.tracks(
-                    api = api, userId = userId, sortBy = snapshot.sort.sortBy, desc = snapshot.desc,
-                    favoritesOnly = snapshot.likedOnly, startIndex = startIndex, limit = PAGE_SIZE
-                )
-            } else {
-                AtmosBrowse.albums(
-                    api = api, userId = userId, sortBy = snapshot.sort.sortBy, desc = snapshot.desc,
-                    favoritesOnly = snapshot.likedOnly, startIndex = startIndex, limit = PAGE_SIZE
-                )
-            }
-            snapshot.likedOnly -> Favorites.browseLiked(
-                api = api, userId = userId, sortBy = snapshot.sort.sortBy, sortOrder = order,
-                startIndex = startIndex, limit = PAGE_SIZE
-            )
-            letter != null -> pageFromLetter(
-                api = api, userId = userId, kind = kind, letter = letter,
-                limit = PAGE_SIZE, startIndex = startIndex
-            )
-            kind == "Artists" -> SourceQueries.artists(sortBy = snapshot.sort.sortBy, sortOrder = order,
-                limit = PAGE_SIZE, startIndex = startIndex
-            )
-            kind == "Albums" -> SourceQueries.items(LibraryFilter.ItemsQuery(
-                    includeItemTypes = "MusicAlbum", recursive = true,
-                    sortBy = snapshot.sort.sortBy, sortOrder = order,
-                    limit = PAGE_SIZE, startIndex = startIndex
-                )
-            )
-            kind == "Tracks" -> SourceQueries.items(LibraryFilter.ItemsQuery(
-                    includeItemTypes = "Audio", recursive = true,
-                    sortBy = snapshot.sort.sortBy, sortOrder = order,
-                    limit = PAGE_SIZE, startIndex = startIndex
-                )
-            )
-            kind == "Playlists" -> SourceQueries.items(
-                userId = userId, includeItemTypes = "Playlist", recursive = true,
-                sortBy = snapshot.sort.sortBy, sortOrder = order,
-                limit = PAGE_SIZE, startIndex = startIndex
-            )
-            else -> throw IllegalArgumentException("Unknown kind $kind")
         }
     }
 
@@ -374,32 +321,4 @@ class LibraryViewModel(
     }
 
     private fun logAz(message: String) = Log.d("AURA_AZ", "$message kind=$kind")
-}
-
-/**
- * Page of the Albums/Artists grid that STARTS at [letter]
- * (Jellyfin's `nameStartsWithOrGreater`, compared against SortName).
- *
- * Routed through LibraryFilter so a jump with hidden libraries pages the same
- * SortName cursor as the unfiltered grid.
- */
-private suspend fun pageFromLetter(
-    api: JellyfinApi,
-    userId: String,
-    kind: String,
-    letter: String,
-    limit: Int,
-    startIndex: Int
-): ItemsResponse = if (kind == "Artists") {
-    LibraryFilter.queryAlbumArtists(
-        api, userId, limit = limit, startIndex = startIndex, nameStartsWithOrGreater = letter
-    )
-} else {
-    SourceQueries.items(
-        LibraryFilter.ItemsQuery(
-            includeItemTypes = "MusicAlbum", recursive = true,
-            sortBy = "SortName", sortOrder = "Ascending",
-            limit = limit, startIndex = startIndex, nameStartsWithOrGreater = letter
-        )
-    )
 }

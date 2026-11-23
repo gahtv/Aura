@@ -61,8 +61,7 @@ fun BioDialog(title: String, subtitle: String?, text: String, onDismiss: () -> U
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(100)
-        runCatching { textFocus.requestFocus() }
+        textFocus.requestFocusOnFrame()
     }
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose { com.hans.aura.ui.common.OverlayVisibility.dialogOpen = false }
@@ -98,7 +97,7 @@ fun BioDialog(title: String, subtitle: String?, text: String, onDismiss: () -> U
                 .clip(AuraShapes.dialog)
                 .background(com.hans.aura.ui.theme.Surface)
                 // Trap focus: the screen behind the dialog must never receive it.
-                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusProperties { onExit = { cancelFocusChange() } }
                 .padding(AuraSpacing.xl)
         ) {
             androidx.tv.material3.Text(title, style = MaterialTheme.typography.headlineMedium, color = TextPrimary)

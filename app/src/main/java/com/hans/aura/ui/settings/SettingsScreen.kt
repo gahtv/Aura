@@ -62,6 +62,7 @@ fun SettingsScreen(
     onChangeServer: () -> Unit,
     onSignOut: () -> Unit,
     onLibrariesChanged: () -> Unit = {},
+    onSwitchProfile: (com.hans.aura.data.Session) -> Unit = {},
     // Optional so the existing call site keeps compiling; AppRoot wires it.
     // Without a player the Playback section still shows the autoplay toggle
     // (a plain preference) and hides the sleep-timer row.
@@ -87,7 +88,7 @@ fun SettingsScreen(
         libsLoading = true
         libsError = null
         runCatching {
-            LibraryFilter.refreshLibraryList(app.jellyfin.api, session.userId)
+            app.container.media.refreshLibraryList()
         }.onSuccess {
             libraries = it
             hidden = Prefs.hiddenLibraries
@@ -270,6 +271,17 @@ fun SettingsScreen(
                     }
                 )
                 androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                var ambientNp by remember { mutableStateOf(Prefs.ambientNowPlaying) }
+                SettingsToggleRow(
+                    title = "Ambient mode in Now Playing",
+                    subtitle = "Fade out controls after 6 seconds of inactivity while playing.",
+                    checked = ambientNp,
+                    onToggle = {
+                        ambientNp = !ambientNp
+                        Prefs.ambientNowPlaying = ambientNp
+                    }
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
                 player?.let { p -> SleepTimerRow(p) }
                 androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
             }
@@ -289,6 +301,33 @@ fun SettingsScreen(
                         android.util.Log.i("AURA_LYRICS", "web fallback=$webLyrics")
                     }
                 )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
+            }
+
+            item {
+                androidx.tv.material3.Text("Profiles", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
+                androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                val profiles = remember(session.serverUrl, session.userId) {
+                    app.jellyfin.auth.profilesForServer(session.serverUrl)
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    profiles.forEach { profile ->
+                        val active = profile.userId == session.userId
+                        androidx.tv.material3.Button(
+                            onClick = { if (!active) onSwitchProfile(profile) }
+                        ) {
+                            androidx.tv.material3.Text(
+                                if (active) "\u2713 ${profile.userName}" else profile.userName
+                            )
+                        }
+                    }
+                    androidx.tv.material3.Button(onClick = { confirm = "again" }) {
+                        androidx.tv.material3.Text("Add account")
+                    }
+                }
                 androidx.compose.foundation.layout.Spacer(Modifier.height(32.dp))
             }
 
@@ -468,4 +507,4 @@ private fun LibraryToggleRow(
  */
 @Composable
 private fun appName(): String =
-    androidx.compose.ui.platform.LocalContext.current.getString(com.hans.aura.R.string.app_name)
+    androidx.compose.ui.res.stringResource(com.hans.aura.R.string.app_name)

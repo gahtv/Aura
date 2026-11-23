@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.sp
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
-import kotlinx.coroutines.delay
 
 /**
  * Failure surface for a screen whose data could not be loaded.
@@ -51,10 +50,7 @@ fun ErrorPane(
 ) {
     val retryFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        repeat(10) {
-            if (runCatching { retryFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(100)
-        }
+        retryFocus.requestFocusOnFrame()
     }
     Column(
         modifier

@@ -138,7 +138,10 @@ class LibraryLetterJumpTest {
                 .sortedBy { it.sortName }
             val start = url.queryParameter("StartIndex")?.toInt() ?: 0
             val limit = url.queryParameter("Limit")?.toInt() ?: rows.size
-            val page = rows.drop(start).take(limit).map { if (withSortName) it else it.copy(sortName = null) }
+            val type = if (path.endsWith("/Artists/AlbumArtists")) "MusicArtist" else "MusicAlbum"
+            val page = rows.drop(start).take(limit).map {
+                it.copy(type = type, sortName = it.sortName.takeIf { withSortName })
+            }
             return MockResponse().setBody(
                 json.encodeToString(ItemsResponse(items = page, totalRecordCount = rows.size, startIndex = start))
             )

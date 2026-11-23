@@ -1,27 +1,50 @@
 package com.hans.aura.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.collection.ArtistScreen
 import com.hans.aura.ui.collection.CollectionScreen
 import com.hans.aura.ui.common.ContextMenuHosts
+import com.hans.aura.ui.common.FocusHandoffHost
 import com.hans.aura.ui.common.NavRequests
 import com.hans.aura.ui.common.OverlayVisibility
+import com.hans.aura.ui.common.LocalArtworkTransition
+import com.hans.aura.ui.common.LocalArtworkVisibility
+import com.hans.aura.ui.common.LocalDestinationActive
+import com.hans.aura.ui.common.LocalArtworkSource
+import com.hans.aura.ui.common.LocalArtworkCorners
+import com.hans.aura.ui.common.ArtworkCorners
+import com.hans.aura.ui.common.DestinationFocusGate
 import com.hans.aura.ui.genres.GenreScreen
 import com.hans.aura.ui.genres.GenresScreen
 import com.hans.aura.ui.home.HomeScreen
@@ -37,14 +60,23 @@ import com.hans.aura.ui.search.SearchScreen
 import com.hans.aura.ui.settings.SettingsScreen
 import com.hans.aura.ui.shell.DebugWiring
 import com.hans.aura.ui.shell.MirrorWiring
-import com.hans.aura.ui.shell.TopBar
+import com.hans.aura.ui.shell.NavigationRailLayout
+import com.hans.aura.ui.shell.collapsedRailWidth
+import com.hans.aura.ui.shell.RailDestination
 import com.hans.aura.ui.shell.endSession
+import com.hans.aura.ui.shell.rememberRailPlayback
+import com.hans.aura.ui.shell.switchSession
 import com.hans.aura.ui.theme.Canvas
+import com.hans.aura.data.SourceQueries
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Track
+import com.hans.aura.ui.theme.AuraMotion
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 /**
- * App shell: auth gate, then the top bar + a single destination host over the
+ * App shell: auth gate, then the navigation rail + a single destination host over the
  * back stack in [com.hans.aura.ui.nav.NavState]. All navigation intents arrive
  * through [com.hans.aura.ui.nav.NavActions]; remote and debug wiring live in
  * ui/shell.
@@ -52,24 +84,65 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppRoot() {
     val app = LocalContext.current.applicationContext as AuraApp
+    val sessionViewModels = viewModel { SessionViewModels() }
     var signedIn by remember { mutableStateOf(app.jellyfin.auth.isSignedIn) }
+    var sessionGeneration by remember { mutableIntStateOf(0) }
 
     if (!signedIn) {
         SignedOutGate(app) { signedIn = true }
         return
     }
 
+    key(sessionGeneration) {
+    val sessionOwner = sessionViewModels.owner
     val player = remember { PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session } }
     val nav = rememberNavState()
-    val actions = nav.actions
 
-    val onSignedOut: () -> Unit = { signedIn = false }
+    val onSignedOut: () -> Unit = {
+        sessionViewModels.reset()
+        signedIn = false
+    }
     val exitSession: (String, Boolean) -> Unit = { action, forgetServer ->
         endSession(app, player, action, forgetServer, onSignedOut)
+    }
+    val onSwitchProfile: (com.hans.aura.data.Session) -> Unit = { target ->
+        switchSession(app, player, target) {
+            sessionViewModels.reset()
+            sessionGeneration++
+        }
     }
 
     MirrorWiring(app = app, player = player, nav = nav)
     DebugWiring(app = app, player = player, nav = nav, endSession = exitSession)
+
+    // System intents: Android TV Global Search + Home Screen Channel deep links.
+    LaunchedEffect(Unit) {
+        AppIntents.request.collect { req ->
+            if (req == null) return@collect
+            AppIntents.request.value = null
+            when (req) {
+                is AppIntentRequest.OpenSearch -> nav.openSearch()
+                is AppIntentRequest.OpenItem -> {
+                    if (req.type == "Home") {
+                        nav.resetToHome()
+                        return@collect
+                    }
+                    runCatching { SourceQueries.item(req.itemId) }
+                        .onSuccess { item ->
+                            when (item) {
+                                is Artist -> nav.jumpTo(Screen.Artist(item), bumpFocus = true)
+                                is Track -> player.playQueue(listOf(item), 0, resume = false)
+                                is com.hans.aura.model.Album -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                                is com.hans.aura.model.Playlist -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                                is com.hans.aura.model.Genre -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                                null -> Unit
+                            }
+                        }
+                        .onFailure { android.util.Log.w("AURA_NAV", "intent open failed: ${it.message}") }
+                }
+            }
+        }
+    }
 
     // Nav breadcrumb: logcat `adb logcat -s AURA_NAV` shows exactly which
     // screen is up, so adb-driven verification doesn't need screenshots.
@@ -82,9 +155,7 @@ fun AppRoot() {
 
     // System BACK pops our navigation stack (device back button / remote BACK).
     // On a root tab other than Home, BACK goes Home instead of exiting the app.
-    BackHandler(enabled = nav.stack.size > 1 || nav.top != Screen.Home) {
-        if (nav.stack.size > 1) nav.pop() else nav.resetToHome()
-    }
+    BackHandler(enabled = nav.stack.size > 1 || nav.top != Screen.Home, onBack = nav::back)
 
     // First playback of a session auto-opens Now Playing; BACK returns to
     // whatever screen started it. Later track changes don't re-push.
@@ -108,9 +179,6 @@ fun AppRoot() {
         NavRequests.openNowPlaying.drop(1).collect { nav.openNowPlaying() }
     }
 
-    // Bumped by Settings > Refresh library; keys into data LaunchedEffects.
-    var refreshKey by remember { mutableStateOf(0) }
-
     // Library selection: refresh the known /UserViews list once per launch when
     // something is hidden. A library added on the server must be visible by
     // default, not silently filtered out by a stale "known libraries" list.
@@ -118,7 +186,7 @@ fun AppRoot() {
         if (com.hans.aura.data.LibraryFilter.hidden().isNotEmpty()) {
             val session = app.jellyfin.auth.session ?: return@LaunchedEffect
             runCatching {
-                com.hans.aura.data.LibraryFilter.refreshLibraryList(app.jellyfin.api, session.userId)
+                app.container.media.refreshLibraryList()
             }.onFailure { android.util.Log.w("AURA_LIBS", "library list refresh failed: ${it.message}") }
         }
     }
@@ -131,32 +199,70 @@ fun AppRoot() {
     // index never inherits an older screen's state.
     val stateHolder = rememberSaveableStateHolder()
 
-    Box(Modifier.fillMaxSize().background(Canvas)) {
-        Column(Modifier.fillMaxSize()) {
-            // Now Playing is an immersive view (lyrics/transport fill the
-            // screen); the top bar comes back on any other screen. Any open
-            // full-screen overlay also hides it so it can't steal focus.
-            if (nav.top != Screen.NowPlaying && !OverlayVisibility.dialogOpen) {
-                TopBar(
-                    current = nav.top,
-                    onSelect = actions::onSelectTab,
-                    onOpenSearch = actions::onOpenSearch,
-                    onOpenSettings = actions::onOpenSettings,
-                    onOpenNowPlaying = actions::onOpenNowPlaying,
-                    player = player
-                )
+    FocusHandoffHost(Modifier.fillMaxSize().background(Canvas)) {
+        val showRail = nav.top != Screen.NowPlaying && !OverlayVisibility.dialogOpen
+        fun destinationInset(screen: Screen) =
+            if (screen == Screen.NowPlaying || OverlayVisibility.dialogOpen) 0.dp else collapsedRailWidth
+        NavigationRailLayout(
+            showRail = showRail,
+            insetContent = false,
+            selected = RailDestination.forStack(nav.stack),
+            playback = if (showRail) rememberRailPlayback(player, app.jellyfin.auth.session?.serverUrl) else null,
+            onSelect = { destination ->
+                when (destination) {
+                    RailDestination.Search -> nav.openSearch()
+                    RailDestination.NowPlaying -> nav.openNowPlaying()
+                    else -> nav.selectTab(destination.screen)
+                }
             }
-
-            Box(Modifier.fillMaxSize()) {
-                stateHolder.SaveableStateProvider(key = "${nav.stack.lastIndex}:${NavSpec.key(nav.top)}") {
-                    DestinationHost(
-                        app = app,
-                        player = player,
-                        nav = nav,
-                        endSession = exitSession,
-                        refreshKey = refreshKey,
-                        onRefreshKey = { refreshKey++ }
-                    )
+        ) {
+            SharedTransitionLayout {
+                val artworkCorners = remember { mutableMapOf<String, ArtworkCorners>() }
+                AnimatedContent(
+                    modifier = Modifier.fillMaxSize(),
+                    targetState = nav.stack.lastIndex to nav.top,
+                    contentKey = { (index, screen) -> "$index:${NavSpec.key(screen)}" },
+                    transitionSpec = {
+                        fadeIn(AuraMotion.scheme.fastEffectsSpec()) togetherWith
+                            fadeOut(AuraMotion.scheme.fastEffectsSpec())
+                    },
+                    label = "destination"
+                ) { (index, screen) ->
+                    val active = index == nav.stack.lastIndex && screen == nav.top
+                    var entryFocusTick by remember { mutableIntStateOf(nav.focusTick) }
+                    var entryPendingFocus by remember { mutableStateOf(nav.pendingFocus) }
+                    if (active) {
+                        entryFocusTick = nav.focusTick
+                        entryPendingFocus = nav.pendingFocus
+                    }
+                    stateHolder.SaveableStateProvider(key = "$index:${NavSpec.key(screen)}") {
+                        val artworkSource = rememberSaveable { mutableStateOf<Long?>(null) }
+                        CompositionLocalProvider(
+                            LocalViewModelStoreOwner provides sessionOwner,
+                            LocalArtworkTransition provides this@SharedTransitionLayout,
+                            LocalArtworkVisibility provides this@AnimatedContent,
+                            LocalDestinationActive provides active,
+                            LocalArtworkSource provides artworkSource,
+                            LocalArtworkCorners provides artworkCorners
+                        ) {
+                            Box(Modifier.fillMaxSize().padding(start = destinationInset(screen))) {
+                                DestinationFocusGate(active) {
+                                    DestinationHost(
+                                        app = app,
+                                        player = player,
+                                        nav = nav,
+                                        top = screen,
+                                        focusTick = entryFocusTick,
+                                        pendingFocus = entryPendingFocus,
+                                        endSession = exitSession,
+                                        onSwitchProfile = onSwitchProfile,
+                                        refreshKey = sessionViewModels.refreshKey,
+                                        onRefreshKey = sessionViewModels::bumpRefreshKey
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -166,6 +272,32 @@ fun AppRoot() {
         // Pairing consent (USB-debugging style): drawn last so nothing can sit
         // over it, and it owns focus while it is up.
         MirrorPairingHost()
+    }
+    }
+}
+
+private class SessionViewModels : ViewModel() {
+    var owner = newOwner()
+        private set
+    var refreshKey by mutableIntStateOf(0)
+        private set
+
+    fun bumpRefreshKey() {
+        refreshKey++
+    }
+
+    fun reset() {
+        owner.viewModelStore.clear()
+        owner = newOwner()
+        refreshKey = 0
+    }
+
+    override fun onCleared() {
+        owner.viewModelStore.clear()
+    }
+
+    private fun newOwner(): ViewModelStoreOwner = object : ViewModelStoreOwner {
+        override val viewModelStore = ViewModelStore()
     }
 }
 
@@ -206,15 +338,17 @@ private fun DestinationHost(
     app: AuraApp,
     player: PlayerConnection,
     nav: com.hans.aura.ui.nav.NavState,
+    top: Screen,
+    focusTick: Int,
+    pendingFocus: Boolean,
     endSession: (String, Boolean) -> Unit,
+    onSwitchProfile: (com.hans.aura.data.Session) -> Unit,
     refreshKey: Int,
     onRefreshKey: () -> Unit
 ) {
     val actions = nav.actions
-    val focusTick = nav.focusTick
-    val pendingFocus = nav.pendingFocus
     val scope = rememberCoroutineScope()
-    when (val top = nav.top) {
+    when (top) {
         Screen.Home -> HomeScreen(
             app = app,
             player = player,
@@ -227,15 +361,14 @@ private fun DestinationHost(
             focusTick = focusTick
         )
 
-        // Library tabs differ only by kind; Genres hang off the Albums tab.
-        Screen.Artists, Screen.Albums, Screen.Tracks, Screen.Playlists -> LibraryScreen(
-            // Every arm above declares a libraryKind; tabLabel is the safe fallback.
-            app = app, kind = NavSpec.libraryKind(top) ?: NavSpec.tabLabel(top), player = player,
+        Screen.Artists, Screen.Albums, Screen.Tracks, Screen.Playlists, Screen.Liked -> LibraryScreen(
+            app = app, kind = requireNotNull(NavSpec.libraryKind(top)), player = player,
             refreshKey = refreshKey,
             focusTick = focusTick,
             onOpenCollection = actions::onOpenCollection,
             onOpenArtist = actions::onOpenArtist,
-            onOpenGenres = if (top == Screen.Albums) actions::onOpenGenres else null
+            onSwitchCategory = actions::onSwitchLibraryCategory,
+            likedOnly = top == Screen.Liked
         )
 
         Screen.Settings -> SettingsScreen(
@@ -250,7 +383,8 @@ private fun DestinationHost(
             onSignInAgain = { endSession("sign in again", false) },
             onChangeServer = { endSession("change server", true) },
             onSignOut = { endSession("sign out", true) },
-            onLibrariesChanged = onRefreshKey
+            onLibrariesChanged = onRefreshKey,
+            onSwitchProfile = onSwitchProfile
         )
 
         Screen.Search -> SearchScreen(

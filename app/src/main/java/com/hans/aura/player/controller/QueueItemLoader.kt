@@ -1,6 +1,6 @@
 package com.hans.aura.player.controller
 
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -16,13 +16,13 @@ internal const val QUEUE_ITEM_PARALLELISM = 6
 internal suspend fun fetchQueueItems(
     ids: List<String>,
     permits: Semaphore,
-    fetch: suspend (String) -> JellyfinItem
-): List<JellyfinItem> = awaitQueueItems(ids) { id -> permits.withPermit { fetch(id) } }
+    fetch: suspend (String) -> Track
+): List<Track> = awaitQueueItems(ids) { id -> permits.withPermit { fetch(id) } }
 
 private suspend fun awaitQueueItems(
     ids: List<String>,
-    fetch: suspend (String) -> JellyfinItem
-): List<JellyfinItem> = coroutineScope {
+    fetch: suspend (String) -> Track
+): List<Track> = coroutineScope {
     ids.map { id -> async { fetch(id) } }.awaitAll()
 }
 
@@ -32,9 +32,9 @@ internal class QueueItemLoader(
 ) {
     private val permits = Semaphore(QUEUE_ITEM_PARALLELISM)
     private val lock = Any()
-    private val inFlight = mutableMapOf<String, Deferred<Result<JellyfinItem>>>()
+    private val inFlight = mutableMapOf<String, Deferred<Result<Track>>>()
 
-    suspend fun load(id: String, fetch: suspend () -> JellyfinItem): JellyfinItem {
+    suspend fun load(id: String, fetch: suspend () -> Track): Track {
         val request = synchronized(lock) {
             registry.get(id)?.let { return it }
             inFlight[id]?.takeUnless { it.isCompleted } ?: startRequest(id, fetch)
@@ -44,8 +44,8 @@ internal class QueueItemLoader(
 
     private fun startRequest(
         id: String,
-        fetch: suspend () -> JellyfinItem
-    ): Deferred<Result<JellyfinItem>> {
+        fetch: suspend () -> Track
+    ): Deferred<Result<Track>> {
         val request = scope.async(start = CoroutineStart.LAZY) {
             try {
                 Result.success(permits.withPermit { registry.get(id) ?: fetch().also(registry::put) })
@@ -64,7 +64,7 @@ internal class QueueItemLoader(
         return request
     }
 
-    suspend fun loadAll(ids: List<String>, fetch: suspend (String) -> JellyfinItem) {
+    suspend fun loadAll(ids: List<String>, fetch: suspend (String) -> Track) {
         awaitQueueItems(ids) { id -> load(id) { fetch(id) } }
     }
 }

@@ -10,7 +10,9 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsFocused
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.ComposeUiTestConfig
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performKeyInput
@@ -23,7 +25,6 @@ import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Session
 import com.hans.aura.playback.PlaybackService
 import com.hans.aura.ui.player.PlayerConnection
-import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
@@ -40,7 +41,9 @@ import org.robolectric.util.ReflectionHelpers
 @Config(qualifiers = "w960dp-h540dp-land")
 class TransportBarFocusTest {
     @get:Rule
-    val compose = createAndroidComposeRule<ComponentActivity>()
+    val compose = createAndroidComposeRule<ComponentActivity>(
+        ComposeUiTestConfig(inputMode = InputMode.Keyboard)
+    )
 
     @Test
     fun downFromPauseFocusesShuffleBeforeOpeningQueue() {
@@ -90,10 +93,10 @@ class TransportBarFocusTest {
         val app = ApplicationProvider.getApplicationContext<AuraApp>()
         app.jellyfin.auth.installSession(Session("http://example.test", "user", "test", "token", "device"))
         val player = newPlayer(app)
-        ReflectionHelpers.getField<MutableStateFlow<List<JellyfinItem>>>(player, "_queue").value =
-            listOf(Fixtures.track("Current track"), Fixtures.track("Queued track"))
-        ReflectionHelpers.getField<MutableStateFlow<List<IndexedValue<JellyfinItem>>>>(player, "_upcoming").value =
-            listOf(IndexedValue(1, Fixtures.track("Queued track")))
+        ReflectionHelpers.getField<MutableStateFlow<List<com.hans.aura.model.Track>>>(player, "_queue").value =
+            listOf(Fixtures.domainTrack("Current track"), Fixtures.domainTrack("Queued track"))
+        ReflectionHelpers.getField<MutableStateFlow<List<IndexedValue<com.hans.aura.model.Track>>>>(player, "_upcoming").value =
+            listOf(IndexedValue(1, Fixtures.domainTrack("Queued track")))
         compose.setContent {
             AuraTheme {
                 NowPlayingScreen(app = app, player = player, onBack = {}, onOpenQueue = {})
@@ -127,7 +130,6 @@ class TransportBarFocusTest {
                     duration = 0,
                     isPlaying = true,
                     playPauseFocus = remember { FocusRequester() },
-                    accent = Accent,
                     onOpenPeek = { onOpen(); true },
                     onToggleFavorite = {},
                     onRadio = {}

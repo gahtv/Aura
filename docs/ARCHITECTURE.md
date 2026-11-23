@@ -1,9 +1,9 @@
 # Aura architecture notes
 
-Single Gradle module (`:app`), Kotlin 2.x, no DI framework. Compose TV for UI, Media3 for
-playback, Retrofit + kotlinx.serialization for Jellyfin. `minSdk 26`, `targetSdk 35`.
-Dependency versions live in `gradle/libs.versions.toml` (version catalog); nothing is
-hardcoded in `app/build.gradle.kts` any more.
+The Kotlin 2.x app lives in `:app`; `:baselineprofile` generates its baseline profile.
+No DI framework. Compose TV and Material 3 for UI, Media3 for playback, Retrofit +
+kotlinx.serialization for Jellyfin, and Room for the disk cache. `minSdk 26`, `targetSdk 35`,
+`compileSdk 37.1`. Dependency versions live in `gradle/libs.versions.toml`.
 
 This file describes **wiring and invariants**, not features. The README is the feature list.
 
@@ -15,14 +15,15 @@ MainActivity         the only Activity: starts/binds the mirror link, intercepts
                      defers debug deep links
 di/                  AppContainer — the composition root
 data/                Jellyfin I/O, caching, preferences, the library source seam
+model/               immutable media models used by the UI and player
 playback/            MediaSessionService (ExoPlayer) + the Jellyfin websocket
 player/controller/   the pieces PlayerConnection coordinates
 remote/              the LAN mirror link server and its pairing prompt
 ui/                  Compose screens
   nav/               destinations, the back stack, the navigation interface
-  shell/             top bar and the wiring that is not a screen (mirror, debug, session exit)
+  shell/             side navigation rail and wiring for mirror, debug and session exit
   common/            shared components, overlays, focus helpers, error pane
-  theme/             static palette, dynamic palette, design tokens
+  theme/             default and artwork colour schemes, design tokens
 util/                AuraLog — the log tag contract
 ```
 
@@ -32,17 +33,20 @@ util/                AuraLog — the log tag contract
 AuraApp.kt          builds AppContainer; ImageLoaderFactory (RGB_565, no crossfade)
 MainActivity.kt     MirrorLink.start()/bind(), BACK interception, debug-link hand-off
 
-di/AppContainer.kt  Prefs -> LibraryCache -> AtmosFilter -> MirrorServer -> JellyfinClient
-                    -> MediaRepository, in that order
+di/AppContainer.kt  Room/CacheDisk; Prefs -> LibraryCache -> AtmosFilter -> MirrorServer
+                    -> JellyfinClient -> MediaRepository
 
 data/               JellyfinApi, JellyfinClient (OkHttp + shared Json, one Retrofit per
                     server URL), JellyfinModels (@Serializable DTOs), AuthStore (session +
                     last server, separate keys), Prefs (aura_prefs), LibraryFilter (query
-                    construction + hidden-library rules), LibraryCache (24h TTL + refresh
-                    stamps), PagedLibrary, AtmosCatalog, AtmosBrowse, AtmosFilter, Favorites,
+                    construction + hidden-library rules), CacheDatabase (Room), LibraryCache
+                    (24h TTL + refresh stamps), PagedLibrary, AtmosCatalog, AtmosBrowse,
+                    AtmosFilter, Favorites,
                     Mixes, LyricsStore, Lrclib, DeviceNames, MediaRepository (main-safe
                     browse facade), MusicSource + JellyfinSource (the backend seam),
                     SourceQueries (the browse path screens use)
+
+model/              MediaItem, Track, Album, Artist, Playlist, Genre, Artwork, MediaPage
 
 playback/           PlaybackService (ExoPlayer, AuthDataSourceFactory, PlaybackReporter),
                     PlaybackRemote (capabilities + websocket commands)
@@ -54,16 +58,16 @@ player/controller/  PlaybackController (MediaController, listeners, 500 ms ticke
 remote/             MirrorServer (HTTP server on :8099, state/navigate/control/input/pair),
                     MirrorPairingDialog (the on-TV allow prompt)
 
-ui/AppRoot.kt       auth gate, destination host over NavState, now-playing bar, overlay hosts
+ui/AppRoot.kt       auth gate, destination host over NavState, side rail, overlay hosts
 ui/nav/             Destinations.kt (Screen + ScreenMeta + NavSpec), NavActions.kt
                     (NavActions interface, NavState back stack)
-ui/shell/           TopBar.kt, MirrorWiring.kt, DebugWiring.kt, SessionActions.kt
+ui/shell/           NavigationRail.kt, MirrorWiring.kt, DebugWiring.kt, SessionActions.kt
 ui/player/          PlayerConnection.kt — the facade screens talk to
 ui/home|library|genres|collection|search|nowplaying|queue|playlist|login|settings/
                     screens; each heavy screen has a paired *ViewModel.kt
 ui/common/          Components, PillsAndBadges, FocusSupport, ContextMenu(s), ConfirmDialog,
                     FitText, BioDialog, ErrorPane, NavRequests
-ui/theme/           Theme (static palette), Dynamic (per-image palette), Tokens
+ui/theme/           Theme (static scheme), Dynamic (artwork seed), DynamicScheme (HCT), Tokens
 ui/MirrorLink.kt    source-compatible shim over remote/MirrorServer
 ui/MirrorPairing.kt shim over remote/MirrorPairingDialog
 ui/DebugNav.kt      debug-build deep-link channel (FLAG_DEBUGGABLE only)
@@ -71,11 +75,12 @@ ui/DebugNav.kt      debug-build deep-link channel (FLAG_DEBUGGABLE only)
 
 ## Composition root
 
-`AuraApp.onCreate` does one thing: `container = AppContainer(this)`. The container builds the
-long-lived stores in a fixed order because each depends on the previous one:
+`AuraApp.onCreate` constructs `AppContainer`. The container creates Room's `CacheDatabase`
+and its `CacheDisk` adapter, then wires the long-lived stores in dependency order:
 
 1. `Prefs` — file-backed settings; everything else reads it.
-2. `LibraryCache` — TTL cache whose keys carry the library selection `Prefs` owns.
+2. `LibraryCache` — memory and Room-backed TTL cache whose keys carry the library selection
+   `Prefs` owns. `AtmosCatalog` also uses the disk adapter.
 3. `AtmosFilter` — mirrors `Prefs.atmosOnly` as Compose state.
 4. `MirrorServer` — device name + stored pairing token (needs the application context).
 5. `JellyfinClient` — session store + Retrofit; needs readable prefs.
@@ -101,8 +106,8 @@ mirror of the server API — an implementation is a thin adapter over whatever i
 does not re-derive the caching, filtering or paging rules `MediaRepository` owns.
 
 `JellyfinSource` is today's only implementation: most browse calls forward to
-`MediaRepository`, album artists use `LibraryFilter.queryAlbumArtists`, and streaming keeps the two rules the player already
-relied on (direct-play URL, `Authorization` header resolved per request from the current
+`MediaRepository`, and streaming keeps the two rules the player already relied on
+(direct-play URL, `Authorization` header resolved per request from the current
 session). `AppContainer` calls `di/BackendFactory.create`, which currently always constructs
 `JellyfinSource`; `BuildConfig.MUSIC_SOURCE` defaults to `jellyfin` and is logged, but
 changing that field alone does not select a different implementation. `MusicSources.install`
@@ -110,8 +115,8 @@ publishes the same instance for call sites outside the graph (the queue builder 
 service). A new backend needs factory wiring and capability implementations, not
 backend-specific browse logic in screens, ViewModels or queue builders.
 
-Unsupported capabilities return empty/null defaults. `SourceQueries` answers an empty
-`ItemsResponse` when no source is installed, and `atmosAlbumIds` answers an empty set.
+Unsupported capabilities return empty/null defaults. `SourceQueries.items` returns an empty
+`MediaPage` when no source is installed, and `atmosAlbumIds` returns an empty set.
 Actual request failures can propagate to the screen state holder and its error pane;
 they are not universally swallowed by the source seam.
 
@@ -124,6 +129,15 @@ lyrics and history; it does **not** serve motion artwork or catalog imports. The
 renderer and its decoder budget are infrastructure, not an animated-cover feature for
 the current Jellyfin build. Source caches for bios and lyrics clear on manual refresh;
 missing server lyrics are not cached as permanent failures.
+
+### UI model boundary
+
+`data/JellyfinModels.kt` defines the server DTOs; `data/DomainMapping.kt` converts
+`JellyfinItem` at the data boundary. `SourceQueries` returns immutable models from
+`model/`, including typed `MediaPage` values for browse results. Screens, ViewModels
+and navigation use `Track`, `Album`, `Artist`, `Playlist` and `Genre` rather than
+reading Jellyfin fields directly. Their list values are not mutated after construction.
+Artwork is a backend reference; the data layer resolves it to a URL.
 
 ## Navigation contract
 
@@ -146,25 +160,28 @@ Consequences that are easy to break:
   so the revealed screen pulls focus back into content). Screens receive individual
   callbacks from `AppRoot`; nothing navigates by calling a global.
 
-`ui/AppRoot.kt` is the shell: auth gate, the single destination host, the persistent top
-bar, the now-playing bar and the overlay hosts. The non-screen wiring sits beside it in
+`ui/AppRoot.kt` is the shell: auth gate, the destination host, the side navigation rail
+and the overlay hosts. `NavigationRail.kt` replaces the top bar: it expands when focused,
+offers root destinations, Search and Now Playing, and shows the current track when one
+is available. It is hidden on Now Playing and while a full-screen overlay is open.
+The non-screen wiring sits beside it in
 `ui/shell/`: `MirrorWiring` (publish state, honour remote navigation), `DebugWiring` (the
-debug extras), `SessionActions.endSession` (the one teardown path) and `TopBar`.
+debug extras) and `SessionActions.endSession` (session teardown).
 
 BACK is intercepted in `MainActivity.dispatchKeyEvent` (`ACTION_DOWN`, `repeatCount == 0`)
 because Compose focus groups consume it as "move focus out" before any `BackHandler` runs.
-The dispatcher then routes to the enabled `BackHandler` (pop, dismiss overlay, root tab ->
-Home) or the default (exit, Home only).
+The dispatcher then routes to the enabled `BackHandler` (return from the expanded rail
+to content, pop, dismiss overlay, or go from a root tab to Home) or the default exit on Home.
 
 Screen state survives BACK via `rememberSaveableStateHolder().SaveableStateProvider` keyed
 by stack index + `NavSpec.key`. Exact-focus restore is a second layer: `FocusKeeper`
 (`ui/common/FocusSupport.kt`) holds per-item `FocusRequester`s, each card/row reports the
-focused id via `onFocused`, and `RestoreFocusOnBack` re-requests that item ~350 ms after the
-pop. A group-level `requestFocus()` alone lands a row above the target, because the saved
-scroll offset applies after focus is placed.
+focused id via `onFocused`, and `RestoreFocusOnBack` waits until the active destination
+has focusable content. It requests the saved item on a frame, falling back to the container
+when the target is unavailable.
 
 `OverlayVisibility.dialogOpen` is set while a full-screen overlay is composed; it suppresses
-the now-playing bar so it cannot draw over (and take focus from) a dialog. Overlays are the
+the navigation rail so it cannot draw over (and take focus from) a dialog. Overlays are the
 last child of a screen-root `Box`, trap focus with `FocusRequester.Cancel`, and request focus
 shortly after composition.
 
@@ -177,7 +194,7 @@ sleep remaining, smart shuffle) and delegates:
 | Piece | Responsibility |
 |---|---|
 | `PlaybackController` | builds the `MediaController` against `PlaybackService` through a `SessionToken` (connecting is what brings the service up), forwards listeners, runs the 500 ms position ticker. All Media3 access is main-thread. |
-| `QueueRegistry` | `Map<mediaId, JellyfinItem>` plus the queue id snapshot the "re-tap the playing row opens Now Playing" rule reads, and `normalOrderIds` for undoing smart shuffle. |
+| `QueueRegistry` | In-process `Track` metadata keyed by media ID, the queue id snapshot the "re-tap the playing row opens Now Playing" rule reads, and `normalOrderIds` for undoing smart shuffle. |
 | `ResumePolicy` | local resume points (30-day TTL) and the "past 15 s, not within 10 s of the end" rule. |
 | `AutoplayPolicy` | appends an Instant Mix on `STATE_ENDED` with repeat off. |
 | `SleepTimer` | countdown; expiry pauses and leaves the queue intact. |
@@ -189,11 +206,9 @@ builds its `DataSource` through `AuthDataSourceFactory`, which resolves the Jell
 **every** `createDataSource()` call. Baking the header once in `onCreate` left streams on the
 old server's token after a sign-in change.
 
-media3 `MediaItem`s carry only `mediaId` + stream URI; full `JellyfinItem`s live in
-`QueueRegistry`, because the models are kotlinx-serializable, not `java.io.Serializable`, and
-media3 1.6 exposes no extras field. Remote playback ("Play On") bypasses that registry, so
-`syncItem` fetches any unknown id and publishes it — the UI never assumes the queue was
-started locally.
+Media3 `MediaItem`s carry the media ID, stream URI and basic display metadata. The full
+domain `Track` lives in `QueueRegistry`. If remote playback ("Play On") supplies an
+unknown ID, `syncItem` resolves it rather than assuming the queue was started locally.
 
 Streams are direct-played: no transcoding, no decoding in-app, so the E-AC-3 JOC bitstream
 reaches the AVR untouched. Volume is therefore not an app concern — `SetVolume` is absent
@@ -248,10 +263,11 @@ album/artist routes fetch the item first.
 ## Screen state and errors
 
 Heavy screens own a `ViewModel` (Library, Home, Collection, Artist, Genres + GenreAlbums,
-Search) with a `StateFlow` of a state data class. They are created with an explicit key —
-`"library:$kind:$userId"`, `"collection:$id:$userId"` — because `AppRoot`'s manual back stack
-keeps `LocalViewModelStoreOwner` at the Activity: without the key, opening a second album or
-switching accounts reuses the previous instance's state.
+Search) with a `StateFlow` of a state data class. `AppRoot` supplies a session-scoped
+`LocalViewModelStoreOwner` backed by an Activity ViewModel, so screen models survive
+Activity recreation but are cleared on profile switch, sign-out, or final Activity
+destruction. Explicit keys such as `"library:$kind:$userId"` and `"collection:$id:$userId"`
+keep different tabs and items from reusing each other's state within that session.
 
 Failures reach the user as `UiError` state rendered by `ui/common/ErrorPane.kt` (message +
 Retry) on Home, Library, Collection, Artist, Genres and Search. The logging stays: a screen
@@ -261,29 +277,21 @@ that fails shows a retry affordance instead of an empty grid.
 
 `ui/theme/Tokens.kt` is the 10-foot scale: `AuraColors` (cursor ring, focused fill, scrims,
 text roles), `AuraSpacing` (4/8/12/16/24/32/48), `AuraTypography` (~8 sizes), `AuraShapes`,
-`AuraSizes` (TV constants: top-bar height, card sizes, the 120 dp bottom spacer). Shared
-M3 typography roles and semantic corner shapes now style controls, cards and dialogs;
-artwork cards scale on focus with spring motion. The base
-palette remains plain `val`s in `Theme.kt` because every screen imports them directly.
-
-Token values were chosen to preserve the hard 960 dp budgets: the top bar's right edge stays
-under ~1828 px at 1080p with Search and Settings still carrying width, and the queue action
-row fits its shrink-to-fit labels.
+`AuraSizes` (card sizes, minimum focus target and other TV dimensions). Shared Material 3
+typography and semantic corner shapes style controls, cards and dialogs.
 
 ## Theming
 
 Two colour sources, deliberately split:
 
-- **Static palette** (`ui/theme/Theme.kt`) — warm-orange accent on Home, library grids and
-  the TopBar. These screens never tint.
-- **Dynamic palette** (`ui/theme/Dynamic.kt`) — only artist, album and Now Playing screens.
-  A 96 px decode is scored for hue harmony with the dominant swatch (greys skipped,
-  saturation capped), darkened for contrast, and cached process-wide by image URL. Values in
-  the cache are already processed — call sites use `primary` as-is.
-
-The secondary colour is threaded into shared components (`TrackRow`, `ArtworkCard`,
-`AtmosBadge`, `SectionHeader`) as an optional parameter defaulting to the global accent,
-never a `CompositionLocal` that would leak the tint into other screens.
+- **Static scheme** (`ui/theme/Theme.kt`) — the default for the shell and browse UI.
+- **Artwork scheme** (`ui/theme/Dynamic.kt`, `DynamicScheme.kt`) — the featured Home card,
+  artist and collection details, and Now Playing use a scoped `AuraDynamicTheme`.
+  Coil decodes a 96 px image, Material Color Utilities quantizes and scores its pixels,
+  and `ArtworkSeedCache` caches the seed process-wide by artwork URL. The HCT seed
+  (hue, chroma, tone) generates a dark Tonal Spot scheme. Changes animate between colour
+  roles, and both Compose and TV Material 3 themes receive the scheme. Without a seed,
+  the subtree uses the default scheme.
 
 ## Data and caching
 
@@ -297,17 +305,17 @@ which is how albums survived with every music library switched off). Direct look
 (`getItem`, `/Items?Ids=`, playlist items, the "Play On" path) are exempt. Every cache key
 carries `LibraryFilter.cacheSuffix()`.
 
-`LibraryCache` keys browse queries with a 24h TTL, refetching lazily, and persists
-last-refresh timestamps because `/ScheduledTasks` and `/ActivityLog/Entries` are admin-only.
-Any server mutation must evict the affected keys or Home shelves go stale; Settings ->
-Refresh library clears the cache and bumps a `refreshKey` that re-keys screen refreshes.
+`LibraryCache` checks memory first, then restores unexpired browse lists from Room's
+`library_lists` table in `aura-cache.db`. The 24-hour TTL applies to both tiers. A miss
+can be refetched and cached; affected keys must be evicted on server mutations.
+**Refresh library now** in Settings clears cached lists and triggers screen reloads.
 
-Large lists load 60-item pages (page 1 from cache, then append on scroll-end detected via
-`derivedStateOf` over `visibleItemsInfo`), reading `TotalRecordCount` as the total.
-`PagedLibrary` holds the pages in-process.
+Large lists use 60-item pages, mapping Jellyfin's `TotalRecordCount` to the domain
+`MediaPage.total`. `PagedLibrary` holds browse state in-process.
 
-`AtmosCatalog` pages the whole audio library once per process and caches album and track ids
-containing an E-AC-3 JOC stream; that one scan feeds the ATMOS badges, the per-view
+`AtmosCatalog` scans the audio library when it has no valid cached result and caches album
+and track IDs containing an E-AC-3 JOC stream in memory and Room's `atmos_catalogs` table.
+The result feeds the ATMOS badges, the per-view
 `AtmosFilterPill` and `Prefs.atmosOnly` via `AtmosFilter.keep`. Queues, Now Playing and
 playlist contents are never filtered. Album dedupe is not a thing: the FLAC and Atmos copies
 of a release are two tiles, and "Only Atmos" is a filter, never a dedupe rule.
@@ -328,10 +336,11 @@ Connect runs **before** a session exists, so it goes through
 at localhost.
 
 Every exit path funnels through `ui/shell/SessionActions.endSession`, in this order: stop
-playback and release the controller (which stops `PlaybackService`), evict `LibraryCache`,
-`PagedLibrary`, `AtmosCatalog`, `PaletteCache` and the player registry, then drop the
-credentials. Getting the order wrong leaves the old server streaming under a login screen, or
-resolves new-server item ids against old-server metadata.
+playback and release the controller (which stops `PlaybackService`), clear the player
+registry and session caches (including `LibraryCache`, `PagedLibrary`, `AtmosCatalog` and
+`ArtworkSeedCache`), then drop the credentials. Getting the order wrong leaves the old
+server streaming under a login screen, or resolves new-server item ids against old-server
+metadata.
 
 ## Lyrics, search, discovery
 
@@ -407,8 +416,8 @@ picking any other sort or filter clears the letter first.
   the context menu or in a real button row.
 - A `MutableStateFlow` collected without `.drop(1)` replays its current value. That is how a
   0-valued "open Now Playing" counter pushed the screen on every cold start.
-- The deployed artifact is the **release** build (R8 minification; resource shrinking is
-  not enabled) — debug builds are markedly slower on TV hardware and are only for emulator UI
+- The deployed artifact is the **release** build (R8 minification and resource shrinking)
+  — debug builds are markedly slower on TV hardware and are only for emulator UI
   iteration. R8 needs the keep rules in `app/proguard-rules.pro` for the reflective surface
   (Retrofit interface, DTOs and their `$$serializers`, media3); after every release build,
   smoke-test the launch and grep logcat for `FATAL`.

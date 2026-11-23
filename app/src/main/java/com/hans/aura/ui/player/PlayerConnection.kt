@@ -1,14 +1,17 @@
 package com.hans.aura.ui.player
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.hans.aura.data.JellyfinClient
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 import com.hans.aura.data.Session
+import com.hans.aura.data.SourceQueries
 import com.hans.aura.playback.PlaybackService
 import com.hans.aura.player.controller.AutoplayPolicy
+import com.hans.aura.player.controller.PlaybackAnchor
 import com.hans.aura.player.controller.PlaybackController
 import com.hans.aura.player.controller.QueueItemLoader
 import com.hans.aura.player.controller.QueueRegistry
@@ -24,8 +27,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 /**
  * Single shared connection to the playback session, exposed as state flows.
@@ -41,7 +42,7 @@ import kotlinx.serialization.json.Json
  *  - [PlaybackController] the MediaController connection, listener and ticker
  *
  * MediaItems carry only mediaId + URI (media3 1.6 exposes no extras payload);
- * the full JellyfinItem is kept in the registry. The stream URI never embeds the
+ * the full Track is kept in the registry. The stream URI never embeds the
  * token — the playback service's DataSource factory adds the Authorization
  * header to every request.
  */
@@ -60,7 +61,7 @@ class PlayerConnection(
 
     private val resumePolicy = ResumePolicy()
 
-    private val playback = PlaybackController(context, scope)
+    private val playback = PlaybackController(context)
 
     private val autoplay = AutoplayPolicy(
         jellyfin = jellyfin,
@@ -79,12 +80,13 @@ class PlayerConnection(
     @Volatile
     private var closed = false
 
-    private val _currentItem = MutableStateFlow<JellyfinItem?>(null)
+    private val _currentItem = MutableStateFlow<Track?>(null)
     private val _isPlaying = MutableStateFlow(false)
-    private val _queue = MutableStateFlow<List<JellyfinItem>>(emptyList())
+    private val _queue = MutableStateFlow<List<Track>>(emptyList())
+    private val _queueReady = MutableStateFlow(false)
     private val _queueIndex = MutableStateFlow(0)
-    private val _upcoming = MutableStateFlow<List<IndexedValue<JellyfinItem>>>(emptyList())
-    private val _playOrder = MutableStateFlow<List<IndexedValue<JellyfinItem>>>(emptyList())
+    private val _upcoming = MutableStateFlow<List<IndexedValue<Track>>>(emptyList())
+    private val _playOrder = MutableStateFlow<List<IndexedValue<Track>>>(emptyList())
     private val _shuffleEnabled = MutableStateFlow(false)
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
     private val _smartShuffle = MutableStateFlow(false)
@@ -92,20 +94,20 @@ class PlayerConnection(
     /** True while the queue's upcoming items are in smart (least-played) order. */
     val smartShuffle: StateFlow<Boolean> = _smartShuffle
 
-    val current: StateFlow<JellyfinItem?> = _currentItem
+    val current: StateFlow<Track?> = _currentItem
     val isPlaying: StateFlow<Boolean> = _isPlaying
-    val positionMs: StateFlow<Long> = playback.positionMs
+    val clock: StateFlow<PlaybackAnchor> = playback.clock
     val durationMs: StateFlow<Long> = playback.durationMs
-    val queue: StateFlow<List<JellyfinItem>> = _queue
+    val queue: StateFlow<List<Track>> = _queue
+    val queueReady: StateFlow<Boolean> = _queueReady
     val queueIndex: StateFlow<Int> = _queueIndex
-    val upcoming: StateFlow<List<IndexedValue<JellyfinItem>>> = _upcoming
-    val playOrder: StateFlow<List<IndexedValue<JellyfinItem>>> = _playOrder
+    val upcoming: StateFlow<List<IndexedValue<Track>>> = _upcoming
+    val playOrder: StateFlow<List<IndexedValue<Track>>> = _playOrder
     val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled
     val repeatMode: StateFlow<Int> = _repeatMode
 
-    @androidx.annotation.MainThread
     internal fun currentPositionMs(): Long =
-        playback.controller.value?.currentPosition?.coerceAtLeast(0L) ?: positionMs.value
+        clock.value.positionAt(SystemClock.uptimeMillis())
 
     /** Milliseconds left on the sleep timer, null when no timer is running. */
     val sleepRemaining: StateFlow<Long?> = sleep.remaining
@@ -154,7 +156,7 @@ class PlayerConnection(
 
     private fun controller(): MediaController? = playback.controller.value
 
-    /** Resolve a mediaId to a JellyfinItem, fetching from the server when the
+    /** Resolve a mediaId to a Track, fetching from the server when the
      *  item wasn't queued by this UI (e.g. remote "Play On" casts). */
     private fun syncItem(c: MediaController, mediaId: String?) {
         if (mediaId == null) {
@@ -167,10 +169,9 @@ class PlayerConnection(
         } else {
             _currentItem.value = null
             scope.launch {
-                val session = sessionProvider() ?: return@launch
                 val item = try {
                     queueItemLoader.load(mediaId) {
-                        jellyfin.api.getItem(itemId = mediaId, userId = session.userId)
+                        SourceQueries.item(mediaId) as? Track ?: error("Track not found: $mediaId")
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -188,7 +189,7 @@ class PlayerConnection(
 
     private fun readQueue(c: MediaController) {
         val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
-        val resolved = ArrayList<JellyfinItem>(ids.size)
+        val resolved = ArrayList<Track>(ids.size)
         val missing = ArrayList<String>()
         for (id in ids) {
             val item = registry.get(id)
@@ -200,16 +201,17 @@ class PlayerConnection(
         _repeatMode.value = c.repeatMode
         readUpcoming(c)
         // Fetch any items the UI doesn't know yet (remote cast items).
+        _queueReady.value = missing.isEmpty()
         if (missing.isNotEmpty()) {
             scope.launch {
-                val session = sessionProvider() ?: return@launch
                 try {
                     queueItemLoader.loadAll(missing) { id ->
-                        jellyfin.api.getItem(itemId = id, userId = session.userId)
+                        SourceQueries.item(id) as? Track ?: error("Track not found: $id")
                     }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
+                    _queueReady.value = true
                     return@launch
                 }
                 readQueue(c)
@@ -247,7 +249,7 @@ class PlayerConnection(
      * Add to queue never resume (they pass resume = false).
      */
     fun playQueue(
-        items: List<JellyfinItem>,
+        items: List<Track>,
         startIndex: Int,
         playWhenReady: Boolean = true,
         resume: Boolean? = null
@@ -286,7 +288,7 @@ class PlayerConnection(
                 )
             } else {
                 // No usable position on the item we were handed: either the
-                // browse query didn't carry UserData, or LibraryCache served a
+                // browse query didn't carry server playback state, or LibraryCache served a
                 // copy fetched BEFORE this track was last played (a cached
                 // position of 0 is stale, not "never played"). One item fetch
                 // settles it, and it only happens on an explicit tap.
@@ -305,17 +307,16 @@ class PlayerConnection(
         c.prepare()
     }
 
-    /** Late resume for items whose UserData the browse query didn't return. */
-    private fun resumeAfterFetch(c: MediaController, item: JellyfinItem) {
+    /** Late resume for items whose server playback state the browse query didn't return. */
+    private fun resumeAfterFetch(c: MediaController, item: Track) {
         scope.launch {
             val full = runCatching {
-                val session = sessionProvider() ?: return@launch
-                jellyfin.api.getItem(itemId = item.id, userId = session.userId)
+                SourceQueries.item(item.id) as? Track
             }.getOrNull() ?: return@launch
             registry.put(full)
             AuraLog.d(
                 AuraTag.RESUME,
-                "fetched item=${item.id} ticks=${full.userData?.playbackPositionTicks ?: -1} " +
+                "fetched item=${item.id} resume=${full.resumePositionMs ?: -1} " +
                     "dur=${full.durationMs}"
             )
             val ms = resumePolicy.positionMs(full) ?: return@launch
@@ -335,7 +336,7 @@ class PlayerConnection(
     }
 
     /** Insert after the current track ("Play Next"); starts playback if idle. */
-    fun playNext(items: List<JellyfinItem>) {
+    fun playNext(items: List<Track>) {
         val c = controller() ?: return
         val serverUrl = sessionProvider()?.serverUrl ?: return
         registry.putAll(items)
@@ -351,7 +352,7 @@ class PlayerConnection(
     }
 
     /** Append at the end of the queue; starts playback if idle. */
-    fun addToQueue(items: List<JellyfinItem>) {
+    fun addToQueue(items: List<Track>) {
         val c = controller() ?: return
         val serverUrl = sessionProvider()?.serverUrl ?: return
         registry.putAll(items)
@@ -373,7 +374,7 @@ class PlayerConnection(
         val c = controller() ?: return@onMainThread
         val duration = c.duration
         if (duration <= 0) return@onMainThread
-        val position = c.currentPosition.coerceIn(0, duration)
+        val position = currentPositionMs().coerceIn(0, duration)
         c.seekTo(position + deltaMs.coerceIn(-position, duration - position))
     }
     fun skipToQueue(index: Int) { controller()?.seekTo(index, 0) }
@@ -575,30 +576,18 @@ class PlayerConnection(
     }
 
     companion object {
-        private val itemJson = Json { ignoreUnknownKeys = true; coerceInputValues = true }
-
         /**
          * Smart shuffle (pure, deterministic). Delegates to [QueueRegistry] so
          * the ordering rule has exactly one implementation.
          */
-        fun smartOrder(items: List<JellyfinItem>): List<JellyfinItem> =
+        fun smartOrder(items: List<Track>): List<Track> =
             QueueRegistry.smartOrder(items)
 
-        fun serialize(item: JellyfinItem): String = itemJson.encodeToString(item)
-        fun deserialize(raw: String): JellyfinItem? =
-            runCatching { itemJson.decodeFromString<JellyfinItem>(raw) }.getOrNull()
 
         /** Atmos = DD+ with JOC object coding; only E-AC3 JOC survives as Atmos. */
-        fun isAtmos(item: JellyfinItem?): Boolean =
-            item?.mediaSources?.any { src ->
-                src.mediaStreams?.any { s ->
-                    s.codec.equals("eac3", true) &&
-                        (s.profile?.contains("JOC", true) == true ||
-                            s.profile?.contains("Dolby Atmos", true) == true)
-                } == true
-            } == true
+        fun isAtmos(item: Track?): Boolean = item?.isAtmos == true
 
-        fun toMediaItem(item: JellyfinItem, serverUrl: String): MediaItem =
+        fun toMediaItem(item: Track, serverUrl: String): MediaItem =
             com.hans.aura.player.controller.toMediaItem(item, serverUrl)
     }
 }

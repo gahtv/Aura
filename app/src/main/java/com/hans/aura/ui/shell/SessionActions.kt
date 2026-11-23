@@ -3,10 +3,13 @@ package com.hans.aura.ui.shell
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AtmosCatalog
 import com.hans.aura.data.AuthStore
+import com.hans.aura.data.Favorites
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.PagedLibrary
+import com.hans.aura.data.Session
+import com.hans.aura.tvchannel.HomeChannelPublisher
 import com.hans.aura.ui.player.PlayerConnection
-import com.hans.aura.ui.theme.PaletteCache
+import com.hans.aura.ui.theme.ArtworkSeedCache
 
 /**
  * Every way out of a session funnels through here (sign in again, change
@@ -16,7 +19,7 @@ import com.hans.aura.ui.theme.PaletteCache
  * data, then drop the credentials.
  *
  * Mixing two servers' item ids in one cache renders the wrong artwork and the
- * wrong tracklists, and PaletteCache is keyed by URL, so it survives a server
+ * wrong tracklists, and ArtworkSeedCache is keyed by URL, so it survives a server
  * swap with colliding item ids unless it is cleared here too.
  */
 internal fun endSession(
@@ -32,11 +35,13 @@ internal fun endSession(
     val library = LibraryCache.size
     val paged = PagedLibrary.size
     val atmos = AtmosCatalog.size
-    val palette = PaletteCache.size
+    val palette = ArtworkSeedCache.size
     LibraryCache.clear()
+    Favorites.clear()
     PagedLibrary.clear()
     AtmosCatalog.clear()
-    PaletteCache.clear()
+    ArtworkSeedCache.clear()
+    HomeChannelPublisher.clear(app)
     if (forgetServer) app.jellyfin.auth.clearServer() else app.jellyfin.auth.clearSession()
     val evicted = "evicted library=$library paged=$paged atmos=$atmos " +
         "palette=$palette playerItems=$playerItems"
@@ -52,4 +57,25 @@ internal fun endSession(
         }
     )
     onSignedOut()
+}
+
+/** Switch to another saved household profile on the same server. */
+internal fun switchSession(
+    app: AuraApp,
+    player: PlayerConnection,
+    target: Session,
+    onSwitched: () -> Unit
+) {
+    player.teardown()
+    LibraryCache.clear()
+    Favorites.clear()
+    PagedLibrary.clear()
+    AtmosCatalog.clear()
+    ArtworkSeedCache.clear()
+    app.jellyfin.auth.save(target)
+    android.util.Log.i(
+        "AURA_AUTH",
+        "switch profile: server=${AuthStore.host(target.serverUrl)} user=${target.userName}"
+    )
+    onSwitched()
 }

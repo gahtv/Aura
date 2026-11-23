@@ -1,12 +1,10 @@
 package com.hans.aura.data
 
+import com.hans.aura.model.Artist
+
 internal data class ArtistArtwork(val logoUrl: String?, val bannerUrl: String?)
 
-internal fun JellyfinItem.artistArtwork(serverUrl: String): ArtistArtwork {
-    fun image(type: String, maxWidth: Int): String? =
-        imageTags?.get(type)?.takeIf { it.isNotBlank() }?.let { tag ->
-            AuthStore.jellyfinImageUrl(serverUrl, id, type, tag, maxWidth)
-        }
-
-    return ArtistArtwork(logoUrl = image("Logo", 640), bannerUrl = image("Banner", 1920))
-}
+internal fun Artist.artistArtwork(serverUrl: String): ArtistArtwork = ArtistArtwork(
+    logoUrl = logo?.let { AuthStore.jellyfinImageUrl(serverUrl, it.itemId, "Logo", it.tag, 640) },
+    bannerUrl = banner?.let { AuthStore.jellyfinImageUrl(serverUrl, it.itemId, "Banner", it.tag, 1920) }
+)

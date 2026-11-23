@@ -29,6 +29,7 @@ class AtmosCatalogTest {
     @Test
     fun `concurrent cold callers share one scan and cache empty success`() = runTest {
         val response = CompletableDeferred<ItemsResponse>()
+        val started = CompletableDeferred<Unit>()
         var queries = 0
         val api = object : JellyfinApi by FakeJellyfinApi() {
             override suspend fun getItems(
@@ -53,11 +54,13 @@ class AtmosCatalogTest {
                 nameStartsWithOrGreater: String?
             ): ItemsResponse {
                 queries++
+                started.complete(Unit)
                 return response.await()
             }
         }
         val first = async(start = CoroutineStart.UNDISPATCHED) { AtmosCatalog.catalog(api, "user") }
         val second = async(start = CoroutineStart.UNDISPATCHED) { AtmosCatalog.catalog(api, "user") }
+        started.await()
         assertEquals(1, queries)
         response.complete(ItemsResponse())
         assertEquals(AtmosCatalog.Catalog(), first.await())

@@ -2,6 +2,7 @@
 
 package com.hans.aura.ui.library
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.foundation.layout.Arrangement
@@ -42,21 +43,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.AuraApp
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.ArtworkCard
+import com.hans.aura.ui.common.AuraLoadingIndicator
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
+import com.hans.aura.ui.common.filterPillShape
+import com.hans.aura.ui.common.requestFocusOnFrame
+import com.hans.aura.ui.nav.Screen
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
+import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
-import com.hans.aura.ui.theme.AuraShapes
 
 /**
  * Whole-library views: Artists, Albums, Tracks, Playlists.
@@ -66,34 +79,34 @@ import com.hans.aura.ui.theme.AuraShapes
  * restores the exact loaded pages, sort and filters.
  */
 @Composable
-fun LibraryScreen(
+internal fun LibraryScreen(
     app: AuraApp,
     kind: String, // "Artists" | "Albums" | "Tracks" | "Playlists"
     player: PlayerConnection,
     refreshKey: Int = 0,
     focusTick: Int = 0,
-    onOpenCollection: (JellyfinItem) -> Unit,
-    onOpenArtist: (JellyfinItem) -> Unit,
-    // Genres live behind a pill INSIDE the Albums tab: a sixth top-bar tab does
-    // not fit 960dp next to five tabs, the pill and two icon buttons.
-    onOpenGenres: (() -> Unit)? = null,
+    onOpenCollection: (CollectionItem) -> Unit,
+    onOpenArtist: (Artist) -> Unit,
+    onSwitchCategory: (Screen) -> Unit = {},
+    likedOnly: Boolean = false,
     viewModel: LibraryViewModel = viewModel(
-        // AppRoot's manual back-stack keeps LocalViewModelStoreOwner at the
-        // Activity, so every tab needs its own key (and a new user needs a new
-        // one or the previous session's pages would be served).
-        key = "library:$kind:${app.jellyfin.auth.session?.userId ?: "anon"}",
-        factory = viewModelFactory { initializer { LibraryViewModel(app, kind) } }
+        // The tabs share a ViewModel store within the signed-in session.
+        key = "library:${if (likedOnly) "Liked" else kind}:${app.jellyfin.auth.session?.userId ?: "anon"}",
+        factory = viewModelFactory { initializer { LibraryViewModel(app, kind, likedOnly) } }
     )
 ) {
     val session = app.jellyfin.auth.session ?: return
     val state by viewModel.state.collectAsState()
     val items = state.items
+    val hasMoreItems = items.size < state.total
+    val tracks = items.filterIsInstance<Track>()
     val current by player.current.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     LaunchedEffect(refreshKey) { viewModel.onRefreshKey(refreshKey) }
+    LaunchedEffect(viewModel) { viewModel.refreshLikedIfEvicted() }
 
-    fun trackMenu(track: JellyfinItem, onRemove: (() -> Unit)? = null) =
+    fun trackMenu(track: Track, onRemove: (() -> Unit)? = null) =
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forTrack(
                 app, player, scope, track,
@@ -102,7 +115,7 @@ fun LibraryScreen(
             )
         )
 
-    fun albumMenu(item: JellyfinItem) =
+    fun albumMenu(item: CollectionItem) =
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forAlbum(
                 app, player, scope, item, onOpenArtist = onOpenArtist
@@ -133,12 +146,15 @@ fun LibraryScreen(
         }
     }
     LaunchedEffect(nearGridEnd, items.size) {
-        if (kind != "Tracks" && nearGridEnd && state.initialized && items.isNotEmpty() && items.size < state.total) {
+        if (kind != "Tracks" && nearGridEnd && state.initialized && items.isNotEmpty() && hasMoreItems) {
             viewModel.loadNextPage()
         }
     }
-    LaunchedEffect(nearListEnd, items.size) {
-        if (kind == "Tracks" && nearListEnd && state.initialized && items.isNotEmpty() && items.size < state.total) {
+    val canLoadLikedPage = !state.likedOnly || (!state.loading && state.error == null)
+    LaunchedEffect(nearListEnd, items.size, canLoadLikedPage) {
+        if (kind == "Tracks" && nearListEnd && canLoadLikedPage &&
+            state.initialized && items.isNotEmpty() && hasMoreItems
+        ) {
             viewModel.loadNextPage()
         }
     }
@@ -147,7 +163,7 @@ fun LibraryScreen(
     // "B"s. BACK restores the same key and is deliberately left alone.
     LaunchedEffect(state.jumpTick) {
         if (state.jumpTick == 0) return@LaunchedEffect
-        kotlinx.coroutines.delay(50)
+        androidx.compose.runtime.withFrameNanos { }
         runCatching {
             if (kind == "Tracks") listState.scrollToItem(0) else gridState.scrollToItem(0)
         }
@@ -158,15 +174,51 @@ fun LibraryScreen(
     val railFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
+    val backFocusKey = remember(focusTick) { state.cacheKey }
+    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper,
+        ready = items.isNotEmpty(),
+        cancelled = state.cacheKey != backFocusKey ||
+            (state.initialized && !state.loading && items.isEmpty()))
+    var pendingGridFocus by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    LibraryGridFocus(pendingGridFocus, state, contentFocus)
 
     Column(Modifier.fillMaxSize()) {
+        if (likedOnly) {
+            androidx.tv.material3.Text(
+                "Liked",
+                modifier = Modifier.padding(start = 32.dp, top = 24.dp, bottom = 8.dp),
+                style = androidx.tv.material3.MaterialTheme.typography.headlineLarge,
+                color = TextPrimary
+            )
+        } else {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 32.dp, end = 32.dp, top = 24.dp, bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val categories = listOf(
+                    "Albums" to Screen.Albums,
+                    "Artists" to Screen.Artists,
+                    "Tracks" to Screen.Tracks,
+                    "Playlists" to Screen.Playlists
+                )
+                categories.forEach { (label, screen) ->
+                    SortPill(
+                        label = label,
+                        selected = kind == label,
+                        onClick = { onSwitchCategory(screen) }
+                    )
+                }
+            }
+        }
         // Sort pills: UP from the grid reaches them; the ACTIVE pill toggles
         // its direction on click (Random has no direction).
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 32.dp, end = 32.dp, top = 6.dp, bottom = 2.dp),
+                .padding(start = 32.dp, end = 32.dp, top = 4.dp, bottom = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -178,28 +230,6 @@ fun LibraryScreen(
                     onClick = { viewModel.toggleAtmos() }
                 )
                 Spacer(Modifier.width(12.dp))
-            }
-            // Liked pill lives INSIDE the Tracks sort row: the 960dp top bar
-            // cannot fit a sixth tab, and this reads as a filter, not a place.
-            if (kind == "Tracks") {
-                SortPill(
-                    label = "Liked",
-                    leadingIcon = if (state.likedOnly) com.hans.aura.R.drawable.ic_favorite_fill1
-                    else com.hans.aura.R.drawable.ic_favorite,
-                    selected = state.likedOnly,
-                    onClick = { viewModel.toggleLiked() }
-                )
-                Spacer(Modifier.width(18.dp))
-            }
-            // Genres pill (Albums only): opens the genre grid, which owns its
-            // own screen in the back-stack so BACK returns here.
-            if (kind == "Albums" && onOpenGenres != null) {
-                SortPill(
-                    label = "Genres",
-                    leadingIcon = com.hans.aura.R.drawable.ic_category,
-                    selected = false,
-                    onClick = { onOpenGenres() }
-                )
             }
             sortModesFor(kind).forEach { mode ->
                 val active = mode == state.sort
@@ -229,7 +259,7 @@ fun LibraryScreen(
         if (azOpen) {
             androidx.activity.compose.BackHandler(enabled = azOpen) {
                 azOpen = false
-                scope.launch { kotlinx.coroutines.delay(60); azPillFocus.requestFocus() }
+                scope.launch { azPillFocus.requestFocusOnFrame() }
             }
             Row(
                 Modifier
@@ -248,10 +278,7 @@ fun LibraryScreen(
                     onClick = {
                         azOpen = false
                         viewModel.clearLetter(null)
-                        scope.launch {
-                            kotlinx.coroutines.delay(150)
-                            runCatching { contentFocus.requestFocus() }
-                        }
+                        pendingGridFocus = viewModel.state.value.let { it.jumpTick to it.cacheKey }
                     }
                 )
                 AZ_LETTERS.forEach { candidate ->
@@ -266,18 +293,14 @@ fun LibraryScreen(
                             viewModel.selectLetter(candidate)
                             // The rail disappears when a letter is taken; hand
                             // focus to the grid or the selector is stranded.
-                            scope.launch {
-                                kotlinx.coroutines.delay(150)
-                                runCatching { contentFocus.requestFocus() }
-                            }
+                            pendingGridFocus = viewModel.state.value.let { it.jumpTick to it.cacheKey }
                         }
                     )
                 }
             }
             LaunchedEffect(azOpen) {
                 if (azOpen) {
-                    kotlinx.coroutines.delay(80)
-                    runCatching { railFocus.requestFocus() }
+                    railFocus.requestFocusOnFrame()
                 }
             }
         }
@@ -288,8 +311,8 @@ fun LibraryScreen(
                     detail = state.error,
                     onRetry = { viewModel.retry() }
                 )
-                !state.initialized && items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    androidx.tv.material3.Text("Loading\u2026", color = TextSecondary, fontSize = 16.sp)
+                (!state.initialized || state.loading) && items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    AuraLoadingIndicator("Loading library")
                 }
                 items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     androidx.tv.material3.Text(
@@ -311,30 +334,36 @@ fun LibraryScreen(
                         .focusRequester(contentFocus)
                         .focusRestorer()
                 ) {
-                    itemsIndexed(items) { i, track ->
+                    itemsIndexed(
+                        items = tracks,
+                        key = { _, track -> track.id },
+                        contentType = { _, _ -> "track" }
+                    ) { i, track ->
                         TrackRow(
                             index = i + 1,
                             track = track,
                             isCurrent = track.id == current?.id,
                             atmos = track.albumId?.let { it in state.atmosAlbumIds } == true,
-                            onClick = { player.playQueue(items, i, resume = true) },
+                            onClick = { player.playQueue(tracks, i, resume = true) },
                             focusKeeper = focusKeeper,
                             onFocused = { focusedId = it },
                             onLongPress = { trackMenu(track) },
                             favorite = com.hans.aura.data.Favorites.isFavorite(track),
                             onToggleFavorite = {
                                 scope.launch {
-                                    com.hans.aura.data.Favorites.toggle(
-                                        app.jellyfin.api, session.userId, track
-                                    )
+                                    app.container.media.toggleFavorite(track)
                                 }
                             }
                         )
                     }
                     item {
                         Spacer(Modifier.height(60.dp))
-                        androidx.tv.material3.Text(
-                            if (items.size < state.total) "Loading more\u2026" else com.hans.aura.ui.common.countLabel(items.size, "track"),
+                        if (hasMoreItems && state.loading) {
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                AuraLoadingIndicator("Loading more tracks")
+                            }
+                        } else if (!hasMoreItems) androidx.tv.material3.Text(
+                            com.hans.aura.ui.common.countLabel(items.size, "track"),
                             color = TextSecondary, fontSize = 12.sp,
                             modifier = Modifier.padding(horizontal = 24.dp)
                         )
@@ -355,7 +384,11 @@ fun LibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    itemsIndexed(items, key = { _, item -> "${kind}_${item.id}" }) { index, item ->
+                    itemsIndexed(
+                        items = items,
+                        key = { _, item -> "${kind}_${item.id}" },
+                        contentType = { _, _ -> kind }
+                    ) { index, item ->
                         ArtworkCard(
                             item = item,
                             serverUrl = session.serverUrl,
@@ -369,7 +402,7 @@ fun LibraryScreen(
                             animate = kind == "Albums" && index in motionWindow,
                             motionPriority = -index,
                             onLongPress = if (kind != "Artists") {
-                                { albumMenu(item) }
+                                (item as? CollectionItem)?.let { collection -> { albumMenu(collection) } }
                             } else null,
                             favorite = if (kind == "Albums") {
                                 com.hans.aura.data.Favorites.isFavorite(item)
@@ -377,25 +410,26 @@ fun LibraryScreen(
                             onToggleFavorite = if (kind == "Albums") {
                                 {
                                     scope.launch {
-                                        com.hans.aura.data.Favorites.toggle(
-                                            app.jellyfin.api, session.userId, item
-                                        )
+                                        app.container.media.toggleFavorite(item)
                                     }
                                 }
                             } else null
                         ) {
                             when (kind) {
-                                "Artists" -> onOpenArtist(item)
-                                else -> onOpenCollection(item)
+                                "Artists" -> (item as? Artist)?.let(onOpenArtist)
+                                else -> (item as? CollectionItem)?.let(onOpenCollection)
                             }
                         }
                     }
                     item(span = { GridItemSpan(5) }) {
                         Column {
                             Spacer(Modifier.height(24.dp))
-                            androidx.tv.material3.Text(
-                                if (items.size < state.total) "Loading more\u2026"
-                                else com.hans.aura.ui.common.countLabel(
+                            if (hasMoreItems && state.loading) {
+                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                    AuraLoadingIndicator("Loading more library items")
+                                }
+                            } else if (!hasMoreItems) androidx.tv.material3.Text(
+                                com.hans.aura.ui.common.countLabel(
                                     items.size,
                                     singular = kind.lowercase().removeSuffix("s"),
                                     plural = kind.lowercase()
@@ -422,29 +456,29 @@ private fun SortPill(
     leadingIcon: Int? = null,
     trailingIcon: Int? = null
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
-    val shape = AuraShapes.control
-    val bg = when {
-        selected && focused -> androidx.compose.ui.graphics.Color(0x66E8A44C)
-        selected -> androidx.compose.ui.graphics.Color(0xFFE8A44C)
-        focused -> androidx.compose.ui.graphics.Color(0xFF3A322A)
-        else -> androidx.compose.ui.graphics.Color.Transparent
-    }
+    val shape = filterPillShape(selected, focused)
+    val fill by animateColorAsState(
+        if (focused) AuraColors.FocusedFillSubtle else Color.Transparent,
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
+        label = "sortPillFill"
+    )
     Box(
         modifier
+            .semantics { this.selected = selected }
             .clip(shape)
-            .background(bg)
+            .background(if (selected) colors.primary else fill)
             .border(
-                width = if (focused) 3.dp else 0.dp,
-                color = if (focused) androidx.compose.ui.graphics.Color(0xFFE8A44C)
-                else androidx.compose.ui.graphics.Color.Transparent,
+                width = AuraSizes.focusBorderLoud,
+                color = if (focused) AuraColors.CursorRing else Color.Transparent,
                 shape = shape
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 7.dp)
     ) {
-        val content = if (selected) androidx.compose.ui.graphics.Color(0xFF191410) else TextPrimary
+        val content = if (selected) colors.onPrimary else colors.onSurface
         androidx.compose.foundation.layout.Row(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
@@ -468,6 +502,23 @@ private fun SortPill(
                 )
             }
         }
+    }
+}
+
+@Composable
+internal fun LibraryGridFocus(
+    pick: Pair<Int, String>?,
+    state: LibraryUiState,
+    requester: androidx.compose.ui.focus.FocusRequester
+) {
+    androidx.compose.runtime.key(pick) {
+        com.hans.aura.ui.common.InitialFocusOnPush(
+            shouldFocus = pick != null,
+            requester = requester,
+            ready = state.items.isNotEmpty(),
+            cancelled = pick != (state.jumpTick to state.cacheKey) ||
+                (state.initialized && !state.loading && state.items.isEmpty())
+        )
     }
 }
 

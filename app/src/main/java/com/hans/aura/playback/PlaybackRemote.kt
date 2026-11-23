@@ -6,7 +6,8 @@ import androidx.media3.common.Player
 import com.hans.aura.data.APP_VERSION
 import com.hans.aura.data.CapabilitiesDto
 import com.hans.aura.data.JellyfinClient
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.toDomainItem
+import com.hans.aura.model.Track
 import com.hans.aura.player.controller.QUEUE_ITEM_PARALLELISM
 import com.hans.aura.player.controller.fetchQueueItems
 import com.hans.aura.util.AuraLog
@@ -28,6 +29,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -47,7 +49,7 @@ class PlaybackRemote(
     private val jellyfin: JellyfinClient,
     private val player: Player,
     private val onPlayItems:
-        (items: List<JellyfinItem>, mode: Int, startMs: Long, startIndex: Int) -> Unit
+        (items: List<Track>, mode: Int, startMs: Long, startIndex: Int) -> Unit
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val queueItemPermits = Semaphore(QUEUE_ITEM_PARALLELISM)
@@ -89,7 +91,7 @@ class PlaybackRemote(
                 "MediaBrowser Client=\"$APP_NAME\", Device=\"${com.hans.aura.data.DeviceNames.get()}\", " +
                     "DeviceId=\"$deviceId\", Version=\"$APP_VERSION\", Token=\"$token\""
             )
-            .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), body))
+            .post(body.toRequestBody("application/json".toMediaTypeOrNull()))
             .build()
         val http = client ?: return
         http.newCall(req).enqueue(object : okhttp3.Callback {
@@ -199,7 +201,8 @@ class PlaybackRemote(
                         // (sign-out) — never assert it into a crash.
                         val userId = jellyfin.auth.session?.userId ?: return@launch
                         val items = fetchQueueItems(ids, queueItemPermits) { id ->
-                            jellyfin.api.getItem(itemId = id, userId = userId)
+                            jellyfin.api.getItem(itemId = id, userId = userId).toDomainItem() as? Track
+                                ?: error("Remote item is not playable audio: $id")
                         }
                         when (command) {
                             "PlayNext" ->

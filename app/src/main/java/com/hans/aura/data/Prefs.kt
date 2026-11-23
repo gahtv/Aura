@@ -33,6 +33,11 @@ object Prefs {
     private const val KEY_LIBRARIES = "known_libraries"
     private const val KEY_LIBRARIES_AT = "known_libraries_at_ms"
     private const val KEY_AUTOPLAY = "autoplay_music"
+    private const val KEY_AMBIENT_NP = "ambient_now_playing"
+    private const val KEY_NP_DIM_MODE = "now_playing_dim_mode"
+    private const val KEY_SEARCH_TIP_DISMISSED = "search_remote_tip_dismissed"
+    private const val KEY_TV_CHANNEL_ID = "tv_channel_id"
+    private const val KEY_TV_BROWSABLE_REQUESTED_ID = "tv_browsable_requested_id"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -96,6 +101,40 @@ object Prefs {
         get() = p()?.getBoolean(KEY_AUTOPLAY, true) ?: true
         set(value) {
             p()?.edit()?.putBoolean(KEY_AUTOPLAY, value)?.apply()
+        }
+
+    /** Fade out Now Playing chrome after ~6s of D-pad inactivity while playing. */
+    var ambientNowPlaying: Boolean
+        get() = p()?.getBoolean(KEY_AMBIENT_NP, true) ?: true
+        set(value) {
+            p()?.edit()?.putBoolean(KEY_AMBIENT_NP, value)?.apply()
+        }
+
+    /** Drop dynamic color wash to near-black (#0E0C0A) in Now Playing. */
+    var nowPlayingDimMode: Boolean
+        get() = p()?.getBoolean(KEY_NP_DIM_MODE, false) ?: false
+        set(value) {
+            p()?.edit()?.putBoolean(KEY_NP_DIM_MODE, value)?.apply()
+        }
+
+    /** Whether the Aura Remote search tip coachmark was dismissed. */
+    var searchRemoteTipDismissed: Boolean
+        get() = p()?.getBoolean(KEY_SEARCH_TIP_DISMISSED, false) ?: false
+        set(value) {
+            p()?.edit()?.putBoolean(KEY_SEARCH_TIP_DISMISSED, value)?.apply()
+        }
+
+    /** Android TV Home Screen Channel id (-1L when not yet published). */
+    var tvChannelId: Long
+        get() = p()?.getLong(KEY_TV_CHANNEL_ID, -1L) ?: -1L
+        set(value) {
+            p()?.edit()?.putLong(KEY_TV_CHANNEL_ID, value)?.apply()
+        }
+
+    var tvBrowsableRequestedId: Long
+        get() = p()?.getLong(KEY_TV_BROWSABLE_REQUESTED_ID, -1L) ?: -1L
+        set(value) {
+            p()?.edit()?.putLong(KEY_TV_BROWSABLE_REQUESTED_ID, value)?.apply()
         }
 
     // ---- Atmos filter ------------------------------------------------------

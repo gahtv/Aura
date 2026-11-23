@@ -2,6 +2,7 @@ package com.hans.aura.data
 
 import android.content.Context
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.UUID
@@ -26,6 +27,7 @@ data class Session(
 class AuthStore(context: Context) {
     private val prefs = context.getSharedPreferences("aura_session", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
+    private val sessionsSerializer = ListSerializer(Session.serializer())
 
     // Decoded once and kept in memory: `session` is read on every API call
     // (JellyfinClient resolves its baseUrl from it), and a prefs read plus a
@@ -74,6 +76,43 @@ class AuthStore(context: Context) {
     fun save(session: Session) {
         this.session = session
         prefs.edit().putString(KEY_LAST_SERVER, session.serverUrl).apply()
+        upsertSavedSession(session)
+    }
+
+    /** Saved household profiles across sessions. */
+    val savedSessions: List<Session>
+        get() {
+            val raw = prefs.getString(KEY_SAVED_SESSIONS, null) ?: return emptyList()
+            return runCatching { json.decodeFromString(sessionsSerializer, raw) }
+                .getOrDefault(emptyList())
+        }
+
+    fun profilesForServer(serverUrl: String): List<Session> {
+        val norm = serverUrl.trim().trimEnd('/')
+        if (norm.isBlank()) return emptyList()
+        return savedSessions.filter { it.serverUrl.trimEnd('/') == norm }
+    }
+
+    fun switchProfile(serverUrl: String, userId: String): Session? {
+        val target = profilesForServer(serverUrl).firstOrNull { it.userId == userId } ?: return null
+        save(target)
+        return target
+    }
+
+    fun removeProfile(serverUrl: String, userId: String) {
+        val norm = serverUrl.trim().trimEnd('/')
+        val remaining = savedSessions.filterNot {
+            it.serverUrl.trimEnd('/') == norm && it.userId == userId
+        }
+        prefs.edit().putString(KEY_SAVED_SESSIONS, json.encodeToString(sessionsSerializer, remaining)).apply()
+    }
+
+    private fun upsertSavedSession(session: Session) {
+        val norm = session.serverUrl.trimEnd('/')
+        val updated = savedSessions.filterNot {
+            it.serverUrl.trimEnd('/') == norm && it.userId == session.userId
+        } + session
+        prefs.edit().putString(KEY_SAVED_SESSIONS, json.encodeToString(sessionsSerializer, updated)).apply()
     }
 
     /**
@@ -95,7 +134,11 @@ class AuthStore(context: Context) {
     fun clearServer() {
         cached = null
         loaded = true
-        prefs.edit().remove(KEY_SESSION).remove(KEY_LAST_SERVER).apply()
+        prefs.edit()
+            .remove(KEY_SESSION)
+            .remove(KEY_LAST_SERVER)
+            .remove(KEY_SAVED_SESSIONS)
+            .apply()
     }
 
     /** Wholesale wipe of the prefs file (session + remembered server). */
@@ -108,6 +151,7 @@ class AuthStore(context: Context) {
     companion object {
         private const val KEY_SESSION = "session"
         private const val KEY_LAST_SERVER = "last_server_url"
+        private const val KEY_SAVED_SESSIONS = "saved_sessions"
 
         fun newDeviceId(context: Context): String {
             val prefs = context.getSharedPreferences("aura_device", Context.MODE_PRIVATE)

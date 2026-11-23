@@ -2,6 +2,7 @@
 
 package com.hans.aura.ui.genres
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,7 +15,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -34,7 +37,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,12 +49,17 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.tv.material3.MaterialTheme
+import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.AuthStore
+import com.hans.aura.model.Album
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Genre
 import com.hans.aura.data.Mixes
 import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
+import com.hans.aura.ui.common.url
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraMotion
@@ -60,8 +72,7 @@ import com.hans.aura.ui.theme.AuraShapes
 import kotlinx.coroutines.launch
 
 /**
- * Music genres, reached from the Genres pill inside the Albums tab (not a sixth
- * top-bar tab — five tabs + pill + two icon buttons already fill 960dp).
+ * Music genres, reached directly from the navigation rail.
  *
  * The genre list comes from the library's own tracks: there is no
  * GET /MusicGenres collection endpoint in the 12.4.0 spec (only
@@ -82,14 +93,19 @@ fun GenresScreen(
         factory = viewModelFactory { initializer { GenresViewModel(app) } }
     )
 ) {
-    app.jellyfin.auth.session ?: return
+    val session = app.jellyfin.auth.session ?: return
+    val serverUrl = session.serverUrl
     val state by viewModel.state.collectAsState()
 
     val contentFocus = remember { FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
-    com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, contentFocus)
+    val contentReady = !state.genres.isNullOrEmpty()
+    val emptyResult = !contentReady && (state.genres != null || state.error != null)
+    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper,
+        ready = contentReady, cancelled = emptyResult)
+    com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, contentFocus,
+        ready = contentReady, cancelled = emptyResult)
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(title = "Genres", onBack = onBack)
@@ -118,11 +134,13 @@ fun GenresScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(genres, key = { "genre_${it.id}" }) { genre ->
+                    val artUrl = genre.artwork?.url(serverUrl, maxWidth = 200)
                     GenreTile(
                         name = genre.name,
+                        id = genre.id,
+                        artworkUrl = artUrl,
                         focusKeeper = focusKeeper,
                         onFocused = { focusedId = it },
-                        id = genre.id,
                         onClick = { onOpenGenre(genre.name) }
                     )
                 }
@@ -145,7 +163,7 @@ fun GenreScreen(
     player: PlayerConnection,
     genreName: String,
     onBack: () -> Unit,
-    onOpenCollection: (JellyfinItem) -> Unit,
+    onOpenCollection: (CollectionItem) -> Unit,
     focusTick: Int = 0,
     initialFocus: Boolean = false,
     viewModel: GenreAlbumsViewModel = viewModel(
@@ -160,13 +178,16 @@ fun GenreScreen(
     val current by player.current.collectAsState()
     // Atmos badges on the genre page cost no extra scan: the catalog is a
     // session-wide result already warmed by Home's "Your Atmos" shelf.
-    val atmosAlbumIds = com.hans.aura.ui.common.rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
+    val atmosAlbumIds = com.hans.aura.ui.common.rememberAtmosAlbumIds(session.userId)
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val contentFocus = remember { FocusRequester() }
     val radioFocus = remember { FocusRequester() }
 
-    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
+    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper,
+        ready = !state.loading && (state.visibleAlbums.isNotEmpty() || state.visibleTracks.isNotEmpty()),
+        cancelled = (!state.loading || state.error != null) &&
+            state.visibleAlbums.isEmpty() && state.visibleTracks.isEmpty())
     com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, radioFocus)
 
     Column(Modifier.fillMaxSize()) {
@@ -197,13 +218,12 @@ fun GenreScreen(
                     radioBusy = true
                     scope.launch {
                         Mixes.playMix(
-                            api = app.jellyfin.api,
-                            userId = session.userId,
+                            media = app.container.media,
                             player = player,
                             kind = Mixes.Kind.GENRE,
                             // The seed carries the genre NAME; the endpoint is
                             // /MusicGenres/{name}/InstantMix.
-                            seed = JellyfinItem(id = "", name = genreName, type = "MusicGenre")
+                            seed = Genre(id = "", name = genreName)
                         )
                         radioBusy = false
                     }
@@ -296,22 +316,50 @@ private fun ScreenHeader(title: String, onBack: () -> Unit) {
     }
 }
 
-/** Genre tile: no artwork exists for genres, so it is a text plate. Focus is a
- *  thick amber ring + lifted fill so the cursor is never ambiguous. */
+private val GenrePalette = listOf(
+    Color(0xFF4A2545), // plum
+    Color(0xFF1E3A5F), // deep navy
+    Color(0xFF2E4A36), // forest
+    Color(0xFF5C2B29), // crimson
+    Color(0xFF3E3356), // indigo
+    Color(0xFF5A3D1E), // amber-umber
+    Color(0xFF1F4E5F), // teal
+    Color(0xFF4C392B), // espresso
+    Color(0xFF2D4356), // slate blue
+    Color(0xFF543344), // berry
+    Color(0xFF2B4C3F), // pine
+    Color(0xFF4B3D1F)  // ochre
+)
+
+internal fun genreCardColor(name: String): Color =
+    GenrePalette[(name.hashCode() and Int.MAX_VALUE) % GenrePalette.size]
+
+/** Visual genre card: deterministic rich gradient + rotated cover thumbnail. */
 @Composable
 private fun GenreTile(
     name: String,
     id: String,
+    artworkUrl: String?,
     focusKeeper: com.hans.aura.ui.common.FocusKeeper,
     onFocused: (String) -> Unit,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = AuraShapes.card
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.04f else 1f,
+        animationSpec = AuraMotion.scheme.fastSpatialSpec(),
+        label = "genreScale"
+    )
+    val base = remember(name) { genreCardColor(name) }
+    val shape = AuraShapes.cardHero
     Box(
         Modifier
-            .height(96.dp)
+            .height(128.dp)
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .focusRequester(focusKeeper.requesterFor(id))
             // onFocusChanged BEFORE clickable, or the flag never flips.
             .onFocusChanged {
@@ -320,17 +368,40 @@ private fun GenreTile(
             }
             .clickable { onClick() }
             .clip(shape)
-            .background(if (focused) SurfaceHigh else Surface)
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        if (focused) base.copy(alpha = 0.95f) else base,
+                        Color(0xFF14110E)
+                    )
+                )
+            )
             .then(if (focused) Modifier.border(3.dp, Accent, shape) else Modifier)
-            .padding(horizontal = 18.dp),
-        contentAlignment = Alignment.CenterStart
     ) {
+        if (artworkUrl != null) {
+            AsyncImage(
+                model = artworkUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 10.dp, y = 10.dp)
+                    .size(76.dp)
+                    .graphicsLayer { rotationZ = 12f }
+                    .clip(AuraShapes.card)
+                    .background(SurfaceHigh)
+            )
+        }
         androidx.tv.material3.Text(
-            name,
-            color = if (focused) TextPrimary else TextSecondary,
+            text = name,
+            color = TextPrimary,
             fontSize = 20.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 18.dp, top = 16.dp, end = 72.dp)
         )
     }
 }

@@ -22,8 +22,10 @@ import com.hans.aura.BuildConfig
 import com.hans.aura.data.APP_NAME
 import com.hans.aura.data.APP_VERSION
 import com.hans.aura.data.AuthStore
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 import com.hans.aura.data.Session
+import com.hans.aura.data.invalidateHistoryOnSuccess
+import com.hans.aura.player.controller.RepeatPlaybackAnchor
 import com.hans.aura.util.AuraLog
 import com.hans.aura.util.AuraTag
 import kotlinx.coroutines.cancel
@@ -76,6 +78,12 @@ class PlaybackService : MediaSessionService() {
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // Media3 1.6 deduplicates identical repeat transitions at the controller.
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+                    mediaSession?.broadcastCustomCommand(
+                        RepeatPlaybackAnchor.command, RepeatPlaybackAnchor.snapshot(player)
+                    )
+                }
                 if (player.volume != 1f) {
                     AuraLog.i(AuraTag.VOL, "restoring unity gain (was ${player.volume})")
                     player.volume = 1f
@@ -109,7 +117,7 @@ class PlaybackService : MediaSessionService() {
                 .also { it.start() }
             // Insert remote items without interrupting playback; only start
             // playing if the queue was empty beforehand.
-            fun enqueue(items: List<JellyfinItem>, at: Int) {
+            fun enqueue(items: List<Track>, at: Int) {
                 val wasEmpty = player.mediaItemCount == 0
                 val idx = if (wasEmpty) 0 else at
                 items.forEachIndexed { i, item ->
@@ -149,13 +157,13 @@ class PlaybackService : MediaSessionService() {
         android.os.Handler(android.os.Looper.getMainLooper()).post(block)
     }
 
-    private fun buildMediaItem(item: JellyfinItem): MediaItem {
+    private fun buildMediaItem(item: Track): MediaItem {
         val app = application as AuraApp
         // The URI is the source's business, not the service's: a build can point
         // at a different backend without this file changing.
         val uri = app.container.source.streamUri(
             itemId = item.id,
-            container = item.mediaSources?.firstOrNull()?.container,
+            container = item.container,
             serverUrl = app.jellyfin.auth.session?.serverUrl
         )
         return MediaItem.Builder()
@@ -275,11 +283,11 @@ private class AuthDataSourceFactory(
 internal class PlaybackReporter(
     private val jellyfin: com.hans.aura.data.JellyfinClient,
     private val player: Player,
+    private val scope: kotlinx.coroutines.CoroutineScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
+    ),
     private val isOutputReleased: () -> Boolean = { false }
 ) {
-    private val scope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
-    )
     private var playSessionId: String = java.util.UUID.randomUUID().toString()
     private var currentItemId: String? = null
     private var handler: android.os.Handler? = null
@@ -333,7 +341,7 @@ internal class PlaybackReporter(
                                             positionTicks = oldTicks,
                                             mediaSourceId = oldId
                                         )
-                                    )
+                                    ).invalidateHistoryOnSuccess(oldId)
                                 }.onFailure {
                                     AuraLog.w(AuraTag.REPORT, "stop failed: ${it.message}")
                                 }
@@ -359,7 +367,7 @@ internal class PlaybackReporter(
                                         repeatMode = repeatMode,
                                         playbackOrder = playbackOrder
                                     )
-                                )
+                                ).invalidateHistoryOnSuccess(id)
                             }.onFailure {
                                 AuraLog.w(AuraTag.REPORT, "playbackStart failed: ${it.message}")
                             }
@@ -416,7 +424,7 @@ internal class PlaybackReporter(
                                         positionTicks = ticks,
                                         mediaSourceId = oldId
                                     )
-                                )
+                                ).invalidateHistoryOnSuccess(oldId)
                             }.onFailure {
                                 AuraLog.w(AuraTag.REPORT, "stop failed: ${it.message}")
                             }

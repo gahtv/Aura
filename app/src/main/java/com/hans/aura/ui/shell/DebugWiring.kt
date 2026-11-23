@@ -9,6 +9,11 @@ import com.hans.aura.ui.common.ContextMenus
 import com.hans.aura.ui.nav.NavSpec
 import com.hans.aura.ui.nav.NavState
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.data.SourceQueries
+import com.hans.aura.model.Album
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 
 /**
  * Debug deep-link wiring (adb extras, see ui/DebugNav.kt): jump straight to a
@@ -45,11 +50,7 @@ internal fun DebugWiring(
             }
             if (link.autoplay) {
                 runCatching {
-                    app.jellyfin.auth.session ?: return@collect
-                    val result = com.hans.aura.data.SourceQueries.items(
-                        includeItemTypes = "Audio",
-                        recursive = true, sortBy = "Random", limit = 1, startIndex = 0
-                    )
+                    val result = SourceQueries.randomTracks(limit = 1)
                     if (result.items.isNotEmpty()) player.playQueue(result.items, 0, resume = false)
                     android.util.Log.d(
                         "AURA_NAV",
@@ -65,19 +66,26 @@ internal fun DebugWiring(
             link.menuItem?.let { itemId ->
                 kotlinx.coroutines.delay(1000)
                 runCatching {
-                    val session = app.jellyfin.auth.session ?: return@collect
-                    val item = app.jellyfin.api.getItem(itemId = itemId, userId = session.userId)
-                    val spec = if (item.type == "Audio") {
-                        ContextMenus.forTrack(
+                    val item = SourceQueries.item(itemId) ?: error("Item not found: $itemId")
+                    val spec = when (item) {
+                        is Track -> ContextMenus.forTrack(
                             app, player, this, item,
                             onOpenArtist = { nav.actions.onOpenArtist(it) },
                             onOpenCollection = { nav.actions.onOpenCollection(it) }
                         )
-                    } else {
-                        ContextMenus.forAlbum(
+                        is com.hans.aura.model.Album -> ContextMenus.forAlbum(
                             app, player, this, item,
                             onOpenArtist = { nav.actions.onOpenArtist(it) }
                         )
+                        is Playlist -> ContextMenus.forAlbum(
+                            app, player, this, item,
+                            onOpenArtist = { nav.actions.onOpenArtist(it) }
+                        )
+                        is com.hans.aura.model.Genre -> ContextMenus.forAlbum(
+                            app, player, this, item,
+                            onOpenArtist = { nav.actions.onOpenArtist(it) }
+                        )
+                        is com.hans.aura.model.Artist -> error("Item $itemId cannot open a track/album context menu")
                     }
                     android.util.Log.d(
                         "AURA_MENU",

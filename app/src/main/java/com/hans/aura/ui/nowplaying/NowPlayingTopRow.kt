@@ -25,10 +25,10 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.hans.aura.data.JellyfinItem
+import androidx.tv.material3.MaterialTheme
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.ContextMenuHost
 import com.hans.aura.ui.player.PlayerConnection.Companion.isAtmos
-import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -49,9 +49,8 @@ import com.hans.aura.ui.theme.TextSecondary
 internal fun NowPlayingTopRow(
     visible: Boolean,
     lyricsMode: Boolean,
-    item: JellyfinItem?,
-    queue: List<JellyfinItem>,
-    accent: Color,
+    item: Track?,
+    queue: List<Track>,
     onBack: () -> Unit,
     onOpenQueue: () -> Unit,
     onFindLyrics: (() -> Unit)?,
@@ -75,7 +74,7 @@ internal fun NowPlayingTopRow(
     ) {
         NpControlButton(label = "Back", onClick = onBack)
         Spacer(Modifier.weight(1f))
-        if (isAtmos(item)) AtmosBadge(color = accent)
+        if (isAtmos(item)) AtmosBadge()
         Spacer(Modifier.weight(1f))
         NpControlButton(label = "Queue", onClick = onOpenQueue)
         Spacer(Modifier.width(AuraSpacing.sm))
@@ -105,15 +104,17 @@ internal fun NowPlayingTopRow(
 }
 
 @Composable
-fun AtmosBadge(color: Color = Accent) {
+fun AtmosBadge() {
+    val colors = MaterialTheme.colorScheme
     Box(
         Modifier
-            .background(color.copy(alpha = 0.20f), AuraShapes.badge)
+            .background(colors.tertiaryContainer, AuraShapes.badge)
             .padding(horizontal = AuraSpacing.sm, vertical = AuraSpacing.xxs)
     ) {
         androidx.tv.material3.Text(
             "DD+ \u2022 ATMOS",
-            color = color, fontSize = AuraTypography.caption,
+            color = colors.onTertiaryContainer,
+            fontSize = AuraTypography.caption,
             fontWeight = FontWeight.SemiBold
         )
     }
@@ -132,6 +133,7 @@ internal fun NpControlButton(
     active: Boolean = false,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.control
     val bg by animateColorAsState(
@@ -159,7 +161,7 @@ internal fun NpControlButton(
             label,
             color = when {
                 !enabled -> TextSecondary
-                active -> Accent
+                active -> colors.primary
                 else -> TextPrimary
             },
             fontSize = AuraTypography.bodySmall,

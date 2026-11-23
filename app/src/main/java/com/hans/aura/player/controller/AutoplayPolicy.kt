@@ -5,6 +5,7 @@ import androidx.media3.common.Player
 import com.hans.aura.data.JellyfinClient
 import com.hans.aura.data.Prefs
 import com.hans.aura.data.Session
+import com.hans.aura.data.toTracks
 import com.hans.aura.util.AuraLog
 import com.hans.aura.util.AuraTag
 import kotlinx.coroutines.CoroutineScope
@@ -65,6 +66,7 @@ class AutoplayPolicy(
                     .filter { it.id !in known && it.type != "MusicAlbum" }
                     .distinctBy { it.id }
                     .take(20)
+                    .toTracks()
             }.onFailure {
                 AuraLog.w(AuraTag.AUTOPLAY, "instant mix failed: ${it.message}")
             }.getOrDefault(emptyList())

@@ -4,6 +4,7 @@ package com.hans.aura.ui.nowplaying
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -141,6 +142,7 @@ internal fun QueuePeekOverlay(
                 .border(AuraSizes.hairline, Border, AuraShapes.sheet)
                 // Focus can never leave the panel while it is up.
                 .focusProperties { onExit = { cancelFocusChange() } }
+                .focusGroup()
                 .padding(vertical = AuraSpacing.xs)
         ) {
             Row(

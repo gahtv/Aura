@@ -81,14 +81,22 @@ object Favorites {
      *
      * Keys (verified against the call sites): "home_recent:<userId>",
      * "col:<albumId>" for the album tracklist, and the library tab keys
-     * "lib_tracks:<userId>:<sort>:<desc>" / "lib_liked:<userId>:<sort>:<desc>"
-     * — the sort+direction part means a family eviction, not one key.
+     * for Tracks and Liked, including hydrated Atmos favorites. Each list can
+     * be cached under multiple sorts and library selections.
      */
     private fun evictCaches(userId: String, item: JellyfinItem) {
         LibraryCache.evict("home_recent:$userId")
         item.albumId?.let { LibraryCache.evict("col:$it") }
-        LibraryCache.evictWhere { it.startsWith("lib_tracks:") || it.startsWith("lib_liked:") }
-        PagedLibrary.evictWhere { it.startsWith("lib_tracks:") || it.startsWith("lib_liked:") }
+        fun isLikedAtmosKey(key: String) = key.substringBefore('#').endsWith(":fav")
+        fun isAffectedPage(key: String): Boolean =
+            key.startsWith("lib_tracks:$userId:") || key.startsWith("lib_liked:$userId:") ||
+                (key.startsWith("lib_atmos_tracks:$userId:") && isLikedAtmosKey(key))
+
+        LibraryCache.evictWhere { key ->
+            isAffectedPage(key) ||
+                (key.startsWith("atmos_audio:$userId:") && isLikedAtmosKey(key))
+        }
+        PagedLibrary.evictWhere(::isAffectedPage)
         Log.d(TAG, "evict item=${item.id} album=${item.albumId ?: "-"} userId=$userId")
     }
 

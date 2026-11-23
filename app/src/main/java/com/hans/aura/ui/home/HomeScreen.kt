@@ -36,6 +36,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -138,22 +139,12 @@ fun HomeScreen(
     val focusKeeper = remember { FocusKeeper() }
     var focusedCardId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     var focusedShelfKey by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    var savedShelfIndex by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
-    var savedShelfOffset by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     val listState = rememberLazyListState()
     val motionWindow by remember(listState) {
         derivedStateOf { listMotionWindow(listState.layoutInfo) }
     }
 
-    fun saveShelfPosition() {
-        listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == focusedShelfKey }?.let {
-            savedShelfIndex = it.index
-            savedShelfOffset = it.offset
-        }
-    }
-
     fun trackMenu(track: JellyfinItem) {
-        saveShelfPosition()
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forTrack(
                 app, player, scope, track,
@@ -163,7 +154,6 @@ fun HomeScreen(
     }
 
     fun albumMenu(item: JellyfinItem) {
-        saveShelfPosition()
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forAlbum(
                 app, player, scope, item, onOpenArtist = onOpenArtist
@@ -172,7 +162,6 @@ fun HomeScreen(
     }
 
     fun openItem(item: JellyfinItem, shelfList: List<JellyfinItem>?, idx: Int) {
-        saveShelfPosition()
         when (item.type) {
             "MusicArtist" -> onOpenArtist(item)
             "Audio" -> onPlayTrack(item, shelfList ?: listOf(item), idx.coerceAtLeast(0))
@@ -264,7 +253,6 @@ fun HomeScreen(
                         onFocused = { onItemFocused(it, "shelf_recent_played") },
                         onLongPress = { trackMenu(it) },
                         onOpen = { item, idx ->
-                            saveShelfPosition()
                             onPlayTrack(item, state.recentlyPlayed ?: listOf(item), idx)
                         }
                     )
@@ -280,7 +268,7 @@ fun HomeScreen(
                         serverUrl = serverUrl,
                         focusKeeper = focusKeeper,
                         onFocused = { onItemFocused(it, "shelf_recent_artists") },
-                        onOpen = { item, _ -> saveShelfPosition(); onOpenArtist(item) }
+                        onOpen = { item, _ -> onOpenArtist(item) }
                     )
                 }
             }
@@ -294,7 +282,7 @@ fun HomeScreen(
                     focusKeeper = focusKeeper,
                     onFocused = { onItemFocused(it, "shelf_recent_albums") },
                     onLongPress = { albumMenu(it) },
-                    onOpen = { item, _ -> saveShelfPosition(); onOpenCollection(item) }
+                    onOpen = { item, _ -> onOpenCollection(item) }
                 )
             }
             homeItem(key = "shelf_atmos", contentType = "shelf", items = state.atmosAlbums) { index ->
@@ -308,7 +296,7 @@ fun HomeScreen(
                     onFocused = { onItemFocused(it, "shelf_atmos") },
                     badgeFor = { "ATMOS" },
                     onLongPress = { albumMenu(it) },
-                    onOpen = { item, _ -> saveShelfPosition(); onOpenCollection(item) }
+                    onOpen = { item, _ -> onOpenCollection(item) }
                 )
             }
             homeItem(key = "shelf_artists", contentType = "shelf", items = state.artists) { index ->
@@ -320,7 +308,7 @@ fun HomeScreen(
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
                     onFocused = { onItemFocused(it, "shelf_artists") },
-                    onOpen = { item, _ -> saveShelfPosition(); onOpenArtist(item) }
+                    onOpen = { item, _ -> onOpenArtist(item) }
                 )
             }
             if (!state.playlists.isNullOrEmpty()) {
@@ -334,7 +322,7 @@ fun HomeScreen(
                         focusKeeper = focusKeeper,
                         onFocused = { onItemFocused(it, "shelf_playlists") },
                         onLongPress = { albumMenu(it) },
-                        onOpen = { item, _ -> saveShelfPosition(); onOpenCollection(item) }
+                        onOpen = { item, _ -> onOpenCollection(item) }
                     )
                 }
             }
@@ -345,7 +333,7 @@ fun HomeScreen(
         val savedCardAvailable = rows.firstOrNull { it.key == focusedShelfKey }?.items.orEmpty()
             .any { it.id == focusedCardId?.removePrefix("qa:") && AtmosFilter.keep(it) }
         val shelfReady = homeShelfReady(focusTick, listState, rows.map { it.key }, focusedShelfKey,
-            savedShelfIndex, savedShelfOffset, savedCardAvailable)
+            savedCardAvailable)
         RestoreFocusOnBack(focusTick, contentFocus, focusedCardId, focusKeeper,
             ready = (quickAccessItems.isNotEmpty() || itemsById.values.any { AtmosFilter.keep(it) }) &&
                 (focusedCardId == null || (savedCardAvailable && shelfReady) ||
@@ -366,18 +354,30 @@ internal fun homeShelfReady(
     listState: LazyListState,
     rowKeys: List<String>,
     shelfKey: String?,
-    savedIndex: Int,
-    savedOffset: Int,
     cardAvailable: Boolean
 ): Boolean {
-    var ready by remember(focusTick) { mutableStateOf(focusTick <= 0) }
+    var savedIndex by rememberSaveable { mutableStateOf(0) }
+    var savedOffset by rememberSaveable { mutableStateOf(0) }
+    var ready by remember(focusTick) { mutableStateOf(focusTick <= 0 || shelfKey == null) }
+    LaunchedEffect(ready, listState, shelfKey) {
+        if (!ready) return@LaunchedEffect
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == shelfKey }?.let { it.index to it.offset }
+        }
+            .collect { shelf ->
+                if (shelf != null) {
+                    savedIndex = shelf.first
+                    savedOffset = shelf.second
+                }
+            }
+    }
     LaunchedEffect(focusTick, rowKeys, shelfKey, cardAvailable) {
         val index = rowKeys.indexOf(shelfKey)
         if (ready || !cardAvailable || index < 0) return@LaunchedEffect
-        val layout = snapshotFlow { listState.layoutInfo }.first {
+        snapshotFlow { listState.layoutInfo }.first {
             it.totalItemsCount == rowKeys.size && it.visibleItemsInfo.isNotEmpty()
         }
-        if (index != savedIndex || layout.visibleItemsInfo.none { it.key == shelfKey }) {
+        if (index != savedIndex) {
             listState.scrollToItem(index, -savedOffset)
         }
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { it.key == shelfKey } }.first { it }

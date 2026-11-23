@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AtmosFilter
+import com.hans.aura.data.Favorites
 import com.hans.aura.data.ItemsResponse
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
@@ -39,6 +40,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -206,6 +208,61 @@ class LibraryViewModelTest {
         }
     }
 
+    @Test
+    fun `returning to Liked after a favorite change fetches the current list`() = runBlocking {
+        MockWebServer().use { server ->
+            val userId = server.signIn()
+            server.enqueue(MockResponse().setBody("""
+                {"Items":[{"Id":"liked-track","UserData":{"IsFavorite":true}}],"TotalRecordCount":1}
+            """.trimIndent()))
+            val model = model("Tracks", likedOnly = true)
+            withTimeout(5000) {
+                model.viewModelScope.coroutineContext.job.children.toList().forEach { it.join() }
+            }
+            val likedTrack = model.state.value.items.single()
+            assertEquals("liked-track", likedTrack.id)
+            val key = model.state.value.cacheKey
+            assertEquals(listOf(likedTrack), PagedLibrary.get(key)?.items)
+            val filter = server.takeRequest(5, TimeUnit.SECONDS)?.requestUrl?.queryParameter("Filters")
+            assertEquals("IsFavorite", filter)
+
+            server.enqueue(MockResponse().setBody("""{"IsFavorite":false}"""))
+            assertEquals(false, Favorites.toggle(app.jellyfin.api, userId, likedTrack))
+            assertNull(LibraryCache.get(key))
+            assertNull(PagedLibrary.get(key))
+
+            server.enqueue(MockResponse().setBody("""{"Items":[],"TotalRecordCount":0}"""))
+            model.refreshLikedIfEvicted()
+            val refreshed = withTimeout(5000) { model.state.first { !it.loading && it.total == 0 } }
+            assertTrue(refreshed.items.isEmpty())
+        }
+    }
+
+    @Test
+    fun `refreshing Liked keeps the previously loaded range available for focus restoration`() = runBlocking {
+        MockWebServer().use { server ->
+            val userId = server.signIn()
+            val key = "lib_liked:$userId:SortName:false"
+            val tracks = List(65) { JellyfinItem(id = "track-$it") }
+            PagedLibrary.put(key, tracks, total = 90)
+            val model = model("Tracks", likedOnly = true)
+            assertEquals(tracks, model.state.value.items)
+
+            PagedLibrary.evictWhere { it == key }
+            model.refreshLikedIfEvicted()
+            assertEquals(tracks, model.state.value.items)
+            val request = server.takeRequest(5, TimeUnit.SECONDS)?.requestUrl
+            assertEquals("0", request?.queryParameter("StartIndex"))
+            assertEquals("65", request?.queryParameter("Limit"))
+
+            val remaining = tracks.drop(1) + JellyfinItem(id = "track-65")
+            val itemsJson = remaining.joinToString(",") { """{"Id":"${it.id}"}""" }
+            server.enqueue(MockResponse().setBody("""{"Items":[$itemsJson],"TotalRecordCount":89}"""))
+            val refreshed = withTimeout(5000) { model.state.first { !it.loading && it.total == 89 } }
+            assertEquals(remaining.map { it.id }, refreshed.items.map { it.id })
+        }
+    }
+
     private fun MockWebServer.signIn(): String = "user".also { userId ->
         app.jellyfin.auth.installSession(Session(url("/").toString(), userId, "Test", "token", "device"))
     }
@@ -220,12 +277,12 @@ class LibraryViewModelTest {
         return model
     }
 
-    private fun model(kind: String = "Albums"): LibraryViewModel = ViewModelProvider(
+    private fun model(kind: String = "Albums", likedOnly: Boolean = false): LibraryViewModel = ViewModelProvider(
         object : ViewModelStoreOwner { override val viewModelStore = store },
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T =
-                LibraryViewModel(app, kind) as T
+                LibraryViewModel(app, kind, likedOnly) as T
         }
     )[LibraryViewModel::class.java]
 }

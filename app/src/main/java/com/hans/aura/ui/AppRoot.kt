@@ -3,7 +3,6 @@ package com.hans.aura.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,15 +39,17 @@ import com.hans.aura.ui.search.SearchScreen
 import com.hans.aura.ui.settings.SettingsScreen
 import com.hans.aura.ui.shell.DebugWiring
 import com.hans.aura.ui.shell.MirrorWiring
-import com.hans.aura.ui.shell.TopBar
+import com.hans.aura.ui.shell.NavigationRailLayout
+import com.hans.aura.ui.shell.RailDestination
 import com.hans.aura.ui.shell.endSession
+import com.hans.aura.ui.shell.rememberRailPlayback
 import com.hans.aura.ui.shell.switchSession
 import com.hans.aura.ui.theme.Canvas
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 /**
- * App shell: auth gate, then the top bar + a single destination host over the
+ * App shell: auth gate, then the navigation rail + a single destination host over the
  * back stack in [com.hans.aura.ui.nav.NavState]. All navigation intents arrive
  * through [com.hans.aura.ui.nav.NavActions]; remote and debug wiring live in
  * ui/shell.
@@ -67,7 +68,6 @@ fun AppRoot() {
     key(sessionGeneration) {
     val player = remember { PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session } }
     val nav = rememberNavState()
-    val actions = nav.actions
 
     val onSignedOut: () -> Unit = { signedIn = false }
     val exitSession: (String, Boolean) -> Unit = { action, forgetServer ->
@@ -118,9 +118,7 @@ fun AppRoot() {
 
     // System BACK pops our navigation stack (device back button / remote BACK).
     // On a root tab other than Home, BACK goes Home instead of exiting the app.
-    BackHandler(enabled = nav.stack.size > 1 || nav.top != Screen.Home) {
-        if (nav.stack.size > 1) nav.pop() else nav.resetToHome()
-    }
+    BackHandler(enabled = nav.stack.size > 1 || nav.top != Screen.Home, onBack = nav::back)
 
     // First playback of a session auto-opens Now Playing; BACK returns to
     // whatever screen started it. Later track changes don't re-push.
@@ -168,33 +166,29 @@ fun AppRoot() {
     val stateHolder = rememberSaveableStateHolder()
 
     FocusHandoffHost(Modifier.fillMaxSize().background(Canvas)) {
-        Column(Modifier.fillMaxSize()) {
-            // Now Playing is an immersive view (lyrics/transport fill the
-            // screen); the top bar comes back on any other screen. Any open
-            // full-screen overlay also hides it so it can't steal focus.
-            if (nav.top != Screen.NowPlaying && !OverlayVisibility.dialogOpen) {
-                TopBar(
-                    current = nav.top,
-                    onSelect = actions::onSelectTab,
-                    onOpenSearch = actions::onOpenSearch,
-                    onOpenSettings = actions::onOpenSettings,
-                    onOpenNowPlaying = actions::onOpenNowPlaying,
-                    player = player
-                )
-            }
-
-            Box(Modifier.fillMaxSize()) {
-                stateHolder.SaveableStateProvider(key = "${nav.stack.lastIndex}:${NavSpec.key(nav.top)}") {
-                    DestinationHost(
-                        app = app,
-                        player = player,
-                        nav = nav,
-                        endSession = exitSession,
-                        onSwitchProfile = onSwitchProfile,
-                        refreshKey = refreshKey,
-                        onRefreshKey = { refreshKey++ }
-                    )
+        val showRail = nav.top != Screen.NowPlaying && !OverlayVisibility.dialogOpen
+        NavigationRailLayout(
+            showRail = showRail,
+            selected = RailDestination.forStack(nav.stack),
+            playback = if (showRail) rememberRailPlayback(player, app.jellyfin.auth.session?.serverUrl) else null,
+            onSelect = { destination ->
+                when (destination) {
+                    RailDestination.Search -> nav.openSearch()
+                    RailDestination.NowPlaying -> nav.openNowPlaying()
+                    else -> nav.selectTab(destination.screen)
                 }
+            }
+        ) {
+            stateHolder.SaveableStateProvider(key = "${nav.stack.lastIndex}:${NavSpec.key(nav.top)}") {
+                DestinationHost(
+                    app = app,
+                    player = player,
+                    nav = nav,
+                    endSession = exitSession,
+                    onSwitchProfile = onSwitchProfile,
+                    refreshKey = refreshKey,
+                    onRefreshKey = { refreshKey++ }
+                )
             }
         }
         // Long-press context menus + their playlist picker, always on top.
@@ -266,16 +260,14 @@ private fun DestinationHost(
             focusTick = focusTick
         )
 
-        // Library tabs share the unified Library top-bar tab + category pills.
-        Screen.Artists, Screen.Albums, Screen.Tracks, Screen.Playlists -> LibraryScreen(
-            // Every arm above declares a libraryKind; tabLabel is the safe fallback.
-            app = app, kind = NavSpec.libraryKind(top) ?: NavSpec.tabLabel(top), player = player,
+        Screen.Artists, Screen.Albums, Screen.Tracks, Screen.Playlists, Screen.Liked -> LibraryScreen(
+            app = app, kind = requireNotNull(NavSpec.libraryKind(top)), player = player,
             refreshKey = refreshKey,
             focusTick = focusTick,
             onOpenCollection = actions::onOpenCollection,
             onOpenArtist = actions::onOpenArtist,
-            onOpenGenres = if (top == Screen.Albums) actions::onOpenGenres else null,
-            onSwitchCategory = actions::onSwitchLibraryCategory
+            onSwitchCategory = actions::onSwitchLibraryCategory,
+            likedOnly = top == Screen.Liked
         )
 
         Screen.Settings -> SettingsScreen(

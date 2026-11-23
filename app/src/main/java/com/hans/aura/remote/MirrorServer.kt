@@ -345,7 +345,7 @@ object MirrorServer {
                 }
             }))
             put("playing", player?.isPlaying?.value ?: false)
-            put("positionMs", player?.positionMs?.value ?: 0L)
+            put("positionMs", player?.currentPositionMs() ?: 0L)
             put("durationMs", player?.durationMs?.value ?: 0L)
             put("shuffle", player?.shuffleEnabled?.value ?: false)
             put("repeat", player?.repeatMode?.value ?: 0)

@@ -119,8 +119,10 @@ fun AppRoot() {
                             when (item) {
                                 is Artist -> nav.jumpTo(Screen.Artist(item), bumpFocus = true)
                                 is Track -> player.playQueue(listOf(item), 0, resume = false)
-                                is CollectionItem -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
-                                else -> Unit
+                                is com.hans.aura.model.Album -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                                is com.hans.aura.model.Playlist -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                                is com.hans.aura.model.Genre -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                                null -> Unit
                             }
                         }
                         .onFailure { android.util.Log.w("AURA_NAV", "intent open failed: ${it.message}") }

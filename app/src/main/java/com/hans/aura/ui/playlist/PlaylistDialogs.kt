@@ -129,10 +129,7 @@ fun PlaylistPickerDialog(
 
     LaunchedEffect(Unit) {
         runCatching {
-            SourceQueries.playlists(com.hans.aura.data.LibraryFilter.ItemsQuery(
-                includeItemTypes = "Playlist", recursive = true,
-                sortBy = "SortName", limit = 100
-            )).items
+            SourceQueries.playlists(limit = 100).items
         }.onSuccess {
             playlists = it
         }.onFailure { playlists = emptyList() }

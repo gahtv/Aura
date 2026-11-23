@@ -115,6 +115,15 @@ object SourceQueries {
         )
     )
 
+    /** Mixed server-side library search; hidden libraries are not queried. */
+    suspend fun searchLibrary(term: String, limit: Int = 50): MediaPage<MediaItem> = items(
+        LibraryFilter.ItemsQuery(
+            searchTerm = term, recursive = true,
+            includeItemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
+            limit = limit
+        )
+    )
+
     suspend fun artists(
         sortBy: String = "SortName",
         sortOrder: String = "Ascending",
@@ -146,6 +155,50 @@ object SourceQueries {
         cache(cacheKey, raw)
         return raw.toArtists()
     }
+
+
+    suspend fun recentlyAddedAlbums(limit: Int = 20, cacheKey: String? = null): MediaPage<Album> = albums(
+        LibraryFilter.ItemsQuery(
+            includeItemTypes = "MusicAlbum", recursive = true,
+            sortBy = "DateCreated", sortOrder = "Descending", limit = limit
+        ), cacheKey
+    )
+
+    suspend fun playlists(sortBy: String = "SortName", limit: Int = 100, cacheKey: String? = null): MediaPage<Playlist> = playlists(
+        LibraryFilter.ItemsQuery(
+            includeItemTypes = "Playlist", recursive = true,
+            sortBy = sortBy, limit = limit
+        ), cacheKey
+    )
+
+    suspend fun genreAlbums(genreName: String, limit: Int = 200, cacheKey: String? = null): MediaPage<Album> = albums(
+        LibraryFilter.ItemsQuery(
+            includeItemTypes = "MusicAlbum", genres = genreName, recursive = true,
+            sortBy = "SortName", sortOrder = "Ascending", limit = limit
+        ), cacheKey
+    )
+
+    suspend fun genreTracks(genreName: String, limit: Int = 100, cacheKey: String? = null): MediaPage<Track> = tracks(
+        LibraryFilter.ItemsQuery(
+            includeItemTypes = "Audio", genres = genreName, recursive = true,
+            sortBy = "SortName", sortOrder = "Ascending", limit = limit
+        ), cacheKey
+    )
+
+    /** Album/playlist rows in play order without touching the col:<id> cache. */
+    suspend fun tracklist(parentId: String, limit: Int = 500): List<Track> = tracks(
+        LibraryFilter.ItemsQuery(
+            parentId = parentId, includeItemTypes = "Audio",
+            sortBy = "ParentIndexNumber,IndexNumber", sortOrder = "Ascending", limit = limit
+        )
+    ).items
+
+    suspend fun randomTracks(limit: Int): MediaPage<Track> = tracks(
+        LibraryFilter.ItemsQuery(
+            includeItemTypes = "Audio", recursive = true,
+            sortBy = "Random", limit = limit, startIndex = 0
+        )
+    )
 
     /** Playlist or album tracks in their existing server order; every success updates col:<id>. */
     suspend fun collectionTracks(collection: CollectionItem): List<Track> {

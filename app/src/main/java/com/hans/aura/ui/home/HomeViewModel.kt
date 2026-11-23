@@ -5,7 +5,6 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
-import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.MusicSources
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -189,12 +188,7 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
         val recentAlbums = if (_state.value.recentAlbums == null) {
             async {
                 val items = shelf("recently added") {
-                    SourceQueries.albums(LibraryFilter.ItemsQuery(
-                            includeItemTypes = "MusicAlbum", recursive = true,
-                            sortBy = "DateCreated", sortOrder = "Descending", limit = 20
-                        ),
-                        cacheKey = "home_new:$uid"
-                    ).items
+                    SourceQueries.recentlyAddedAlbums(limit = 20, cacheKey = "home_new:$uid").items
                 }
                 _state.update { it.copy(recentAlbums = items) }
             }
@@ -223,10 +217,7 @@ class HomeViewModel(private val app: AuraApp) : ViewModel() {
             launch {
                 // Empty on a source without playlists: the shelf is then not drawn.
                 val items = shelf("playlists") {
-                    SourceQueries.playlists(LibraryFilter.ItemsQuery(
-                        includeItemTypes = "Playlist", recursive = true,
-                        sortBy = "SortName", limit = 50
-                    ), cacheKey = "home_playlists:$uid").items
+                    SourceQueries.playlists(limit = 50, cacheKey = "home_playlists:$uid").items
                 }
                 _state.update { it.copy(playlists = items) }
             }

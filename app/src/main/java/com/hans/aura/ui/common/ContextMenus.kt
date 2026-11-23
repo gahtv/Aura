@@ -263,20 +263,12 @@ object ContextMenus {
 
     /** All audio tracks of an album/playlist, newest last (play order). */
     private suspend fun albumTracks(app: AuraApp, album: CollectionItem): List<Track>? {
-        val userId = app.jellyfin.auth.session?.userId
-        if (userId == null) {
+        if (app.jellyfin.auth.session?.userId.isNullOrBlank()) {
             Log.w(TAG, "album tracks ${album.id} skipped: no session")
             return null
         }
-        if (userId.isBlank()) return null
         return runCatching {
-            SourceQueries.tracks(com.hans.aura.data.LibraryFilter.ItemsQuery(
-                parentId = album.id,
-                includeItemTypes = "Audio",
-                sortBy = "ParentIndexNumber,IndexNumber",
-                sortOrder = "Ascending",
-                limit = 500
-            )).items
+            SourceQueries.tracklist(album.id)
         }.onFailure { Log.w(TAG, "album tracks ${album.id} failed: ${it.message}") }
             .getOrNull()
     }

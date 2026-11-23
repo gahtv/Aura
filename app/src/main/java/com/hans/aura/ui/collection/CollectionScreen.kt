@@ -139,7 +139,7 @@ private fun CollectionContent(
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedTrackId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val atmosFiltered = collection is Album && com.hans.aura.data.AtmosFilter.on
-    val shownTracks = if (atmosFiltered) tracks?.let { it.filter { track -> track.id in com.hans.aura.data.AtmosFilter.trackIds() } } else tracks
+    val shownTracks = if (atmosFiltered) tracks?.let { it.filter { track -> com.hans.aura.data.AtmosFilter.keep(track) } } else tracks
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedTrackId, focusKeeper,
         ready = !shownTracks.isNullOrEmpty(),
         cancelled = shownTracks.isNullOrEmpty() && (shownTracks != null || state.error != null))

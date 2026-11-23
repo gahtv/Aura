@@ -6,7 +6,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
 import com.hans.aura.data.CatalogHit
-import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
@@ -227,13 +226,7 @@ class SearchViewModel(private val app: AuraApp) : ViewModel() {
         _state.update { it.copy(searching = true) }
         runCatching {
             withContext(Dispatchers.IO) {
-                // Search is a browse query: hidden libraries are not queried.
-                SourceQueries.items(LibraryFilter.ItemsQuery(
-                        searchTerm = term, recursive = true,
-                        includeItemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
-                        limit = 50
-                    )
-                )
+                SourceQueries.searchLibrary(term)
             }
         }.onSuccess { result ->
             _state.update {

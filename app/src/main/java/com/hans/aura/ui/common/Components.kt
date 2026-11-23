@@ -247,7 +247,7 @@ private fun subtitleOf(item: MediaItem): String = when (item) {
     is Artist -> "Artist"
     is Playlist -> "Playlist"
     is Track -> item.artistNames.ifBlank { "" }
-    else -> ""
+    is Genre -> ""
 }
 
 /** One track row: index/title left, artist, duration right. */
@@ -422,15 +422,8 @@ fun ItemShelf(
     // Applied to the scrolling row.
     modifier: Modifier = Modifier
 ) {
-    // "Only Atmos" (Settings) filters shelves without a second request: artists
-    // pass through, albums/tracks must be in the Atmos catalog.
-    val shown = items?.let { list -> list.filter { item ->
-            when (item) {
-                is Album -> !com.hans.aura.data.AtmosFilter.on || item.id in com.hans.aura.data.AtmosFilter.albumIds()
-                is Track -> !com.hans.aura.data.AtmosFilter.on || item.id in com.hans.aura.data.AtmosFilter.trackIds()
-                else -> true
-            }
-        } }
+    // "Only Atmos" (Settings) filters shelves without a second request.
+    val shown = items?.filter { com.hans.aura.data.AtmosFilter.keep(it) }
     val listState = rememberLazyListState()
     when {
         items == null -> {
@@ -476,15 +469,7 @@ fun ItemShelf(
                 itemsIndexed(
                     items = shown,
                     key = { _, item -> item.id },
-                    contentType = { _, item ->
-                        when (item) {
-                            is Track -> "Audio"
-                            is Album -> "MusicAlbum"
-                            is Artist -> "MusicArtist"
-                            is Playlist -> "Playlist"
-                            is Genre -> "MusicGenre"
-                        }
-                    }
+                    contentType = { _, item -> item::class }
                 ) { idx, item ->
                     ArtworkCard(
                         item = item,

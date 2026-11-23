@@ -9,7 +9,6 @@ import com.hans.aura.ui.common.ContextMenus
 import com.hans.aura.ui.nav.NavSpec
 import com.hans.aura.ui.nav.NavState
 import com.hans.aura.ui.player.PlayerConnection
-import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.SourceQueries
 import com.hans.aura.model.Album
 import com.hans.aura.model.CollectionItem
@@ -51,10 +50,7 @@ internal fun DebugWiring(
             }
             if (link.autoplay) {
                 runCatching {
-                    val result = SourceQueries.tracks(LibraryFilter.ItemsQuery(
-                        includeItemTypes = "Audio",
-                        recursive = true, sortBy = "Random", limit = 1, startIndex = 0
-                    ))
+                    val result = SourceQueries.randomTracks(limit = 1)
                     if (result.items.isNotEmpty()) player.playQueue(result.items, 0, resume = false)
                     android.util.Log.d(
                         "AURA_NAV",
@@ -77,11 +73,19 @@ internal fun DebugWiring(
                             onOpenArtist = { nav.actions.onOpenArtist(it) },
                             onOpenCollection = { nav.actions.onOpenCollection(it) }
                         )
-                        is CollectionItem -> ContextMenus.forAlbum(
+                        is com.hans.aura.model.Album -> ContextMenus.forAlbum(
                             app, player, this, item,
                             onOpenArtist = { nav.actions.onOpenArtist(it) }
                         )
-                        else -> error("Item $itemId cannot open a track/album context menu")
+                        is Playlist -> ContextMenus.forAlbum(
+                            app, player, this, item,
+                            onOpenArtist = { nav.actions.onOpenArtist(it) }
+                        )
+                        is com.hans.aura.model.Genre -> ContextMenus.forAlbum(
+                            app, player, this, item,
+                            onOpenArtist = { nav.actions.onOpenArtist(it) }
+                        )
+                        is com.hans.aura.model.Artist -> error("Item $itemId cannot open a track/album context menu")
                     }
                     android.util.Log.d(
                         "AURA_MENU",

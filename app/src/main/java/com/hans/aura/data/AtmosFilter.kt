@@ -3,6 +3,12 @@ package com.hans.aura.data
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.Genre
+import com.hans.aura.model.MediaItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 
 /**
  * "Only Atmos" as an app-wide filter.
@@ -52,18 +58,20 @@ object AtmosFilter {
     fun trackIds(): Set<String> = catalog.trackIds
 
     /** True when [item] should be shown under the current preference. */
-    fun keep(item: JellyfinItem): Boolean = when {
-        !on -> true
-        item.type == "MusicAlbum" -> item.id in catalog.albumIds
-        item.type == "Audio" -> item.id in catalog.trackIds
-        // Artists/playlists/genres are not filtered: an artist with both copies
-        // must stay reachable, and filtering a playlist would hide its contents.
-        else -> true
+    fun keep(item: MediaItem): Boolean {
+        if (!on) return true
+        return when (item) {
+            is Album -> item.id in catalog.albumIds
+            is Track -> item.id in catalog.trackIds
+            // Artists/playlists/genres are not filtered: an artist with both copies
+            // must stay reachable, and filtering a playlist would hide its contents.
+            is Artist, is Playlist, is Genre -> true
+        }
     }
 
     fun albums(list: List<JellyfinItem>): List<JellyfinItem> =
-        if (!on) list else list.filter { keep(it) }
+        if (!on) list else list.filter { it.id in catalog.albumIds }
 
     fun tracks(list: List<JellyfinItem>): List<JellyfinItem> =
-        if (!on) list else list.filter { keep(it) }
+        if (!on) list else list.filter { it.id in catalog.trackIds }
 }

@@ -61,6 +61,7 @@ import com.hans.aura.data.AtmosFilter
 import com.hans.aura.model.Album
 import com.hans.aura.model.Artist
 import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Genre
 import com.hans.aura.model.MediaItem
 import com.hans.aura.model.Playlist
 import com.hans.aura.model.Track
@@ -96,11 +97,7 @@ private data class HomeRow(
     val content: @Composable LazyItemScope.(Int, FocusKeeper) -> Unit
 )
 
-private fun keepForHome(item: MediaItem): Boolean = when (item) {
-    is Album -> !AtmosFilter.on || item.id in AtmosFilter.albumIds()
-    is Track -> !AtmosFilter.on || item.id in AtmosFilter.trackIds()
-    else -> true
-}
+private fun keepForHome(item: MediaItem): Boolean = AtmosFilter.keep(item)
 
 @Composable
 fun HomeScreen(
@@ -127,13 +124,7 @@ fun HomeScreen(
     LaunchedEffect(refreshKey) { viewModel.onRefreshKey(refreshKey) }
 
     val quickAccessItems = remember(state) {
-        state.quickAccess.filter { item ->
-            when (item) {
-                is Album -> !AtmosFilter.on || item.id in AtmosFilter.albumIds()
-                is Track -> !AtmosFilter.on || item.id in AtmosFilter.trackIds()
-                else -> true
-            }
-        }
+        state.quickAccess.filter(::keepForHome)
     }
     val itemsById = remember(state) {
         buildMap {
@@ -189,7 +180,9 @@ fun HomeScreen(
                 val index = queue.indexOf(item).takeIf { it >= 0 } ?: idx.coerceAtLeast(0)
                 onPlayTrack(item, queue, index)
             }
-            else -> (item as? CollectionItem)?.let { onOpenCollection(it) } ?: Unit
+            is Album -> onOpenCollection(item)
+            is Playlist -> onOpenCollection(item)
+            is Genre -> onOpenCollection(item)
         }
     }
 
@@ -257,9 +250,11 @@ fun HomeScreen(
                         onOpen = { item -> openItem(item, listOf(item), 0) },
                         onLongPress = { item ->
                             when (item) {
+                                is Artist -> Unit
                                 is Track -> trackMenu(item)
-                                is CollectionItem -> albumMenu(item)
-                                else -> Unit
+                                is Album -> albumMenu(item)
+                                is Playlist -> albumMenu(item)
+                                is Genre -> albumMenu(item)
                             }
                         }
                     )
@@ -492,7 +487,7 @@ private fun HomeLivePreviewHero(
                         is Artist -> "ARTIST"
                         is Playlist -> "PLAYLIST"
                         is Track -> "TRACK"
-                        else -> ""
+                        is Genre -> ""
                     }
                     androidx.tv.material3.Text(
                         text = typeLabel,
@@ -515,7 +510,8 @@ private fun HomeLivePreviewHero(
                     is Album -> item.albumArtist ?: item.artistNames
                     is Track -> listOfNotNull(item.artistNames.takeIf { it.isNotBlank() }, item.album).joinToString(" · ")
                     is Playlist -> item.childCount?.let { "$it tracks" } ?: "Playlist"
-                    else -> ""
+                    is Artist -> ""
+                    is Genre -> ""
                 }
                 if (subtitle.isNotBlank()) {
                     androidx.tv.material3.Text(

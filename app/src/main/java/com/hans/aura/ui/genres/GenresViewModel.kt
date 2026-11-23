@@ -6,7 +6,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AtmosFilter
-import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.SourceQueries
 import com.hans.aura.model.Album
 import com.hans.aura.model.Genre
@@ -66,10 +65,10 @@ data class GenreAlbumsUiState(
     val loading: Boolean get() = albums == null && tracks == null
 
     val visibleAlbums: List<Album>
-        get() = if (!AtmosFilter.on) albums.orEmpty() else albums.orEmpty().filter { it.id in AtmosFilter.albumIds() }
+        get() = albums.orEmpty().filter { AtmosFilter.keep(it) }
 
     val visibleTracks: List<Track>
-        get() = if (!AtmosFilter.on) tracks.orEmpty() else tracks.orEmpty().filter { it.id in AtmosFilter.trackIds() }
+        get() = tracks.orEmpty().filter { AtmosFilter.keep(it) }
 }
 
 /** One genre page: its albums grid, with the full track list as the fallback. */
@@ -102,24 +101,10 @@ class GenreAlbumsViewModel(
                 val needTracks = _state.value.tracks == null
                 val fetched = withContext(Dispatchers.IO) {
                     val albums = if (needAlbums) {
-                        SourceQueries.albums(LibraryFilter.ItemsQuery(
-                            includeItemTypes = "MusicAlbum",
-                            genres = genreName,
-                            recursive = true,
-                            sortBy = "SortName",
-                            sortOrder = "Ascending",
-                            limit = 200
-                        ), cacheKey = "genre_albums:$genreName").items
+                        SourceQueries.genreAlbums(genreName, cacheKey = "genre_albums:$genreName").items
                     } else null
                     val tracks = if (needTracks) {
-                        SourceQueries.tracks(LibraryFilter.ItemsQuery(
-                            includeItemTypes = "Audio",
-                            genres = genreName,
-                            recursive = true,
-                            sortBy = "SortName",
-                            sortOrder = "Ascending",
-                            limit = 100
-                        ), cacheKey = "genre_tracks:$genreName").items
+                        SourceQueries.genreTracks(genreName, cacheKey = "genre_tracks:$genreName").items
                     } else null
                     albums to tracks
                 }

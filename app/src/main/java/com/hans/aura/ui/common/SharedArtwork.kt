@@ -31,7 +31,7 @@ internal val LocalArtworkVisibility = compositionLocalOf<AnimatedVisibilityScope
 /** Whether this destination may accept focus. */
 internal val LocalDestinationActive = compositionLocalOf { true }
 /** Composition key of the selected artwork occurrence. */
-internal val LocalArtworkSource = compositionLocalOf<MutableState<Int?>?> { null }
+internal val LocalArtworkSource = compositionLocalOf<MutableState<Long?>?> { null }
 /** Corner endpoints for matching artwork within one transition host. */
 internal val LocalArtworkCorners = compositionLocalOf<MutableMap<String, ArtworkCorners>?> { null }
 

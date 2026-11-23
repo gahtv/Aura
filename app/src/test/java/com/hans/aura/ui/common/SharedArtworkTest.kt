@@ -14,7 +14,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.currentCompositeKeyHash
+import androidx.compose.runtime.currentCompositeKeyHashCode
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -105,12 +105,12 @@ class SharedArtworkTest {
     @Test
     fun duplicateAlbumOccurrencesHaveDistinctStableCompositionKeys() {
         val refresh = mutableStateOf(0)
-        val tokens = mutableMapOf<String, Int>()
+        val tokens = mutableMapOf<String, Long>()
         compose.setContent {
             refresh.value
             for (shelf in listOf("recent", "favorites")) key(shelf) {
                 key("album") {
-                    val token = currentCompositeKeyHash
+                    val token = currentCompositeKeyHashCode
                     tokens.put(shelf, token)?.let { assertEquals(it, token) }
                 }
             }

@@ -32,7 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.currentCompositeKeyHash
+import androidx.compose.runtime.currentCompositeKeyHashCode
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -92,7 +92,7 @@ fun ArtworkCard(
 ) {
     val colors = MaterialTheme.colorScheme
     val artworkSource = LocalArtworkSource.current
-    val artworkToken = currentCompositeKeyHash
+    val artworkToken = currentCompositeKeyHashCode
     val sharedArtwork = if (!circular && artworkSource?.value == artworkToken) {
         Modifier.sharedArtwork(item.id, AuraShapes.cardRadius)
     } else Modifier.clip(if (circular) CircleShape else AuraShapes.card)

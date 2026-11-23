@@ -213,7 +213,7 @@ fun AppRoot() {
                         entryPendingFocus = nav.pendingFocus
                     }
                     stateHolder.SaveableStateProvider(key = "$index:${NavSpec.key(screen)}") {
-                        val artworkSource = rememberSaveable { mutableStateOf<Int?>(null) }
+                        val artworkSource = rememberSaveable { mutableStateOf<Long?>(null) }
                         CompositionLocalProvider(
                             LocalArtworkTransition provides this@SharedTransitionLayout,
                             LocalArtworkVisibility provides this@AnimatedContent,

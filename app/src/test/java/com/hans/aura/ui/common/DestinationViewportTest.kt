@@ -1,8 +1,14 @@
 package com.hans.aura.ui.common
 
 import androidx.activity.ComponentActivity
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -15,6 +21,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import com.hans.aura.ui.theme.AuraMotion
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -27,69 +34,68 @@ class DestinationViewportTest {
 
     @Test
     fun outgoingAlbumRetainsItsScreenPositionWhenRailDisappears() =
-        assertInactivePositionRetained(initialRail = true)
+        assertStableEntryViewport(initialNowPlaying = false)
 
     @Test
     fun outgoingNowPlayingRetainsItsScreenPositionWhenRailReturns() =
-        assertInactivePositionRetained(initialRail = false)
+        assertStableEntryViewport(initialNowPlaying = true)
 
-    private fun assertInactivePositionRetained(initialRail: Boolean) {
-        val active = mutableStateOf(true)
-        var x = 0f
+    private fun assertStableEntryViewport(initialNowPlaying: Boolean) {
+        val nowPlaying = mutableStateOf(initialNowPlaying)
+        val positions = mutableMapOf<Boolean, Float>()
+        val states = mutableMapOf<Boolean, List<androidx.compose.foundation.lazy.LazyListState>>()
         compose.setContent {
-            val showRail = if (active.value) initialRail else !initialRail
             Box(Modifier.width(380.dp).height(200.dp)) {
-                Box(Modifier.padding(start = if (showRail) 80.dp else 0.dp)) {
-                    DestinationFocusGate(active.value) {
-                        Box(Modifier.width(50.dp).height(50.dp).onGloballyPositioned {
-                            x = it.positionInRoot().x
-                        })
-                    }
-                }
-            }
-        }
-        var original = 0f
-        compose.runOnIdle {
-            original = x
-            active.value = false
-        }
-        compose.waitForIdle()
-        compose.runOnIdle { assertEquals(original, x, 0.01f) }
-    }
-
-    @Test
-    fun inactiveDestinationRetainsEndOfShelfOffsetsWhenRailDisappears() {
-        val active = mutableStateOf(true)
-        val offsets = mutableListOf<Pair<Int, Int>>()
-        val states = mutableListOf<androidx.compose.foundation.lazy.LazyListState>()
-        compose.setContent {
-            Box(Modifier.width(if (active.value) 300.dp else 380.dp).height(200.dp)) {
-                DestinationFocusGate(active.value) {
-                    Column {
-                        repeat(2) { row ->
-                            val state = rememberLazyListState()
-                            if (states.size <= row) states.add(state)
-                            LazyRow(state = state, modifier = Modifier.height(80.dp)) {
-                                items(20) { Box(Modifier.width(90.dp).height(80.dp)) }
+                SharedTransitionLayout {
+                    AnimatedContent(
+                        targetState = nowPlaying.value,
+                        modifier = Modifier.fillMaxSize(),
+                        transitionSpec = {
+                            fadeIn(AuraMotion.scheme.fastEffectsSpec()) togetherWith
+                                fadeOut(AuraMotion.scheme.fastEffectsSpec())
+                        },
+                        label = "destination"
+                    ) { entry ->
+                        Box(Modifier.fillMaxSize().padding(start = if (entry) 0.dp else 80.dp)) {
+                            DestinationFocusGate(entry == nowPlaying.value) {
+                                val rows = List(2) { rememberLazyListState() }
+                                states[entry] = rows
+                                Column(Modifier.onGloballyPositioned { positions[entry] = it.positionInRoot().x }) {
+                                    rows.forEach { state ->
+                                        LazyRow(state = state, modifier = Modifier.height(80.dp)) {
+                                            items(20) { Box(Modifier.width(90.dp).height(80.dp)) }
+                                        }
+                                        LaunchedEffect(Unit) { state.scrollToItem(19) }
+                                    }
+                                }
                             }
-                            LaunchedEffect(Unit) { state.scrollToItem(19) }
                         }
                     }
                 }
             }
         }
+        compose.waitForIdle()
+        compose.mainClock.autoAdvance = false
+        var original = 0f
+        var offsets = emptyList<Pair<Int, Int>>()
         compose.runOnIdle {
-            states.forEach { offsets.add(it.firstVisibleItemIndex to it.firstVisibleItemScrollOffset) }
-            active.value = false
+            original = positions.getValue(initialNowPlaying)
+            offsets = states.getValue(initialNowPlaying).map { it.firstVisibleItemIndex to it.firstVisibleItemScrollOffset }
+            nowPlaying.value = !initialNowPlaying
         }
+        compose.mainClock.advanceTimeByFrame()
         compose.waitForIdle()
         compose.runOnIdle {
-            assertEquals(offsets, states.map { it.firstVisibleItemIndex to it.firstVisibleItemScrollOffset })
-            active.value = true
+            assertEquals(original, positions.getValue(initialNowPlaying), 0.01f)
+            assertEquals(offsets, states.getValue(initialNowPlaying).map { it.firstVisibleItemIndex to it.firstVisibleItemScrollOffset })
         }
+        compose.mainClock.advanceTimeBy(1000)
         compose.waitForIdle()
+        compose.runOnIdle { nowPlaying.value = initialNowPlaying }
+        compose.mainClock.advanceTimeBy(1000)
         compose.runOnIdle {
-            assertEquals(offsets, states.map { it.firstVisibleItemIndex to it.firstVisibleItemScrollOffset })
+            assertEquals(original, positions.getValue(initialNowPlaying), 0.01f)
+            assertEquals(offsets, states.getValue(initialNowPlaying).map { it.firstVisibleItemIndex to it.firstVisibleItemScrollOffset })
         }
     }
 }

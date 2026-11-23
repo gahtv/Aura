@@ -19,12 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.constrainHeight
-import androidx.compose.ui.unit.constrainWidth
 import coil.request.ImageRequest
 import com.hans.aura.ui.theme.AuraMotion
 
@@ -59,28 +55,14 @@ internal fun artworkRequest(url: String?, placeholderKey: String? = url): ImageR
 
 @Composable
 internal fun DestinationFocusGate(active: Boolean, content: @Composable () -> Unit) {
-    val viewport = remember { DestinationConstraints() }
     Box(
         Modifier.fillMaxSize()
-            .layout { measurable, constraints ->
-                val entryConstraints = if (active || viewport.lastActive == null) {
-                    constraints.also { viewport.lastActive = it }
-                } else viewport.lastActive!!
-                val child = measurable.measure(entryConstraints)
-                layout(constraints.constrainWidth(child.width), constraints.constrainHeight(child.height)) {
-                    child.placeRelative(constraints.maxWidth - child.width, 0)
-                }
-            }
             .onPreviewKeyEvent { !active }
             .focusProperties {
                 onEnter = { if (!active) cancelFocusChange() }
             }
             .focusGroup()
     ) { content() }
-}
-
-private class DestinationConstraints {
-    var lastActive: Constraints? = null
 }
 
 /** Shares an artwork tile by item ID, or preserves the modifier outside a host. */

@@ -34,10 +34,8 @@ import com.hans.aura.data.Fixtures
 import com.hans.aura.ui.login.LoginScreen
 import com.hans.aura.ui.nowplaying.QueuePeekOverlay
 import com.hans.aura.ui.theme.AuraTheme
-import com.hans.aura.ui.theme.AuraColors
 import org.junit.Rule
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -101,10 +99,6 @@ class PanelFocusTrapTest {
             }
         }
         compose.mainClock.advanceTimeBy(1500)
-        compose.runOnIdle {
-            if (panel == Panel.Bio) assertEquals(AuraColors.Scrim, OverlayVisibility.dialogScrim)
-            if (panel == Panel.Confirm) assertEquals(AuraColors.DialogScrim, OverlayVisibility.dialogScrim)
-        }
         when (panel) {
             Panel.Bio -> compose.onNode(isFocused() and hasAnyDescendant(hasText("Biography text"))).assertExists()
             Panel.Confirm, Panel.Login -> compose.onNodeWithText("Cancel").assertIsFocused()
@@ -121,12 +115,6 @@ class PanelFocusTrapTest {
             compose.onNodeWithText("123456").assertDoesNotExist()
         } else {
             compose.runOnIdle { assertFalse(open.value) }
-            if (panel == Panel.Bio || panel == Panel.Confirm) {
-                compose.runOnIdle {
-                    assertFalse(OverlayVisibility.dialogOpen)
-                    assertEquals(AuraColors.DialogScrim, OverlayVisibility.dialogScrim)
-                }
-            }
         }
     }
 

@@ -55,7 +55,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun BioDialog(title: String, subtitle: String?, text: String, onDismiss: () -> Unit) {
     BackHandler { onDismiss() }
-    com.hans.aura.ui.common.OverlayVisibility.dialogScrim = AuraColors.Scrim
     com.hans.aura.ui.common.OverlayVisibility.dialogOpen = true
     val textFocus = remember { FocusRequester() }
     val scroll = rememberScrollState()
@@ -65,10 +64,7 @@ fun BioDialog(title: String, subtitle: String?, text: String, onDismiss: () -> U
         textFocus.requestFocusOnFrame()
     }
     androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose {
-            com.hans.aura.ui.common.OverlayVisibility.dialogOpen = false
-            com.hans.aura.ui.common.OverlayVisibility.dialogScrim = AuraColors.DialogScrim
-        }
+        onDispose { com.hans.aura.ui.common.OverlayVisibility.dialogOpen = false }
     }
 
     fun onTextKey(event: KeyEvent): Boolean {

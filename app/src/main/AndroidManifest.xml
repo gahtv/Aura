@@ -52,7 +52,8 @@
         <provider
             android:name=".search.AuraSearchProvider"
             android:authorities="com.hans.aura.search"
-            android:exported="true" />
+            android:exported="true"
+            android:readPermission="android.permission.GLOBAL_SEARCH" />
 
         <receiver
             android:name="androidx.media3.session.MediaButtonReceiver"

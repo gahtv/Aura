@@ -33,7 +33,6 @@ import com.hans.aura.AuraApp
 import com.hans.aura.data.Fixtures
 import com.hans.aura.ui.login.LoginScreen
 import com.hans.aura.ui.nowplaying.QueuePeekOverlay
-import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraTheme
 import org.junit.Rule
 import org.junit.Assert.assertFalse
@@ -92,7 +91,7 @@ class PanelFocusTrapTest {
                         Panel.Login -> LoginScreen(app, {}, debugDemoCode = "123456")
                         Panel.Queue -> {
                             BackHandler { open.value = false }
-                            QueuePeekOverlay(listOf(Fixtures.track("Queued track")), 1, Accent, 1, 0L,
+                            QueuePeekOverlay(listOf(Fixtures.track("Queued track")), 1, 1, 0L,
                                 onExtend = {}, onCollapse = {}, onJump = {})
                         }
                     }

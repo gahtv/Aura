@@ -17,19 +17,30 @@ val AccentDim = Color(0xFF8A5F2E)
 // it never competes with the amber selection fill.
 val FocusOutline = Color(0xFF9A8F82)
 
+internal val AuraColorScheme = androidx.tv.material3.darkColorScheme(
+    background = Canvas,
+    surface = Surface,
+    primary = Accent,
+    onPrimary = AuraColors.OnAccent,
+    primaryContainer = Surface,
+    onPrimaryContainer = TextPrimary,
+    tertiary = Accent,
+    onTertiary = AuraColors.OnAccent,
+    tertiaryContainer = AuraColors.BadgeScrim,
+    onTertiaryContainer = Accent,
+    secondaryContainer = Accent.copy(alpha = 0.16f),
+    onSecondaryContainer = Accent,
+    onBackground = TextPrimary,
+    onSurface = TextPrimary,
+    onSurfaceVariant = TextSecondary,
+    border = Border,
+    secondary = AccentDim
+)
+
 @Composable
 fun AuraTheme(content: @Composable () -> Unit) {
     androidx.tv.material3.MaterialTheme(
-        colorScheme = androidx.tv.material3.darkColorScheme(
-            background = Canvas,
-            surface = Surface,
-            primary = Accent,
-            onBackground = TextPrimary,
-            onSurface = TextPrimary,
-            onSurfaceVariant = TextSecondary,
-            border = Border,
-            secondary = AccentDim
-        ),
+        colorScheme = AuraColorScheme,
         typography = AuraTypography.expressive,
         content = content
     )

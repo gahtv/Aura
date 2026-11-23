@@ -36,8 +36,6 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,17 +55,12 @@ import com.hans.aura.ui.common.MotionArtwork
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.nowplaying.AtmosBadge
 import com.hans.aura.ui.player.PlayerConnection
-import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraDynamicTheme
+import com.hans.aura.ui.theme.artworkWash
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
-import com.hans.aura.ui.theme.Canvas
-import com.hans.aura.ui.theme.Surface
-import com.hans.aura.ui.theme.SurfaceHigh
-import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
-import com.hans.aura.ui.theme.darken
-import com.hans.aura.ui.theme.rememberDynamicColors
 import kotlinx.coroutines.launch
 
 /**
@@ -94,6 +87,30 @@ fun CollectionScreen(
 ) {
     val session = app.jellyfin.auth.session ?: return
     val state by viewModel.state.collectAsState()
+    val shown = state.fullItem ?: collection
+    val artUrl = shown.primaryImageTag?.let {
+        AuthStore.imageUrl(session.serverUrl, shown.id, it, maxWidth = 480)
+    }
+    AuraDynamicTheme(artUrl) {
+        CollectionContent(
+            app, collection, player, onBack, focusTick, initialFocus, onOpenArtist, viewModel, state
+        )
+    }
+}
+
+@Composable
+private fun CollectionContent(
+    app: AuraApp,
+    collection: JellyfinItem,
+    player: PlayerConnection,
+    onBack: () -> Unit,
+    focusTick: Int,
+    initialFocus: Boolean,
+    onOpenArtist: (JellyfinItem) -> Unit,
+    viewModel: CollectionViewModel,
+    state: CollectionUiState
+) {
+    val session = app.jellyfin.auth.session ?: return
     val tracks = state.tracks
     var showBio by remember { mutableStateOf(false) }
     var sourceBio by remember(collection.id) { mutableStateOf<String?>(null) }
@@ -109,11 +126,6 @@ fun CollectionScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     val shown = state.fullItem ?: collection
-    val artUrl = shown.primaryImageTag?.let {
-        AuthStore.imageUrl(session.serverUrl, shown.id, it, maxWidth = 480)
-    }
-    val dyn = rememberDynamicColors(artUrl)
-    val accent = dyn?.secondary ?: com.hans.aura.ui.theme.Accent
 
     val contentFocus = remember { FocusRequester() }
     val playButtonFocus = remember { FocusRequester() }
@@ -122,15 +134,16 @@ fun CollectionScreen(
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedTrackId, focusKeeper)
     com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, playButtonFocus)
 
+    val colors = MaterialTheme.colorScheme
     Box(
         Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        dyn?.primary ?: Surface,
-                        dyn?.let { darken(it.primary, 0.55f) } ?: SurfaceHigh,
-                        Canvas
+                        colors.artworkWash,
+                        colors.surface,
+                        colors.background
                     )
                 )
             )
@@ -150,9 +163,9 @@ fun CollectionScreen(
                 .fillMaxSize()
                 .background(
                     Brush.horizontalGradient(
-                        0.0f to (dyn?.primary ?: Surface).copy(alpha = 0.78f),
-                        0.45f to Canvas.copy(alpha = 0.85f),
-                        1.0f to Canvas.copy(alpha = 0.94f)
+                        0.0f to colors.artworkWash.copy(alpha = 0.78f),
+                        0.45f to colors.background.copy(alpha = 0.85f),
+                        1.0f to colors.background.copy(alpha = 0.94f)
                     )
                 )
         )
@@ -175,7 +188,7 @@ fun CollectionScreen(
                         Modifier
                             .size(216.dp)
                             .clip(AuraShapes.cardHero)
-                            .background(SurfaceHigh)
+                            .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
                     ) {
                         MotionArtwork(
                             itemId = shown.id,
@@ -193,13 +206,13 @@ fun CollectionScreen(
                         else -> collection.year?.toString() ?: "Album"
                     },
                     fontSize = 13.sp,
-                    color = accent
+                    color = colors.primary
                 )
                 Spacer(Modifier.height(AuraSpacing.xxs))
                 androidx.tv.material3.Text(
                     shown.name,
                     style = MaterialTheme.typography.headlineLarge,
-                    color = TextPrimary,
+                    color = colors.onSurface,
                     maxLines = 3,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
@@ -208,12 +221,12 @@ fun CollectionScreen(
                     androidx.tv.material3.Text(
                         subtitle(collection, tracks),
                         fontSize = 14.sp,
-                        color = TextSecondary,
+                        color = colors.onSurfaceVariant,
                         modifier = Modifier.weight(1f, fill = false)
                     )
                     if (tracks?.any { PlayerConnection.isAtmos(it) } == true) {
                         Spacer(Modifier.width(AuraSpacing.sm))
-                        AtmosBadge(color = accent)
+                        AtmosBadge()
                     }
                 }
                 bio?.let { text ->
@@ -227,7 +240,7 @@ fun CollectionScreen(
                         androidx.tv.material3.Text(
                             text,
                             fontSize = 13.sp,
-                            color = TextPrimary,
+                            color = colors.onSurface,
                             maxLines = 2,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
@@ -235,7 +248,7 @@ fun CollectionScreen(
                         androidx.tv.material3.Text(
                             "  More",
                             fontSize = 13.sp,
-                            color = accent
+                            color = colors.primary
                         )
                     }
                 }
@@ -248,8 +261,7 @@ fun CollectionScreen(
                         add(ConnectedAction(
                             label = "Play",
                             modifier = Modifier.focusRequester(playButtonFocus),
-                            fill = accent,
-                            contentColor = collectionPlayContentColor(accent),
+                            primary = true,
                             onClick = { tracks?.let { player.playQueue(it, 0, resume = false) } }
                         ))
                         add(ConnectedAction(
@@ -286,7 +298,7 @@ fun CollectionScreen(
                 if (state.error != null && tracks != null) {
                     androidx.tv.material3.Text(
                         state.error.orEmpty(),
-                        color = TextSecondary,
+                        color = colors.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = AuraSpacing.xs)
                     )
@@ -304,12 +316,12 @@ fun CollectionScreen(
                         onRetry = { viewModel.retry() }
                     )
                     shownTracks == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                        androidx.tv.material3.Text("Loading\u2026", color = TextSecondary)
+                        androidx.tv.material3.Text("Loading\u2026", color = colors.onSurfaceVariant)
                     }
                     shownTracks.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                         androidx.tv.material3.Text(
                             if (atmosFiltered) "No Atmos tracks in this album" else "Empty",
-                            color = TextSecondary
+                            color = colors.onSurfaceVariant
                         )
                     }
                     else -> LazyColumn(
@@ -347,7 +359,6 @@ fun CollectionScreen(
                                 track = track,
                                 isCurrent = track.id == currentId?.id,
                                 atmos = track.albumId?.let { it in atmosAlbumIds } == true,
-                                accent = accent,
                                 onClick = { player.playQueue(shownTracks, i, resume = true) },
                                 focusKeeper = focusKeeper,
                                 onFocused = { focusedTrackId = it },
@@ -416,16 +427,6 @@ private fun DiscHeader(number: Int, first: Boolean) {
                 .height(AuraSizes.hairline)
                 .background(TextSecondary.copy(alpha = 0.24f))
         )
-    }
-}
-
-internal fun collectionPlayContentColor(accent: Color): Color {
-    val luminance = accent.luminance()
-    val inkContrast = (luminance + 0.05f) / (AuraColors.OnAccent.luminance() + 0.05f)
-    return when {
-        inkContrast >= 4.5f -> AuraColors.OnAccent
-        luminance < 0.179f -> Color.White
-        else -> Color.Black
     }
 }
 

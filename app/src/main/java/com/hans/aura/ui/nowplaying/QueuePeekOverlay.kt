@@ -37,7 +37,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.common.OverlayVisibility
 import com.hans.aura.ui.common.formatDuration
@@ -75,13 +75,13 @@ import kotlinx.coroutines.delay
 internal fun QueuePeekOverlay(
     upcoming: List<JellyfinItem>,
     total: Int,
-    accent: Color,
     focusToken: Int,
     graceUntil: Long,
     onExtend: () -> Unit,
     onCollapse: () -> Unit,
     onJump: (Int) -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     // The app-level now-playing bar must not draw over the peek while it is up.
     OverlayVisibility.dialogOpen = true
     DisposableEffect(Unit) { onDispose { OverlayVisibility.dialogOpen = false } }
@@ -158,7 +158,7 @@ internal fun QueuePeekOverlay(
                 androidx.tv.material3.Text(
                     "Up next",
                     fontSize = AuraTypography.caption,
-                    color = accent,
+                    color = colors.primary,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.weight(1f))
@@ -172,7 +172,6 @@ internal fun QueuePeekOverlay(
             upcoming.forEachIndexed { i, track ->
                 PeekRow(
                     track = track,
-                    accent = accent,
                     modifier = Modifier.focusRequester(rowFocus[i]).focusProperties {
                         up = rowFocus.getOrNull(i - 1) ?: FocusRequester.Cancel
                         down = rowFocus.getOrNull(i + 1) ?: FocusRequester.Cancel
@@ -195,10 +194,10 @@ internal fun QueuePeekOverlay(
 @Composable
 private fun PeekRow(
     track: JellyfinItem,
-    accent: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.control
     Row(
@@ -220,7 +219,7 @@ private fun PeekRow(
                 .width(AuraSizes.accentBar)
                 .height(AuraSpacing.lg)
                 .background(
-                    if (focused) accent else Color.Transparent,
+                    if (focused) colors.primary else Color.Transparent,
                     AuraShapes.pill
                 )
         )

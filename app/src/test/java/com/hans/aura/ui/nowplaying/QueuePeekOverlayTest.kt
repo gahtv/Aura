@@ -25,7 +25,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import com.hans.aura.data.Fixtures
-import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -53,7 +52,7 @@ class QueuePeekOverlayTest {
                         onClick = {},
                         modifier = Modifier.align(Alignment.CenterEnd).width(100.dp).fillMaxHeight()
                     ) { Text("Pause") }
-                    QueuePeekOverlay(tracks, tracks.size, Accent, 1, 0L,
+                    QueuePeekOverlay(tracks, tracks.size, 1, 0L,
                         onExtend = {}, onCollapse = { collapses++ }, onJump = {})
                 }
             }
@@ -74,7 +73,7 @@ class QueuePeekOverlayTest {
         val tracks = (0..4).map { Fixtures.track("Track $it") }
         compose.setContent {
             AuraTheme {
-                QueuePeekOverlay(tracks.take(size), tracks.size, Accent, 1, 0L,
+                QueuePeekOverlay(tracks.take(size), tracks.size, 1, 0L,
                     onExtend = { size = 5 }, onCollapse = { collapses++ },
                     onJump = { jumped = it })
             }

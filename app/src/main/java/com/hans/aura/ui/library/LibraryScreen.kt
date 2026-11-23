@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.common.ArtworkCard
@@ -60,7 +61,6 @@ import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.common.filterPillShape
 import com.hans.aura.ui.nav.Screen
 import com.hans.aura.ui.player.PlayerConnection
-import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
@@ -458,6 +458,7 @@ private fun SortPill(
     leadingIcon: Int? = null,
     trailingIcon: Int? = null
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val shape = filterPillShape(selected, focused)
     val fill by animateColorAsState(
@@ -469,7 +470,7 @@ private fun SortPill(
         modifier
             .semantics { this.selected = selected }
             .clip(shape)
-            .background(if (selected) Accent else fill)
+            .background(if (selected) colors.primary else fill)
             .border(
                 width = AuraSizes.focusBorderLoud,
                 color = if (focused) AuraColors.CursorRing else Color.Transparent,
@@ -479,7 +480,7 @@ private fun SortPill(
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 7.dp)
     ) {
-        val content = if (selected) AuraColors.OnAccentText else TextPrimary
+        val content = if (selected) colors.onPrimary else colors.onSurface
         androidx.compose.foundation.layout.Row(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {

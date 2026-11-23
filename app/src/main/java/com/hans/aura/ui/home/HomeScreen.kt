@@ -67,17 +67,17 @@ import com.hans.aura.ui.nowplaying.AtmosBadge
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraDynamicTheme
+import com.hans.aura.ui.theme.artworkWash
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
-import com.hans.aura.ui.theme.Canvas
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
-import com.hans.aura.ui.theme.rememberDynamicColors
 
 @Composable
 fun HomeScreen(
@@ -332,106 +332,103 @@ private fun HomeLivePreviewHero(
 ) {
     val art = item.resolveArtwork()
     val artUrl = art?.url(serverUrl, maxWidth = 720)
-    val dyn = rememberDynamicColors(art?.url(serverUrl, maxWidth = 240))
-    val wash by animateColorAsState(
-        targetValue = dyn?.primary ?: SurfaceHigh,
-        animationSpec = AuraMotion.scheme.defaultEffectsSpec(),
-        label = "heroWash"
-    )
-    val accent = dyn?.secondary ?: Accent
+    AuraDynamicTheme(art?.url(serverUrl, maxWidth = 240)) {
+        val colors = MaterialTheme.colorScheme
+        val wash = colors.artworkWash
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AuraSpacing.screenHorizontal)
-            .height(184.dp)
-            .clip(AuraShapes.cardHero)
-            .background(Brush.horizontalGradient(listOf(wash, Surface)))
-            .border(AuraSizes.hairline, AuraColors.FocusedFillSubtle, AuraShapes.cardHero)
-    ) {
-        AnimatedContent(
-            targetState = artUrl,
-            transitionSpec = {
-                fadeIn(AuraMotion.scheme.defaultEffectsSpec()) togetherWith
-                    fadeOut(AuraMotion.scheme.defaultEffectsSpec())
-            },
-            label = "heroArt",
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxWidth(0.55f)
-                .fillMaxHeight()
-        ) { url ->
-            if (url != null) {
-                AsyncImage(
-                    model = url,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-        // Horizontal readability scrim so bright covers never wash out text.
         Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        0.0f to wash,
-                        0.45f to wash.copy(alpha = 0.92f),
-                        0.75f to Canvas.copy(alpha = 0.55f),
-                        1.0f to Canvas.copy(alpha = 0.25f)
-                    )
-                )
-        )
-        Column(
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxWidth(0.68f)
-                .padding(horizontal = AuraSpacing.xl, vertical = AuraSpacing.lg),
-            verticalArrangement = Arrangement.spacedBy(AuraSpacing.xs)
+                .fillMaxWidth()
+                .padding(horizontal = AuraSpacing.screenHorizontal)
+                .height(184.dp)
+                .clip(AuraShapes.cardHero)
+                .background(Brush.horizontalGradient(listOf(wash, colors.surface)))
+                .border(AuraSizes.hairline, AuraColors.FocusedFillSubtle, AuraShapes.cardHero)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
-            ) {
-                val typeLabel = when (item.type) {
-                    "MusicAlbum" -> item.year?.toString()?.let { "ALBUM \u00B7 $it" } ?: "ALBUM"
-                    "MusicArtist" -> "ARTIST"
-                    "Playlist" -> "PLAYLIST"
-                    "Audio" -> "TRACK"
-                    else -> item.type.uppercase()
-                }
-                androidx.tv.material3.Text(
-                    text = typeLabel,
-                    color = accent,
-                    fontSize = AuraTypography.caption,
-                    fontWeight = FontWeight.Bold
-                )
-                if (isAtmos) {
-                    AtmosBadge(color = accent)
+            AnimatedContent(
+                targetState = artUrl,
+                transitionSpec = {
+                    fadeIn(AuraMotion.scheme.defaultEffectsSpec()) togetherWith
+                        fadeOut(AuraMotion.scheme.defaultEffectsSpec())
+                },
+                label = "heroArt",
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxWidth(0.55f)
+                    .fillMaxHeight()
+            ) { url ->
+                if (url != null) {
+                    AsyncImage(
+                        model = url,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
-            androidx.tv.material3.Text(
-                text = item.name,
-                style = MaterialTheme.typography.headlineLarge,
-                color = TextPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+            // Horizontal readability scrim so bright covers never wash out text.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            0.0f to wash,
+                            0.45f to wash.copy(alpha = 0.92f),
+                            0.75f to colors.background.copy(alpha = 0.55f),
+                            1.0f to colors.background.copy(alpha = 0.25f)
+                        )
+                    )
             )
-            val subtitle = when (item.type) {
-                "MusicAlbum" -> item.albumArtist ?: item.artistNames
-                "Audio" -> listOfNotNull(item.artistNames.takeIf { it.isNotBlank() }, item.album).joinToString(" \u00B7 ")
-                "Playlist" -> item.childCount?.let { "$it tracks" } ?: "Playlist"
-                else -> ""
-            }
-            if (subtitle.isNotBlank()) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth(0.68f)
+                    .padding(horizontal = AuraSpacing.xl, vertical = AuraSpacing.lg),
+                verticalArrangement = Arrangement.spacedBy(AuraSpacing.xs)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
+                ) {
+                    val typeLabel = when (item.type) {
+                        "MusicAlbum" -> item.year?.toString()?.let { "ALBUM \u00B7 $it" } ?: "ALBUM"
+                        "MusicArtist" -> "ARTIST"
+                        "Playlist" -> "PLAYLIST"
+                        "Audio" -> "TRACK"
+                        else -> item.type.uppercase()
+                    }
+                    androidx.tv.material3.Text(
+                        text = typeLabel,
+                        color = colors.primary,
+                        fontSize = AuraTypography.caption,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (isAtmos) {
+                        AtmosBadge()
+                    }
+                }
                 androidx.tv.material3.Text(
-                    text = subtitle,
-                    color = TextSecondary,
-                    fontSize = AuraTypography.bodySmall,
-                    maxLines = 1,
+                    text = item.name,
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = colors.onSurface,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                val subtitle = when (item.type) {
+                    "MusicAlbum" -> item.albumArtist ?: item.artistNames
+                    "Audio" -> listOfNotNull(item.artistNames.takeIf { it.isNotBlank() }, item.album).joinToString(" \u00B7 ")
+                    "Playlist" -> item.childCount?.let { "$it tracks" } ?: "Playlist"
+                    else -> ""
+                }
+                if (subtitle.isNotBlank()) {
+                    androidx.tv.material3.Text(
+                        text = subtitle,
+                        color = colors.onSurfaceVariant,
+                        fontSize = AuraTypography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }

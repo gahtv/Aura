@@ -160,7 +160,15 @@ internal fun LibraryScreen(
     val railFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
+    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper,
+        ready = items.isNotEmpty())
+    var pendingGridFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(pendingGridFocus, items.isNotEmpty()) {
+        if (pendingGridFocus && items.isNotEmpty()) {
+            contentFocus.requestFocusOnFrame()
+            pendingGridFocus = false
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         // Unified Library category filter pills: Albums · Artists · Tracks · Playlists · Genres
@@ -263,9 +271,7 @@ internal fun LibraryScreen(
                     onClick = {
                         azOpen = false
                         viewModel.clearLetter(null)
-                        scope.launch {
-                            contentFocus.requestFocusOnFrame()
-                        }
+                        pendingGridFocus = true
                     }
                 )
                 AZ_LETTERS.forEach { candidate ->
@@ -280,9 +286,7 @@ internal fun LibraryScreen(
                             viewModel.selectLetter(candidate)
                             // The rail disappears when a letter is taken; hand
                             // focus to the grid or the selector is stranded.
-                            scope.launch {
-                                contentFocus.requestFocusOnFrame()
-                            }
+                            pendingGridFocus = true
                         }
                     )
                 }

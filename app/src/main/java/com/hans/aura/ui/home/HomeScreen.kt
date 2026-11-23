@@ -146,7 +146,9 @@ fun HomeScreen(
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val focusKeeper = remember { FocusKeeper() }
     var focusedCardId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    RestoreFocusOnBack(focusTick, contentFocus, focusedCardId, focusKeeper)
+    RestoreFocusOnBack(focusTick, contentFocus, focusedCardId, focusKeeper,
+        ready = (quickAccessItems.isNotEmpty() || itemsById.isNotEmpty()) &&
+            (focusedCardId == null || itemsById.containsKey(focusedCardId?.removePrefix("qa:")) || !state.loading))
 
     fun onItemFocused(id: String) {
         focusedCardId = id

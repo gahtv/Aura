@@ -38,9 +38,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hans.aura.data.JellyfinItem
+import com.hans.aura.ui.common.InitialFocusOnPush
 import com.hans.aura.ui.common.OverlayVisibility
 import com.hans.aura.ui.common.formatDuration
-import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -100,8 +100,8 @@ internal fun QueuePeekOverlay(
     }
     // focusToken changes on every OPEN (not on extend), so extending does not
     // yank focus back to the top row.
-    LaunchedEffect(focusToken) {
-        firstFocus.requestFocusOnFrame()
+    androidx.compose.runtime.key(focusToken) {
+        InitialFocusOnPush(true, firstFocus, ready = upcoming.isNotEmpty())
     }
 
     Box(

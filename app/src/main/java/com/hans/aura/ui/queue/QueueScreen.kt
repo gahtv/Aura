@@ -68,7 +68,7 @@ fun QueueScreen(player: PlayerConnection, onBack: () -> Unit, initialFocus: Bool
     val smart by player.smartShuffle.collectAsState()
 
     val contentFocus = remember { FocusRequester() }
-    InitialFocusOnPush(initialFocus, contentFocus)
+    InitialFocusOnPush(initialFocus, contentFocus, ready = displayQueue.isNotEmpty())
 
     val upcoming = (queue.size - (queueIndex + 1)).coerceAtLeast(0)
 

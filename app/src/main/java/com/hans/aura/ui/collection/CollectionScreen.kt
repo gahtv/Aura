@@ -117,7 +117,10 @@ fun CollectionScreen(
     val playButtonFocus = remember { FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedTrackId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedTrackId, focusKeeper)
+    val atmosFiltered = collection.type == "MusicAlbum" && com.hans.aura.data.AtmosFilter.on
+    val shownTracks = if (atmosFiltered) tracks?.let { com.hans.aura.data.AtmosFilter.tracks(it) } else tracks
+    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedTrackId, focusKeeper,
+        ready = !shownTracks.isNullOrEmpty())
     com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, playButtonFocus)
 
     Box(
@@ -299,11 +302,6 @@ fun CollectionScreen(
                         modifier = Modifier.padding(bottom = AuraSpacing.xs)
                     )
                 }
-
-                val atmosFiltered = collection.type == "MusicAlbum" && com.hans.aura.data.AtmosFilter.on
-                val shownTracks = if (atmosFiltered) {
-                    tracks?.let { com.hans.aura.data.AtmosFilter.tracks(it) }
-                } else tracks
 
                 when {
                     state.error != null && shownTracks == null -> ErrorPane(

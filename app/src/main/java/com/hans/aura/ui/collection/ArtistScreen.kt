@@ -137,11 +137,6 @@ fun ArtistScreen(
         lastFocusSection = section
         android.util.Log.d("AURA_ARTIST", "focus=$section id=$id artist=${artist.id}")
     }
-    if (!initialFocus) {
-        com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
-    }
-    com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, contentFocus)
-
     val visibleAlbums = state.visibleAlbums
     val visibleTracks = state.visibleTopTracks
     val similarArtists = state.similar.orEmpty()
@@ -157,6 +152,15 @@ fun ArtistScreen(
     }
     var selectedTab by rememberSaveable(artist.id) { mutableStateOf(ArtistTab.DISCOGRAPHY) }
     val activeTab = if (selectedTab in availableTabs) selectedTab else availableTabs.first()
+    val contentReady = when (activeTab) {
+        ArtistTab.DISCOGRAPHY -> visibleAlbums.isNotEmpty()
+        ArtistTab.POPULAR -> visibleTracks.isNotEmpty()
+        ArtistTab.SIMILAR -> similarArtists.isNotEmpty()
+    }
+    if (!initialFocus) {
+        com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper, ready = contentReady)
+    }
+    com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, contentFocus, ready = contentReady)
 
     Box(
         Modifier

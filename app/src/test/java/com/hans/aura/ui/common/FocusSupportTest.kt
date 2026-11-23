@@ -106,9 +106,10 @@ class FocusSupportTest {
                 }
             }
             LaunchedEffect(Unit) { outside.requestFocus() }
-            InitialFocusOnPush(true, content)
+            InitialFocusOnPush(true, content, ready = ready.value)
         }
         repeat(20) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("outside").assertIsFocused()
         compose.runOnIdle { ready.value = true }
         repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
         compose.onNodeWithTag("loaded").assertIsFocused()
@@ -125,8 +126,36 @@ class FocusSupportTest {
                 Box(Modifier.size(40.dp).testTag("outside").focusRequester(outside).focusable())
                 if (ready.value) Box(Modifier.size(40.dp).testTag("loaded").focusRequester(content).focusable())
             }
-            InitialFocusOnPush(ready.value, content)
+            InitialFocusOnPush(true, content, ready = ready.value)
         }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("loaded").assertIsFocused()
+        compose.runOnIdle { outside.requestFocus(); ready.value = false }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.runOnIdle { ready.value = true }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("outside").assertIsFocused()
+    }
+
+    @Test
+    fun backWaitsForContentAndDoesNotRepeatOnRefresh() {
+        compose.mainClock.autoAdvance = false
+        val content = FocusRequester()
+        val outside = FocusRequester()
+        val ready = mutableStateOf(false)
+        compose.setContent {
+            Column {
+                Box(Modifier.size(40.dp).testTag("outside").focusRequester(outside).focusable())
+                Column(Modifier.focusRequester(content)) {
+                    if (ready.value) Box(Modifier.size(40.dp).testTag("loaded").focusable())
+                }
+            }
+            LaunchedEffect(Unit) { outside.requestFocus() }
+            RestoreFocusOnBack(1, content, ready = ready.value)
+        }
+        repeat(20) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("outside").assertIsFocused()
+        compose.runOnIdle { ready.value = true }
         repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
         compose.onNodeWithTag("loaded").assertIsFocused()
         compose.runOnIdle { outside.requestFocus(); ready.value = false }

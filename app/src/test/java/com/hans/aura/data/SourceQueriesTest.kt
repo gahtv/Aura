@@ -249,7 +249,17 @@ class SourceQueriesTest {
             val recovered = Fixtures.track("recovered").copy(
                 albumId = "recovered", artistItems = listOf(NameId(id = "recovered"))
             )
-            body = Json.encodeToString(ItemsResponse(items = listOf(recovered)))
+            respond = { url ->
+                val type = when {
+                    url.queryParameter("Ids") != null -> "MusicArtist"
+                    url.encodedPath == "/Artists/AlbumArtists" -> "MusicArtist"
+                    url.queryParameter("IncludeItemTypes") == "Audio" -> "Audio"
+                    url.queryParameter("IncludeItemTypes") == "MusicArtist" -> "MusicArtist"
+                    url.queryParameter("IncludeItemTypes") == "Playlist" -> "Playlist"
+                    else -> "MusicAlbum"
+                }
+                200 to Json.encodeToString(ItemsResponse(items = listOf(recovered.copy(type = type))))
+            }
             viewModel.retry()
             withTimeout(10_000) { viewModel.viewModelScope.coroutineContext[Job]!!.children.toList().joinAll() }
 
@@ -736,6 +746,52 @@ class SourceQueriesTest {
         status = 500
         assertNull(MusicSources.current!!.lyricsTimed("failed"))
         assertNull(MusicSources.current!!.albumBio("failed"))
+    }
+
+
+    @Test
+    fun `genre scan moved behind source keeps its pages artwork and cache`() = runTest {
+        LibraryCache.clear()
+        val first = JellyfinItem(
+            id = "track-rock", type = "Audio", genres = listOf("Rock"),
+            albumId = "album-rock", albumPrimaryImageTag = "rock-tag"
+        )
+        val filler = (0 until 499).map { JellyfinItem(id = "filler-$it", type = "Audio") }
+        val last = JellyfinItem(
+            id = "track-jazz", type = "Audio", genres = listOf("Pop", "Jazz"),
+            albumId = "album-jazz", albumPrimaryImageTag = "jazz-tag"
+        )
+        respond = { url ->
+            if (url.queryParameter("IncludeItemTypes") == "Audio" && url.queryParameter("Fields") == "Genres") {
+                val start = url.queryParameter("StartIndex")?.toInt() ?: 0
+                val items = if (start == 0) listOf(first) + filler else listOf(last)
+                200 to Json.encodeToString(ItemsResponse(
+                    items = items, totalRecordCount = 501, startIndex = start
+                ))
+            } else {
+                200 to """{"Items":[],"TotalRecordCount":0}"""
+            }
+        }
+
+        val scanned = SourceQueries.genres()
+
+        assertEquals(listOf("Jazz", "Pop", "Rock"), scanned.map { it.name })
+        assertEquals("album-jazz", scanned[0].artwork?.itemId)
+        assertEquals("jazz-tag", scanned[0].artwork?.tag)
+        assertEquals("album-jazz", scanned[1].artwork?.itemId)
+        assertEquals("album-rock", scanned[2].artwork?.itemId)
+        assertEquals("rock-tag", scanned[2].artwork?.tag)
+        val scanUrls = requests.toList().filter { it.queryParameter("Fields") == "Genres" }
+        assertEquals(listOf("0", "500"), scanUrls.map { it.queryParameter("StartIndex") })
+        assertTrue(scanUrls.all { it.queryParameter("Limit") == "500" })
+        assertTrue(scanUrls.all { it.queryParameter("IncludeItemTypes") == "Audio" })
+        assertTrue(scanUrls.all { it.queryParameter("SortBy") == "SortName" })
+        assertTrue(scanUrls.all { it.queryParameter("SortOrder") == "Ascending" })
+        assertTrue(scanUrls.all { it.queryParameter("Recursive") == "true" })
+
+        requests.clear()
+        assertEquals(scanned, SourceQueries.genres())
+        assertTrue(requests.isEmpty())
     }
 
     @Test

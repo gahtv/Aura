@@ -61,6 +61,7 @@ class LibraryViewModelTest {
         PagedLibrary.clear()
         val source = MusicSources.current!!
         MusicSources.install(object : MusicSource by source {
+            override val id = "test"
             override suspend fun atmosAlbumIds(): Set<String> = emptySet()
             override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
                 val response = CompletableDeferred<ItemsResponse>()

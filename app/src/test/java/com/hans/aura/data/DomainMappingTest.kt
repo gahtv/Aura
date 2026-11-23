@@ -10,6 +10,7 @@ import com.hans.aura.model.Playlist
 import com.hans.aura.model.Track
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -52,7 +53,6 @@ class DomainMappingTest {
 
         assertEquals("track-1", track.id)
         assertEquals("Track One", track.name)
-        assertEquals("track sort", track.sortName)
         assertEquals("Album One", track.album)
         assertEquals("album-1", track.albumId)
         assertEquals("Album Artist", track.albumArtist)
@@ -68,7 +68,6 @@ class DomainMappingTest {
         assertEquals(201_250L, track.durationMs)
         assertEquals(7, track.trackNumber)
         assertEquals(2, track.discNumber)
-        assertEquals(listOf("Rock", "Instrumental"), track.genres)
         assertEquals("playlist-entry-1", track.playlistItemId)
         assertEquals("m4a", track.container)
         assertTrue(track.isAtmos)
@@ -105,6 +104,46 @@ class DomainMappingTest {
         assertEquals(track.artwork, track.albumArtwork)
     }
 
+
+    @Test
+    fun `album artwork uses the album poster key even when the track has its own cover`() {
+        val source = JellyfinItem(
+            id = "track", type = "Audio", albumId = "album",
+            imageTags = mapOf("Primary" to "track-tag"), albumPrimaryImageTag = "album-tag"
+        )
+        val albumSource = JellyfinItem(
+            id = "album", type = "MusicAlbum", imageTags = mapOf("Primary" to "album-tag")
+        )
+
+        val track = source.toDomainItem() as Track
+        val album = albumSource.toDomainItem() as Album
+
+        assertEquals(album.artwork, track.albumArtwork)
+        assertEquals("album", track.albumArtwork?.itemId)
+    }
+
+    @Test
+    fun `album artwork stays distinct for different albums`() {
+        val playing = JellyfinItem(
+            id = "track", type = "Audio", albumId = "playing", albumPrimaryImageTag = "tag"
+        ).toDomainItem() as Track
+        val shown = JellyfinItem(
+            id = "other", type = "Audio", imageTags = mapOf("Primary" to "tag")
+        ).toDomainItem() as Track
+
+        assertNotEquals(shown.artwork?.itemId, playing.albumArtwork?.itemId)
+    }
+
+    @Test
+    fun `album artwork without an album falls back to track art or no art`() {
+        val covered = JellyfinItem(
+            id = "track", type = "Audio", imageTags = mapOf("Primary" to "tag")
+        ).toDomainItem() as Track
+
+        assertEquals(covered.artwork, covered.albumArtwork)
+        assertNull(JellyfinItem(id = "empty", type = "Audio").toDomainItem()?.let { (it as Track).albumArtwork })
+    }
+
     @Test
     fun `album artwork falls back to track artwork when the album tag is missing`() {
         val source = Fixtures.item(id = "track-3").copy(
@@ -138,7 +177,6 @@ class DomainMappingTest {
 
         assertEquals("album-1", album.id)
         assertEquals("Album One", album.name)
-        assertEquals("album sort", album.sortName)
         assertEquals(Artwork(itemId = "album-1", tag = "album-tag"), album.artwork)
         assertEquals("Album Artist", album.albumArtist)
         assertEquals("Album Artist", album.artistNames)
@@ -166,7 +204,6 @@ class DomainMappingTest {
 
         assertEquals("artist-1", artist.id)
         assertEquals("Artist One", artist.name)
-        assertEquals("artist sort", artist.sortName)
         assertEquals("Artist biography", artist.overview)
         assertEquals(
             Artwork(itemId = "artist-1", tag = "primary-tag", kind = ArtworkKind.PRIMARY),
@@ -229,7 +266,6 @@ class DomainMappingTest {
         assertEquals("", track.artistNames)
         assertTrue(track.artists.isEmpty())
         assertTrue(track.albumArtists.isEmpty())
-        assertTrue(track.genres.isEmpty())
         assertNull(track.artwork)
         assertNull(track.albumArtwork)
         assertNull(track.album)

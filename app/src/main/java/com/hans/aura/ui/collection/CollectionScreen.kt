@@ -2,6 +2,8 @@
 
 package com.hans.aura.ui.collection
 
+import com.hans.aura.ui.common.sharedArtwork
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -199,7 +201,7 @@ private fun CollectionContent(
                             posterModel = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 480),
                             contentDescription = collection.name,
                             playing = motionPlaying,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize().sharedArtwork(shown.id, AuraShapes.cardHero)
                         )
                     }
                     Spacer(Modifier.height(AuraSpacing.md))

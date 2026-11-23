@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -90,6 +91,11 @@ fun ArtworkCard(
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val artworkSource = LocalArtworkSource.current
+    val artworkToken = rememberSaveable { java.util.UUID.randomUUID().toString() }
+    val sharedArtwork = if (artworkSource?.value == artworkToken) {
+        Modifier.sharedArtwork(item.id, if (circular) CircleShape else AuraShapes.card)
+    } else Modifier
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) AuraMotion.artworkFocusedScale else 1f,
@@ -109,9 +115,15 @@ fun ArtworkCard(
             .contextMenuKeys(onLongPress)
             .onFocusChanged {
                 focused = it.isFocused
-                if (it.isFocused) onFocused?.invoke(item.id)
+                if (it.isFocused) {
+                    artworkSource?.value = artworkToken
+                    onFocused?.invoke(item.id)
+                }
             }
-            .clickable { onClick() }
+            .clickable {
+                artworkSource?.value = artworkToken
+                onClick()
+            }
             // Keep the spring inside the focus target so TV scrolling sees stable bounds.
             .graphicsLayer {
                 scaleX = scale
@@ -154,14 +166,14 @@ fun ArtworkCard(
                             contentDescription = item.name,
                             budgeted = true,
                             motionPriority = motionPriority,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize().then(sharedArtwork)
                         )
                     } else {
                         AsyncImage(
                             model = still,
                             contentDescription = item.name,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize().then(sharedArtwork)
                         )
                     }
                     badge?.let { label ->

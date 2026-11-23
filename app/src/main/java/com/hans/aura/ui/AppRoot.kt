@@ -1,10 +1,17 @@
 package com.hans.aura.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -14,9 +21,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.collection.ArtistScreen
 import com.hans.aura.ui.collection.CollectionScreen
@@ -24,6 +33,12 @@ import com.hans.aura.ui.common.ContextMenuHosts
 import com.hans.aura.ui.common.FocusHandoffHost
 import com.hans.aura.ui.common.NavRequests
 import com.hans.aura.ui.common.OverlayVisibility
+import com.hans.aura.ui.common.LocalArtworkTransition
+import com.hans.aura.ui.common.LocalArtworkVisibility
+import com.hans.aura.ui.common.LocalDestinationActive
+import com.hans.aura.ui.common.LocalArtworkSource
+import com.hans.aura.ui.common.LocalArtworkRadius
+import com.hans.aura.ui.common.DestinationFocusGate
 import com.hans.aura.ui.genres.GenreScreen
 import com.hans.aura.ui.genres.GenresScreen
 import com.hans.aura.ui.home.HomeScreen
@@ -45,6 +60,7 @@ import com.hans.aura.ui.shell.endSession
 import com.hans.aura.ui.shell.rememberRailPlayback
 import com.hans.aura.ui.shell.switchSession
 import com.hans.aura.ui.theme.Canvas
+import com.hans.aura.ui.theme.AuraMotion
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
@@ -179,16 +195,54 @@ fun AppRoot() {
                 }
             }
         ) {
-            stateHolder.SaveableStateProvider(key = "${nav.stack.lastIndex}:${NavSpec.key(nav.top)}") {
-                DestinationHost(
-                    app = app,
-                    player = player,
-                    nav = nav,
-                    endSession = exitSession,
-                    onSwitchProfile = onSwitchProfile,
-                    refreshKey = refreshKey,
-                    onRefreshKey = { refreshKey++ }
+            SharedTransitionLayout {
+                val artworkRadius by animateDpAsState(
+                    if (nav.top is Screen.Collection) 20.dp else 12.dp,
+                    AuraMotion.scheme.defaultSpatialSpec(),
+                    label = "artworkCorners"
                 )
+                AnimatedContent(
+                    targetState = nav.stack.lastIndex to nav.top,
+                    contentKey = { (index, screen) -> "$index:${NavSpec.key(screen)}" },
+                    transitionSpec = {
+                        fadeIn(AuraMotion.scheme.fastEffectsSpec()) togetherWith
+                            fadeOut(AuraMotion.scheme.fastEffectsSpec())
+                    },
+                    label = "destination"
+                ) { (index, screen) ->
+                    val active = index == nav.stack.lastIndex && screen == nav.top
+                    var entryFocusTick by remember { mutableIntStateOf(nav.focusTick) }
+                    var entryPendingFocus by remember { mutableStateOf(nav.pendingFocus) }
+                    if (active) {
+                        entryFocusTick = nav.focusTick
+                        entryPendingFocus = nav.pendingFocus
+                    }
+                    stateHolder.SaveableStateProvider(key = "$index:${NavSpec.key(screen)}") {
+                        val artworkSource = rememberSaveable { mutableStateOf<String?>(null) }
+                        CompositionLocalProvider(
+                            LocalArtworkTransition provides this@SharedTransitionLayout,
+                            LocalArtworkVisibility provides this@AnimatedContent,
+                            LocalDestinationActive provides active,
+                            LocalArtworkSource provides artworkSource,
+                            LocalArtworkRadius provides artworkRadius
+                        ) {
+                            DestinationFocusGate(active) {
+                                DestinationHost(
+                                    app = app,
+                                    player = player,
+                                    nav = nav,
+                                    top = screen,
+                                    focusTick = entryFocusTick,
+                                    pendingFocus = entryPendingFocus,
+                                    endSession = exitSession,
+                                    onSwitchProfile = onSwitchProfile,
+                                    refreshKey = refreshKey,
+                                    onRefreshKey = { refreshKey++ }
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
         // Long-press context menus + their playlist picker, always on top.
@@ -238,16 +292,17 @@ private fun DestinationHost(
     app: AuraApp,
     player: PlayerConnection,
     nav: com.hans.aura.ui.nav.NavState,
+    top: Screen,
+    focusTick: Int,
+    pendingFocus: Boolean,
     endSession: (String, Boolean) -> Unit,
     onSwitchProfile: (com.hans.aura.data.Session) -> Unit,
     refreshKey: Int,
     onRefreshKey: () -> Unit
 ) {
     val actions = nav.actions
-    val focusTick = nav.focusTick
-    val pendingFocus = nav.pendingFocus
     val scope = rememberCoroutineScope()
-    when (val top = nav.top) {
+    when (top) {
         Screen.Home -> HomeScreen(
             app = app,
             player = player,

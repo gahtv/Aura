@@ -406,12 +406,11 @@ fun ItemShelf(
     showLoading: Boolean = true,
     badgeFor: ((JellyfinItem) -> String?)? = null,
     onLongPress: ((JellyfinItem) -> Unit)? = null,
-    // True only while this row is on screen (Home passes the flag from
-    // rememberOnScreen). Inside, the horizontal scroll offset narrows it again
+    // True while this row is in the lazy list's motion window. Inside, the
+    // horizontal scroll offset narrows it again
     // to the covers actually in view: a 20-card row must not request 20 slots.
     animate: Boolean = false,
-    // Attached to the scrolling row so Home can measure whether the shelf is
-    // inside the window at all.
+    // Applied to the scrolling row.
     modifier: Modifier = Modifier
 ) {
     // "Only Atmos" (Settings) filters shelves without a second request: artists

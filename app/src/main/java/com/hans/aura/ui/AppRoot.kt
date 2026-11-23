@@ -179,9 +179,6 @@ fun AppRoot() {
         NavRequests.openNowPlaying.drop(1).collect { nav.openNowPlaying() }
     }
 
-    // Bumped by Settings > Refresh library; keys into data LaunchedEffects.
-    var refreshKey by remember { mutableStateOf(0) }
-
     // Library selection: refresh the known /UserViews list once per launch when
     // something is hidden. A library added on the server must be visible by
     // default, not silently filtered out by a stale "known libraries" list.
@@ -259,8 +256,8 @@ fun AppRoot() {
                                         pendingFocus = entryPendingFocus,
                                         endSession = exitSession,
                                         onSwitchProfile = onSwitchProfile,
-                                        refreshKey = refreshKey,
-                                        onRefreshKey = { refreshKey++ }
+                                        refreshKey = sessionViewModels.refreshKey,
+                                        onRefreshKey = sessionViewModels::bumpRefreshKey
                                     )
                                 }
                             }
@@ -282,10 +279,17 @@ fun AppRoot() {
 private class SessionViewModels : ViewModel() {
     var owner = newOwner()
         private set
+    var refreshKey by mutableIntStateOf(0)
+        private set
+
+    fun bumpRefreshKey() {
+        refreshKey++
+    }
 
     fun reset() {
         owner.viewModelStore.clear()
         owner = newOwner()
+        refreshKey = 0
     }
 
     override fun onCleared() {

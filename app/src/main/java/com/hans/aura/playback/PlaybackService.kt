@@ -24,6 +24,7 @@ import com.hans.aura.data.APP_VERSION
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Session
+import com.hans.aura.player.controller.RepeatPlaybackAnchor
 import com.hans.aura.util.AuraLog
 import com.hans.aura.util.AuraTag
 import kotlinx.coroutines.cancel
@@ -76,6 +77,12 @@ class PlaybackService : MediaSessionService() {
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // Media3 1.6 deduplicates identical repeat transitions at the controller.
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+                    mediaSession?.broadcastCustomCommand(
+                        RepeatPlaybackAnchor.command, RepeatPlaybackAnchor.snapshot(player)
+                    )
+                }
                 if (player.volume != 1f) {
                     AuraLog.i(AuraTag.VOL, "restoring unity gain (was ${player.volume})")
                     player.volume = 1f

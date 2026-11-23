@@ -79,6 +79,26 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun `live page overlapping a restored first page has unique item ids`() = runBlocking {
+        val first = model()
+        val cached = listOf(JellyfinItem(id = "a"), JellyfinItem(id = "b"))
+        withTimeout(5000) { requests.receive() }.complete(ItemsResponse(items = cached, totalRecordCount = 4))
+        withTimeout(5000) { first.state.first { !it.loading && it.items.isNotEmpty() } }
+        val key = first.state.value.cacheKey
+        store.clear()
+        PagedLibrary.clear()
+        val restored = model()
+        withTimeout(5000) { restored.state.first { it.items == cached } }
+        restored.loadNextPage()
+        withTimeout(5000) { requests.receive() }.complete(
+            ItemsResponse(items = listOf(JellyfinItem(id = "b"), JellyfinItem(id = "c")), totalRecordCount = 4)
+        )
+        withTimeout(5000) { restored.state.first { !it.loading && it.items.size >= 3 } }
+        assertEquals(listOf("a", "b", "c"), restored.state.value.items.map { it.id })
+        assertEquals(listOf("a", "b", "c"), PagedLibrary.get(key)?.items?.map { it.id })
+    }
+
+    @Test
     fun `changing sort during load starts a new request and ignores stale response`() = runBlocking {
         val model = model()
         val first = withTimeout(5000) { requests.receive() }

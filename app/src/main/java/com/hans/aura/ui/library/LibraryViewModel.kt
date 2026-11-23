@@ -281,7 +281,7 @@ class LibraryViewModel(
             withContext(Dispatchers.IO) { fetchPage(snapshot, startIndex, limit) }
         }.onSuccess { result ->
             if (!isCurrentLoad(generation)) return@onSuccess
-            val merged = if (replaceLoadedRange) result.items else snapshot.items + result.items
+            val merged = (if (replaceLoadedRange) result.items else snapshot.items + result.items).distinctBy { it.id }
             // A-Z jump skips the count: pagination ends on a short page instead
             // of trusting a total that belongs to the whole (unfiltered) list.
             val total = if (snapshot.letter != null) {

@@ -86,7 +86,6 @@ fun CollectionScreen(
     initialFocus: Boolean = false,
     onOpenArtist: (Artist) -> Unit = {},
     viewModel: CollectionViewModel = viewModel(
-        key = "collection:${collection.id}:${app.jellyfin.auth.session?.userId ?: "anon"}",
         factory = viewModelFactory {
             initializer { CollectionViewModel(app, collection) }
         }

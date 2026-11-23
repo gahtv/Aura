@@ -97,8 +97,12 @@ fun GenresScreen(
     val contentFocus = remember { FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
-    com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, contentFocus)
+    val contentReady = !state.genres.isNullOrEmpty()
+    val emptyResult = !contentReady && (state.genres != null || state.error != null)
+    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper,
+        ready = contentReady, cancelled = emptyResult)
+    com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, contentFocus,
+        ready = contentReady, cancelled = emptyResult)
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(title = "Genres", onBack = onBack)
@@ -181,7 +185,10 @@ fun GenreScreen(
     val contentFocus = remember { FocusRequester() }
     val radioFocus = remember { FocusRequester() }
 
-    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
+    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper,
+        ready = !state.loading && (state.visibleAlbums.isNotEmpty() || state.visibleTracks.isNotEmpty()),
+        cancelled = (!state.loading || state.error != null) &&
+            state.visibleAlbums.isEmpty() && state.visibleTracks.isEmpty())
     com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, radioFocus)
 
     Column(Modifier.fillMaxSize()) {

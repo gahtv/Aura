@@ -59,6 +59,7 @@ import com.hans.aura.ui.common.AuraLoadingIndicator
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.common.filterPillShape
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.nav.Screen
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraColors
@@ -160,7 +161,7 @@ internal fun LibraryScreen(
     // "B"s. BACK restores the same key and is deliberately left alone.
     LaunchedEffect(state.jumpTick) {
         if (state.jumpTick == 0) return@LaunchedEffect
-        kotlinx.coroutines.delay(50)
+        androidx.compose.runtime.withFrameNanos { }
         runCatching {
             if (kind == "Tracks") listState.scrollToItem(0) else gridState.scrollToItem(0)
         }
@@ -171,7 +172,13 @@ internal fun LibraryScreen(
     val railFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper)
+    val backFocusKey = remember(focusTick) { state.cacheKey }
+    com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedId, focusKeeper,
+        ready = items.isNotEmpty(),
+        cancelled = state.cacheKey != backFocusKey ||
+            (state.initialized && !state.loading && items.isEmpty()))
+    var pendingGridFocus by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    LibraryGridFocus(pendingGridFocus, state, contentFocus)
 
     Column(Modifier.fillMaxSize()) {
         if (likedOnly) {
@@ -250,7 +257,7 @@ internal fun LibraryScreen(
         if (azOpen) {
             androidx.activity.compose.BackHandler(enabled = azOpen) {
                 azOpen = false
-                scope.launch { kotlinx.coroutines.delay(60); azPillFocus.requestFocus() }
+                scope.launch { azPillFocus.requestFocusOnFrame() }
             }
             Row(
                 Modifier
@@ -269,10 +276,7 @@ internal fun LibraryScreen(
                     onClick = {
                         azOpen = false
                         viewModel.clearLetter(null)
-                        scope.launch {
-                            kotlinx.coroutines.delay(150)
-                            runCatching { contentFocus.requestFocus() }
-                        }
+                        pendingGridFocus = viewModel.state.value.let { it.jumpTick to it.cacheKey }
                     }
                 )
                 AZ_LETTERS.forEach { candidate ->
@@ -287,18 +291,14 @@ internal fun LibraryScreen(
                             viewModel.selectLetter(candidate)
                             // The rail disappears when a letter is taken; hand
                             // focus to the grid or the selector is stranded.
-                            scope.launch {
-                                kotlinx.coroutines.delay(150)
-                                runCatching { contentFocus.requestFocus() }
-                            }
+                            pendingGridFocus = viewModel.state.value.let { it.jumpTick to it.cacheKey }
                         }
                     )
                 }
             }
             LaunchedEffect(azOpen) {
                 if (azOpen) {
-                    kotlinx.coroutines.delay(80)
-                    runCatching { railFocus.requestFocus() }
+                    railFocus.requestFocusOnFrame()
                 }
             }
         }
@@ -504,6 +504,23 @@ private fun SortPill(
                 )
             }
         }
+    }
+}
+
+@Composable
+internal fun LibraryGridFocus(
+    pick: Pair<Int, String>?,
+    state: LibraryUiState,
+    requester: androidx.compose.ui.focus.FocusRequester
+) {
+    androidx.compose.runtime.key(pick) {
+        com.hans.aura.ui.common.InitialFocusOnPush(
+            shouldFocus = pick != null,
+            requester = requester,
+            ready = state.items.isNotEmpty(),
+            cancelled = pick != (state.jumpTick to state.cacheKey) ||
+                (state.initialized && !state.loading && state.items.isEmpty())
+        )
     }
 }
 

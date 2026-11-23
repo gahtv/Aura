@@ -54,6 +54,7 @@ import com.hans.aura.ui.MirrorLink
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.common.InitialFocusOnPush
 import com.hans.aura.ui.common.MotionArtwork
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.common.resolveArtwork
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraDynamicTheme
@@ -76,7 +77,6 @@ fun NowPlayingScreen(
     app: AuraApp,
     player: PlayerConnection,
     onBack: () -> Unit,
-    initialFocus: Boolean = false,
     onOpenQueue: () -> Unit,
     onOpenAlbum: (JellyfinItem) -> Unit = {},
     onOpenArtist: (JellyfinItem) -> Unit = {}
@@ -85,7 +85,7 @@ fun NowPlayingScreen(
     val item by player.current.collectAsState()
     val artUrl = item?.resolveArtwork()?.url(session.serverUrl, maxWidth = 480)
     AuraDynamicTheme(artUrl) {
-        NowPlayingContent(app, player, onBack, initialFocus, onOpenQueue, onOpenAlbum, onOpenArtist, item)
+        NowPlayingContent(app, player, onBack, onOpenQueue, onOpenAlbum, onOpenArtist, item)
     }
 }
 
@@ -94,7 +94,6 @@ private fun NowPlayingContent(
     app: AuraApp,
     player: PlayerConnection,
     onBack: () -> Unit,
-    initialFocus: Boolean,
     onOpenQueue: () -> Unit,
     onOpenAlbum: (JellyfinItem) -> Unit,
     onOpenArtist: (JellyfinItem) -> Unit,
@@ -150,19 +149,7 @@ private fun NowPlayingContent(
     BackHandler(enabled = showLyrics) { showLyrics = false }
 
     val playPauseFocus = remember { FocusRequester() }
-    InitialFocusOnPush(initialFocus, playPauseFocus)
-
-    // The auto-push into Now Playing does not always set pendingFocus, so the
-    // screen could open with NOTHING focused — no ring anywhere and the D-pad
-    // felt dead until the first press — or with focus parked on Back (pressing
-    // OK immediately left the screen). Always claim play/pause on entry.
-    LaunchedEffect(Unit) {
-        delay(250)
-        repeat(6) {
-            if (runCatching { playPauseFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(100)
-        }
-    }
+    InitialFocusOnPush(true, playPauseFocus)
 
     // ---- Queue peek (B14) ---------------------------------------------------
     // 0 = closed, 3 = peek, 5 = extended peek.
@@ -183,11 +170,7 @@ private fun NowPlayingContent(
         peekOrigin = null
         if (log) android.util.Log.d("AURA_PEEK", "closed")
         npScope.launch {
-            delay(120)
-            repeat(5) {
-                if (runCatching { restoreFocus.requestFocus() }.isSuccess) return@launch
-                delay(80)
-            }
+            restoreFocus.requestFocusOnFrame()
         }
     }
 

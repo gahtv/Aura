@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.common.AuraTextField
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
@@ -85,11 +86,7 @@ fun LoginScreen(
     val usernameFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         if (initialServerUrl.isNullOrBlank()) return@LaunchedEffect
-        kotlinx.coroutines.delay(300)
-        repeat(8) {
-            if (runCatching { usernameFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-            kotlinx.coroutines.delay(100)
-        }
+        usernameFocus.requestFocusOnFrame()
     }
 
     fun cancelQuickConnect() {
@@ -338,11 +335,7 @@ fun LoginScreen(
         qcPanel?.let { panel ->
             BackHandler { cancelQuickConnect() }
             LaunchedEffect(panel) {
-                delay(100)
-                repeat(6) {
-                    if (runCatching { cancelFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-                    delay(100)
-                }
+                cancelFocus.requestFocusOnFrame()
             }
             Box(
                 Modifier

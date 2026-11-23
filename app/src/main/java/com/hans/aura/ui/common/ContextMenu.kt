@@ -162,12 +162,7 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
     }
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(100)
-        repeat(5) {
-            val ok = runCatching { firstFocus.requestFocus() }.isSuccess
-            if (ok) return@LaunchedEffect
-            kotlinx.coroutines.delay(100)
-        }
+        firstFocus.requestFocusOnFrame()
     }
     DisposableEffect(Unit) { onDispose { OverlayVisibility.dialogOpen = false } }
 

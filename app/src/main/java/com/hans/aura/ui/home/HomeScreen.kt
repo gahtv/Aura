@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,7 +36,9 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,6 +82,14 @@ import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
+import kotlinx.coroutines.flow.first
+
+private data class HomeRow(
+    val key: String,
+    val contentType: String,
+    val items: List<JellyfinItem>?,
+    val content: @Composable LazyItemScope.(Int, FocusKeeper) -> Unit
+)
 
 @Composable
 fun HomeScreen(
@@ -103,27 +115,6 @@ fun HomeScreen(
 
     LaunchedEffect(refreshKey) { viewModel.onRefreshKey(refreshKey) }
 
-    fun trackMenu(track: JellyfinItem) = com.hans.aura.ui.common.ContextMenuHost.open(
-        com.hans.aura.ui.common.ContextMenus.forTrack(
-            app, player, scope, track,
-            onOpenArtist = onOpenArtist, onOpenCollection = onOpenCollection
-        )
-    )
-
-    fun albumMenu(item: JellyfinItem) = com.hans.aura.ui.common.ContextMenuHost.open(
-        com.hans.aura.ui.common.ContextMenus.forAlbum(
-            app, player, scope, item, onOpenArtist = onOpenArtist
-        )
-    )
-
-    fun openItem(item: JellyfinItem, shelfList: List<JellyfinItem>?, idx: Int) {
-        when (item.type) {
-            "MusicArtist" -> onOpenArtist(item)
-            "Audio" -> onPlayTrack(item, shelfList ?: listOf(item), idx.coerceAtLeast(0))
-            else -> onOpenCollection(item)
-        }
-    }
-
     val quickAccessItems = remember(state) {
         state.quickAccess.filter { AtmosFilter.keep(it) }
     }
@@ -145,16 +136,43 @@ fun HomeScreen(
     val activePreview = previewItem ?: quickAccessItems.firstOrNull() ?: state.recentAlbums?.firstOrNull()
 
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    val focusKeeper = remember { FocusKeeper() }
+    val focusKeepers = remember { mutableMapOf<String, FocusKeeper>() }
+    fun keeperForShelf(key: String) = focusKeepers.getOrPut(key) { FocusKeeper() }
     var focusedCardId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    RestoreFocusOnBack(focusTick, contentFocus, focusedCardId, focusKeeper)
+    var focusedShelfKey by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val motionWindow by remember(listState) {
         derivedStateOf { listMotionWindow(listState.layoutInfo) }
     }
 
-    fun onItemFocused(id: String) {
+    fun trackMenu(track: JellyfinItem) {
+        com.hans.aura.ui.common.ContextMenuHost.open(
+            com.hans.aura.ui.common.ContextMenus.forTrack(
+                app, player, scope, track,
+                onOpenArtist = onOpenArtist, onOpenCollection = onOpenCollection
+            )
+        )
+    }
+
+    fun albumMenu(item: JellyfinItem) {
+        com.hans.aura.ui.common.ContextMenuHost.open(
+            com.hans.aura.ui.common.ContextMenus.forAlbum(
+                app, player, scope, item, onOpenArtist = onOpenArtist
+            )
+        )
+    }
+
+    fun openItem(item: JellyfinItem, shelfList: List<JellyfinItem>?, idx: Int) {
+        when (item.type) {
+            "MusicArtist" -> onOpenArtist(item)
+            "Audio" -> onPlayTrack(item, shelfList ?: listOf(item), idx.coerceAtLeast(0))
+            else -> onOpenCollection(item)
+        }
+    }
+
+    fun onItemFocused(id: String, shelf: String) {
         focusedCardId = id
+        focusedShelfKey = shelf
         itemsById[id.removePrefix("qa:")]?.let { previewItem = it }
     }
 
@@ -174,22 +192,18 @@ fun HomeScreen(
             return@Column
         }
 
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            var itemIndex = 0
+        val rows = buildList {
             fun homeItem(
                 key: String,
                 contentType: String,
-                content: @Composable LazyItemScope.(Int) -> Unit
+                items: List<JellyfinItem>? = null,
+                content: @Composable LazyItemScope.(Int, FocusKeeper) -> Unit
             ) {
-                val index = itemIndex++
-                item(key = key, contentType = contentType) { content(index) }
+                add(HomeRow(key, contentType, items, content))
             }
 
             if (!state.loading && state.error != null) {
-                homeItem(key = "partialError", contentType = "error") {
+                homeItem(key = "partialError", contentType = "error") { _, _ ->
                     ErrorPane(
                         message = "Some shelves couldn't load",
                         onRetry = { viewModel.retry() },
@@ -199,7 +213,7 @@ fun HomeScreen(
             }
 
             if (activePreview != null) {
-                homeItem(key = "hero", contentType = "hero") {
+                homeItem(key = "hero", contentType = "hero") { _, _ ->
                     HomeLivePreviewHero(
                         item = activePreview,
                         serverUrl = serverUrl,
@@ -210,13 +224,13 @@ fun HomeScreen(
             }
 
             if (quickAccessItems.isNotEmpty()) {
-                homeItem(key = "quickAccess", contentType = "quickAccess") {
+                homeItem(key = "quickAccess", contentType = "quickAccess", items = quickAccessItems) { _, focusKeeper ->
                     QuickAccessGrid(
                         items = quickAccessItems,
                         serverUrl = serverUrl,
                         atmosAlbumIds = atmosAlbumIds,
                         focusKeeper = focusKeeper,
-                        onFocused = ::onItemFocused,
+                        onFocused = { onItemFocused(it, "quickAccess") },
                         onOpen = { item -> openItem(item, listOf(item), 0) },
                         onLongPress = { item ->
                             if (item.type == "Audio") trackMenu(item)
@@ -229,7 +243,7 @@ fun HomeScreen(
 
             // History shelves only exist on a backend that records play history.
             if (!state.recentlyPlayed.isNullOrEmpty()) {
-                homeItem(key = "shelf_recent_played", contentType = "shelf") { index ->
+                homeItem(key = "shelf_recent_played", contentType = "shelf", items = state.recentlyPlayed) { index, focusKeeper ->
                     MotionShelf(
                         animate = index in motionWindow,
                         title = "Recently played",
@@ -237,7 +251,7 @@ fun HomeScreen(
                         showLoading = state.loading,
                         serverUrl = serverUrl,
                         focusKeeper = focusKeeper,
-                        onFocused = ::onItemFocused,
+                        onFocused = { onItemFocused(it, "shelf_recent_played") },
                         onLongPress = { trackMenu(it) },
                         onOpen = { item, idx ->
                             onPlayTrack(item, state.recentlyPlayed ?: listOf(item), idx)
@@ -246,7 +260,7 @@ fun HomeScreen(
                 }
             }
             if (!state.recentArtists.isNullOrEmpty()) {
-                homeItem(key = "shelf_recent_artists", contentType = "shelf") { index ->
+                homeItem(key = "shelf_recent_artists", contentType = "shelf", items = state.recentArtists) { index, focusKeeper ->
                     MotionShelf(
                         animate = index in motionWindow,
                         title = "Recently played artists",
@@ -254,12 +268,12 @@ fun HomeScreen(
                         showLoading = state.loading,
                         serverUrl = serverUrl,
                         focusKeeper = focusKeeper,
-                        onFocused = ::onItemFocused,
+                        onFocused = { onItemFocused(it, "shelf_recent_artists") },
                         onOpen = { item, _ -> onOpenArtist(item) }
                     )
                 }
             }
-            homeItem(key = "shelf_recent_albums", contentType = "shelf") { index ->
+            homeItem(key = "shelf_recent_albums", contentType = "shelf", items = state.recentAlbums) { index, focusKeeper ->
                 MotionShelf(
                     animate = index in motionWindow,
                     title = "Recently added",
@@ -267,12 +281,12 @@ fun HomeScreen(
                     showLoading = state.loading,
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
-                    onFocused = ::onItemFocused,
+                    onFocused = { onItemFocused(it, "shelf_recent_albums") },
                     onLongPress = { albumMenu(it) },
                     onOpen = { item, _ -> onOpenCollection(item) }
                 )
             }
-            homeItem(key = "shelf_atmos", contentType = "shelf") { index ->
+            homeItem(key = "shelf_atmos", contentType = "shelf", items = state.atmosAlbums) { index, focusKeeper ->
                 MotionShelf(
                     animate = index in motionWindow,
                     title = "Your Atmos",
@@ -280,13 +294,13 @@ fun HomeScreen(
                     showLoading = state.loading,
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
-                    onFocused = ::onItemFocused,
+                    onFocused = { onItemFocused(it, "shelf_atmos") },
                     badgeFor = { "ATMOS" },
                     onLongPress = { albumMenu(it) },
                     onOpen = { item, _ -> onOpenCollection(item) }
                 )
             }
-            homeItem(key = "shelf_artists", contentType = "shelf") { index ->
+            homeItem(key = "shelf_artists", contentType = "shelf", items = state.artists) { index, focusKeeper ->
                 MotionShelf(
                     animate = index in motionWindow,
                     title = "Artists",
@@ -294,12 +308,12 @@ fun HomeScreen(
                     showLoading = state.loading,
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
-                    onFocused = ::onItemFocused,
+                    onFocused = { onItemFocused(it, "shelf_artists") },
                     onOpen = { item, _ -> onOpenArtist(item) }
                 )
             }
             if (!state.playlists.isNullOrEmpty()) {
-                homeItem(key = "shelf_playlists", contentType = "shelf") { index ->
+                homeItem(key = "shelf_playlists", contentType = "shelf", items = state.playlists) { index, focusKeeper ->
                     MotionShelf(
                         animate = index in motionWindow,
                         title = "Playlists",
@@ -307,17 +321,70 @@ fun HomeScreen(
                         showLoading = state.loading,
                         serverUrl = serverUrl,
                         focusKeeper = focusKeeper,
-                        onFocused = ::onItemFocused,
+                        onFocused = { onItemFocused(it, "shelf_playlists") },
                         onLongPress = { albumMenu(it) },
                         onOpen = { item, _ -> onOpenCollection(item) }
                     )
                 }
             }
-            homeItem(key = "bottomSpacer", contentType = "spacer") {
+            homeItem(key = "bottomSpacer", contentType = "spacer") { _, _ ->
                 Spacer(Modifier.height(140.dp)) // clear of the now-playing bar
             }
         }
+        val savedCardAvailable = rows.firstOrNull { it.key == focusedShelfKey }?.items.orEmpty()
+            .any { it.id == focusedCardId?.removePrefix("qa:") && AtmosFilter.keep(it) }
+        val shelfReady = homeShelfReady(focusTick, listState, rows.map { it.key }, focusedShelfKey,
+            savedCardAvailable)
+        RestoreFocusOnBack(focusTick, contentFocus, focusedCardId, focusedShelfKey?.let { keeperForShelf(it) },
+            ready = (quickAccessItems.isNotEmpty() || itemsById.values.any { AtmosFilter.keep(it) }) &&
+                (focusedCardId == null || (savedCardAvailable && shelfReady) ||
+                    (!savedCardAvailable && !state.loading)),
+            cancelled = !state.loading && quickAccessItems.isEmpty() &&
+                itemsById.values.none { AtmosFilter.keep(it) })
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            itemsIndexed(rows, key = { _, row -> row.key }, contentType = { _, row -> row.contentType }) { index, row ->
+                row.content(this, index, keeperForShelf(row.key))
+            }
+        }
     }
+}
+
+@Composable
+internal fun homeShelfReady(
+    focusTick: Int,
+    listState: LazyListState,
+    rowKeys: List<String>,
+    shelfKey: String?,
+    cardAvailable: Boolean
+): Boolean {
+    var savedIndex by rememberSaveable { mutableStateOf(0) }
+    var savedOffset by rememberSaveable { mutableStateOf(0) }
+    var ready by remember(focusTick) { mutableStateOf(focusTick <= 0 || shelfKey == null) }
+    LaunchedEffect(ready, listState, shelfKey) {
+        if (!ready) return@LaunchedEffect
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == shelfKey }?.let { it.index to it.offset }
+        }
+            .collect { shelf ->
+                if (shelf != null) {
+                    savedIndex = shelf.first
+                    savedOffset = shelf.second
+                }
+            }
+    }
+    LaunchedEffect(focusTick, rowKeys, shelfKey, cardAvailable) {
+        val index = rowKeys.indexOf(shelfKey)
+        if (ready || !cardAvailable || index < 0) return@LaunchedEffect
+        val layout = snapshotFlow { listState.layoutInfo }.first {
+            it.totalItemsCount == rowKeys.size && it.visibleItemsInfo.isNotEmpty()
+        }
+        if (index != savedIndex || layout.visibleItemsInfo.none { it.key == shelfKey }) {
+            listState.scrollToItem(index, -savedOffset)
+        }
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { it.key == shelfKey } }.first { it }
+        ready = true
+    }
+    return ready
 }
 
 /**

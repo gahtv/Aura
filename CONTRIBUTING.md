@@ -3,7 +3,7 @@
 Personal project, but PRs are welcome. Ground rules:
 
 - Use JDK 17 and the Gradle wrapper. Run compile, lint and JVM tests as described in
-  [README.md](README.md#checks); `scripts/check.sh` first needs its shared macOS paths
+  [README.md](README.md#development); `scripts/check.sh` first needs its shared macOS paths
   adapted on other machines. Playback and focus changes also need device checks.
 
 - **Verify on a release build** before claiming a perf or playback fix — debug builds are

@@ -8,7 +8,7 @@ Singer metadata controls alignment and colour when present.
 When Jellyfin has no lyrics, Settings > Look up lyrics online enables optional
 LRCLIB fallback (off by default). This sends track metadata, not Jellyfin credentials,
 to LRCLIB; its LRC uses the same parser. A client-id header is optional (see the
-[README configuration](../README.md#secrets--configuration)).
+[README configuration](../README.md#configuration)).
 
 ## LRC translations
 

@@ -11,3 +11,6 @@ internal data class ArtworkRef(val itemId: String, private val tag: String?) {
 internal fun JellyfinItem.resolveArtwork(): ArtworkRef? =
     primaryImageTag?.let { ArtworkRef(id, it) }
         ?: albumId?.let { ArtworkRef(it, albumPrimaryImageTag) }
+
+internal fun JellyfinItem.resolveAlbumArtwork(): ArtworkRef? =
+    albumId?.let { album -> albumPrimaryImageTag?.let { ArtworkRef(album, it) } } ?: resolveArtwork()

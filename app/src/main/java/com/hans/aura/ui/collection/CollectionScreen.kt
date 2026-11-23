@@ -51,16 +51,19 @@ import com.hans.aura.data.Mixes
 import com.hans.aura.ui.common.ConnectedAction
 import com.hans.aura.ui.common.ConnectedActions
 import com.hans.aura.ui.common.ErrorPane
+import com.hans.aura.ui.common.LocalArtworkTransition
 import com.hans.aura.ui.common.MotionArtwork
 import com.hans.aura.ui.common.TrackRow
+import com.hans.aura.ui.common.artworkRequest
+import com.hans.aura.ui.common.sharedArtwork
 import com.hans.aura.ui.nowplaying.AtmosBadge
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraDynamicTheme
-import com.hans.aura.ui.theme.artworkWash
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.TextSecondary
+import com.hans.aura.ui.theme.artworkWash
 import kotlinx.coroutines.launch
 
 /**
@@ -191,12 +194,15 @@ private fun CollectionContent(
                     Box(
                         Modifier
                             .size(216.dp)
-                            .clip(AuraShapes.cardHero)
+                            .then(
+                                if (LocalArtworkTransition.current == null) Modifier.clip(AuraShapes.cardHero)
+                                else Modifier.sharedArtwork(shown.id, AuraShapes.cardHeroRadius)
+                            )
                             .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
                     ) {
                         MotionArtwork(
                             itemId = shown.id,
-                            posterModel = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 480),
+                            posterModel = artworkRequest(AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 480)),
                             contentDescription = collection.name,
                             playing = motionPlaying,
                             modifier = Modifier.fillMaxSize()

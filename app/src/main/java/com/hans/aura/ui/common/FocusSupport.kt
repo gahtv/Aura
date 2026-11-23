@@ -98,9 +98,11 @@ fun RestoreFocusOnBack(
     cancelled: Boolean = false
 ) {
     val navigationTick = LocalFocusNavigationTick.current
+    val active = LocalDestinationActive.current
     val entryNavigationTick = remember(focusTick) { navigationTick }
     var requested by remember(focusTick) { mutableStateOf(false) }
-    LaunchedEffect(focusTick, ready, cancelled, navigationTick) {
+    LaunchedEffect(focusTick, ready, cancelled, navigationTick, active) {
+        if (!active) return@LaunchedEffect
         if (cancelled || navigationTick != entryNavigationTick) requested = true
         if (focusTick <= 0 || !ready || requested) return@LaunchedEffect
         val target = focusedId?.let { id -> keeper?.requesterFor(id) }
@@ -125,9 +127,11 @@ fun InitialFocusOnPush(
     cancelled: Boolean = false
 ) {
     val navigationTick = LocalFocusNavigationTick.current
+    val active = LocalDestinationActive.current
     val entryNavigationTick = remember(shouldFocus) { navigationTick }
     var requested by remember(shouldFocus) { mutableStateOf(false) }
-    LaunchedEffect(shouldFocus, ready, cancelled, navigationTick) {
+    LaunchedEffect(shouldFocus, ready, cancelled, navigationTick, active) {
+        if (!active) return@LaunchedEffect
         if (cancelled || navigationTick != entryNavigationTick) requested = true
         if (!shouldFocus || !ready || requested) return@LaunchedEffect
         requester.requestFocusOnFrame()

@@ -54,8 +54,11 @@ import com.hans.aura.ui.MirrorLink
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.common.InitialFocusOnPush
 import com.hans.aura.ui.common.MotionArtwork
+import com.hans.aura.ui.common.LocalArtworkTransition
+import com.hans.aura.ui.common.artworkRequest
 import com.hans.aura.ui.common.requestFocusOnFrame
-import com.hans.aura.ui.common.resolveArtwork
+import com.hans.aura.ui.common.resolveAlbumArtwork
+import com.hans.aura.ui.common.sharedArtwork
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraDynamicTheme
 import com.hans.aura.ui.theme.artworkWash
@@ -83,7 +86,7 @@ fun NowPlayingScreen(
 ) {
     val session = app.jellyfin.auth.session ?: return
     val item by player.current.collectAsState()
-    val artUrl = item?.resolveArtwork()?.url(session.serverUrl, maxWidth = 480)
+    val artUrl = item?.resolveAlbumArtwork()?.url(session.serverUrl, maxWidth = 480)
     AuraDynamicTheme(artUrl) {
         NowPlayingContent(app, player, onBack, onOpenQueue, onOpenAlbum, onOpenArtist, item)
     }
@@ -115,7 +118,7 @@ private fun NowPlayingContent(
 
     // One stable local for the current track so nothing below has to force-unwrap.
     val currentItem = item
-    val artwork = currentItem?.resolveArtwork()
+    val artwork = currentItem?.resolveAlbumArtwork()
     val providerSource = MusicSources.current?.takeIf { it.supportsProviderLyrics }
     var findLyricsOpen by remember(currentItem?.id) { mutableStateOf(false) }
     var lyricsRevision by remember(currentItem?.id) { mutableIntStateOf(0) }
@@ -302,13 +305,20 @@ private fun NowPlayingContent(
                         // Elsewhere this is exactly the still cover it always was.
                         MotionArtwork(
                             itemId = artwork.itemId,
-                            posterModel = artwork.url(session.serverUrl, maxWidth = 800),
+                            posterModel = artworkRequest(
+                                artwork.url(session.serverUrl, maxWidth = 800),
+                                placeholderKey = artwork.url(session.serverUrl, maxWidth = 480)
+                            ),
                             contentDescription = currentItem?.name,
                             playing = isPlaying,
                             modifier = Modifier
                                 .width(AuraSizes.artworkLarge)
                                 .height(AuraSizes.artworkLarge)
-                                .clip(AuraShapes.card)
+                                .then(
+                                    if (LocalArtworkTransition.current != null && artwork.itemId == currentItem?.albumId) {
+                                        Modifier.sharedArtwork(artwork.itemId, AuraShapes.cardRadius)
+                                    } else Modifier.clip(AuraShapes.card)
+                                )
                                 .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
                         )
                     }

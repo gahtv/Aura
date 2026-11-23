@@ -115,7 +115,7 @@ internal fun rememberRailPlayback(player: PlayerConnection, serverUrl: String?):
     }
 }
 
-private val collapsedWidth = AuraSizes.minTarget + AuraSpacing.sm * 2
+internal val collapsedRailWidth = AuraSizes.minTarget + AuraSpacing.sm * 2
 private val expandedWidth = 224.dp
 private val entryHeight = AuraSizes.minTarget
 
@@ -125,6 +125,7 @@ internal fun NavigationRailLayout(
     selected: RailDestination,
     playback: RailPlayback?,
     onSelect: (RailDestination) -> Unit,
+    insetContent: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val contentFocus = remember { FocusRequester() }
@@ -134,7 +135,7 @@ internal fun NavigationRailLayout(
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(start = if (showRail) collapsedWidth else 0.dp)
+                .padding(start = if (showRail && insetContent) collapsedRailWidth else 0.dp)
                 .focusRequester(contentFocus)
                 .focusRestorer()
                 .focusGroup()
@@ -167,7 +168,7 @@ private fun NavigationRail(
         label = "Navigation rail"
     )
     val progress = expansion.coerceIn(0f, 1f)
-    val width = lerp(collapsedWidth, expandedWidth, progress)
+    val width = lerp(collapsedRailWidth, expandedWidth, progress)
     val labelAlpha = ((progress - 0.35f) / 0.65f).coerceIn(0f, 1f)
 
     BackHandler(enabled = expanded) {

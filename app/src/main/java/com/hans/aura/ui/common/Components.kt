@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.currentCompositeKeyHashCode
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -90,6 +91,11 @@ fun ArtworkCard(
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val artworkSource = LocalArtworkSource.current
+    val artworkToken = currentCompositeKeyHashCode
+    val sharedArtwork = if (!circular && artworkSource?.value == artworkToken) {
+        Modifier.sharedArtwork(item.id, AuraShapes.cardRadius)
+    } else Modifier.clip(if (circular) CircleShape else AuraShapes.card)
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) AuraMotion.artworkFocusedScale else 1f,
@@ -109,9 +115,15 @@ fun ArtworkCard(
             .contextMenuKeys(onLongPress)
             .onFocusChanged {
                 focused = it.isFocused
-                if (it.isFocused) onFocused?.invoke(item.id)
+                if (it.isFocused) {
+                    artworkSource?.value = artworkToken
+                    onFocused?.invoke(item.id)
+                }
             }
-            .clickable { onClick() }
+            .clickable {
+                artworkSource?.value = artworkToken
+                onClick()
+            }
             // Keep the spring inside the focus target so TV scrolling sees stable bounds.
             .graphicsLayer {
                 scaleX = scale
@@ -123,12 +135,11 @@ fun ArtworkCard(
             animationSpec = AuraMotion.scheme.fastEffectsSpec(),
             label = "card"
         )
-        val outerShape = if (circular) CircleShape else AuraShapes.card
         val innerShape = if (circular) CircleShape else CardFocusedShape
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .clip(outerShape)
+                .then(sharedArtwork)
                 .background(bg)
                 .padding(if (focused) AuraSizes.focusBorder else 0.dp)
                 .then(
@@ -143,7 +154,7 @@ fun ArtworkCard(
             val artwork = item.resolveArtwork()
             if (artwork != null) {
                 Box {
-                    val still = artwork.url(serverUrl, maxWidth = 480)
+                    val still = artworkRequest(artwork.url(serverUrl, maxWidth = 480))
                     if (animate) {
                         // Same still image, with the motion loop over it when the
                         // budget grants a slot. Losing the slot changes nothing

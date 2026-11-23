@@ -353,7 +353,9 @@ internal fun LibraryScreen(
                     item {
                         Spacer(Modifier.height(60.dp))
                         if (items.size < state.total) {
-                            AuraLoadingIndicator("Loading more tracks")
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                AuraLoadingIndicator("Loading more tracks")
+                            }
                         } else androidx.tv.material3.Text(
                             com.hans.aura.ui.common.countLabel(items.size, "track"),
                             color = TextSecondary, fontSize = 12.sp,
@@ -419,7 +421,9 @@ internal fun LibraryScreen(
                         Column {
                             Spacer(Modifier.height(24.dp))
                             if (items.size < state.total) {
-                                AuraLoadingIndicator("Loading more library items")
+                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                    AuraLoadingIndicator("Loading more library items")
+                                }
                             } else androidx.tv.material3.Text(
                                 com.hans.aura.ui.common.countLabel(
                                     items.size,

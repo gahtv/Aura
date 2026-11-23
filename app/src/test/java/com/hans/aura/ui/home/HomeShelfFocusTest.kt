@@ -41,6 +41,9 @@ class HomeShelfFocusTest {
     fun backFindsSavedShelfAfterRowsAreInsertedWhileAway() = restoreShelf(true)
 
     @Test
+    fun backFindsSavedShelfAfterPlaceholderAboveGrowsWhileAway() = restoreShelf(false, growPlaceholder = true)
+
+    @Test
     fun unchangedRowsKeepBothSavedOffsets() = restoreShelf(false)
 
     @Test
@@ -53,7 +56,7 @@ class HomeShelfFocusTest {
     fun vanishedShelfUsesContainerFallback() = restoreShelf(false, true)
 
     private fun restoreShelf(insertRows: Boolean, removeShelf: Boolean = false, leaveThroughShell: Boolean = false,
-        newEntry: Boolean = false) {
+        newEntry: Boolean = false, growPlaceholder: Boolean = false) {
         compose.mainClock.autoAdvance = false
         val away = mutableStateOf(false)
         val inserted = mutableStateOf(false)
@@ -90,7 +93,12 @@ class HomeShelfFocusTest {
                                             .focusRequester(keeper.requesterFor("card$index")).focusable())
                                     }
                                 }
-                            } else Box(Modifier.height(250.dp).width(320.dp).testTag(row).focusable())
+                            } else {
+                                val height = if (growPlaceholder && row == "quickAccess") {
+                                    if (returned.value) 650.dp else 80.dp
+                                } else 250.dp
+                                Box(Modifier.height(height).width(320.dp).testTag(row).focusable())
+                            }
                         }
                     }
                 }
@@ -101,7 +109,7 @@ class HomeShelfFocusTest {
             }
             Box(Modifier.size(40.dp).testTag("nowPlaying").focusRequester(shellFocus).focusable())
         }
-        compose.runOnIdle { runBlocking { outer.scrollToItem(2, 37) } }
+        compose.runOnIdle { runBlocking { outer.scrollToItem(if (growPlaceholder) 1 else 2, if (growPlaceholder) 60 else 37) } }
         frames()
         compose.runOnIdle { runBlocking { inner.scrollToItem(20, 13) } }
         frames()
@@ -112,7 +120,7 @@ class HomeShelfFocusTest {
         frames()
         val horizontalBefore = compose.runOnIdle { inner.firstVisibleItemIndex to inner.firstVisibleItemScrollOffset }
         val verticalBefore = compose.runOnIdle { outer.firstVisibleItemIndex to outer.firstVisibleItemScrollOffset }
-        org.junit.Assert.assertEquals(2 to 54, verticalBefore)
+        org.junit.Assert.assertEquals(if (growPlaceholder) 1 to 77 else 2 to 54, verticalBefore)
         compose.runOnIdle {
             val shelf = outer.layoutInfo.visibleItemsInfo.first { it.key == "savedShelf" }
             savedOffset = shelf.offset
@@ -134,7 +142,9 @@ class HomeShelfFocusTest {
         compose.runOnIdle {
             org.junit.Assert.assertEquals(horizontalBefore, inner.firstVisibleItemIndex to inner.firstVisibleItemScrollOffset)
             org.junit.Assert.assertEquals(savedOffset, outer.layoutInfo.visibleItemsInfo.first { it.key == "savedShelf" }.offset)
-            if (!insertRows) org.junit.Assert.assertEquals(verticalBefore,
+            if (growPlaceholder) org.junit.Assert.assertEquals(2,
+                outer.layoutInfo.visibleItemsInfo.first { it.key == "savedShelf" }.index)
+            if (!insertRows && !growPlaceholder) org.junit.Assert.assertEquals(verticalBefore,
                 outer.firstVisibleItemIndex to outer.firstVisibleItemScrollOffset)
         }
     }

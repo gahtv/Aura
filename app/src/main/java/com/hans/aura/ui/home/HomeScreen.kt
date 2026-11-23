@@ -374,10 +374,10 @@ internal fun homeShelfReady(
     LaunchedEffect(focusTick, rowKeys, shelfKey, cardAvailable) {
         val index = rowKeys.indexOf(shelfKey)
         if (ready || !cardAvailable || index < 0) return@LaunchedEffect
-        snapshotFlow { listState.layoutInfo }.first {
+        val layout = snapshotFlow { listState.layoutInfo }.first {
             it.totalItemsCount == rowKeys.size && it.visibleItemsInfo.isNotEmpty()
         }
-        if (index != savedIndex) {
+        if (index != savedIndex || layout.visibleItemsInfo.none { it.key == shelfKey }) {
             listState.scrollToItem(index, -savedOffset)
         }
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { it.key == shelfKey } }.first { it }

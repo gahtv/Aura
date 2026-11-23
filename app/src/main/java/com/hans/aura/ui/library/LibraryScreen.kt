@@ -2,6 +2,7 @@
 
 package com.hans.aura.ui.library
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -53,11 +57,15 @@ import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.AuraLoadingIndicator
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.TrackRow
+import com.hans.aura.ui.common.filterPillShape
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
+import com.hans.aura.ui.theme.AuraShapes
+import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
-import com.hans.aura.ui.theme.AuraShapes
 
 /**
  * Whole-library views: Artists, Albums, Tracks, Playlists.
@@ -453,28 +461,27 @@ private fun SortPill(
     trailingIcon: Int? = null
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = AuraShapes.control
-    val bg = when {
-        selected && focused -> androidx.compose.ui.graphics.Color(0x66E8A44C)
-        selected -> androidx.compose.ui.graphics.Color(0xFFE8A44C)
-        focused -> androidx.compose.ui.graphics.Color(0xFF3A322A)
-        else -> androidx.compose.ui.graphics.Color.Transparent
-    }
+    val shape = filterPillShape(selected, focused)
+    val fill by animateColorAsState(
+        if (focused) AuraColors.FocusedFillSubtle else Color.Transparent,
+        animationSpec = AuraMotion.scheme.fastEffectsSpec(),
+        label = "sortPillFill"
+    )
     Box(
         modifier
+            .semantics { this.selected = selected }
             .clip(shape)
-            .background(bg)
+            .background(if (selected) Accent else fill)
             .border(
-                width = if (focused) 3.dp else 0.dp,
-                color = if (focused) androidx.compose.ui.graphics.Color(0xFFE8A44C)
-                else androidx.compose.ui.graphics.Color.Transparent,
+                width = AuraSizes.focusBorderLoud,
+                color = if (focused) AuraColors.CursorRing else Color.Transparent,
                 shape = shape
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 7.dp)
     ) {
-        val content = if (selected) androidx.compose.ui.graphics.Color(0xFF191410) else TextPrimary
+        val content = if (selected) AuraColors.OnAccentText else TextPrimary
         androidx.compose.foundation.layout.Row(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {

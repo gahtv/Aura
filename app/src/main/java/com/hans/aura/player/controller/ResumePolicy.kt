@@ -1,5 +1,7 @@
 package com.hans.aura.player.controller
 
+import com.hans.aura.data.ResumePoints
+import com.hans.aura.data.Session
 import com.hans.aura.model.Track
 
 /**
@@ -8,7 +10,7 @@ import com.hans.aura.model.Track
  *
  * Jellyfin 12.2.0 never writes UserData.PlaybackPositionTicks from playback
  * reports (verified against the live server), so a locally remembered position
- * ([com.hans.aura.data.ResumePoints]) wins and the server value is only a
+ * ([ResumePoints]) wins and the server value is only a
  * fallback for clients that did manage to set it.
  */
 class ResumePolicy {
@@ -28,9 +30,9 @@ class ResumePolicy {
     ): Boolean = playWhenReady && (resume ?: (startIndex > 0 || size == 1))
 
     /** Resume position for [item], or null when starting at zero is right. */
-    fun positionMs(item: Track?): Long? {
+    fun positionMs(session: Session, item: Track?): Long? {
         if (item == null) return null
-        val local = com.hans.aura.data.ResumePoints.position(item.id)
+        val local = ResumePoints.position(session, item.id)
         val pos = local ?: item.resumePositionMs ?: return null
         // Shorter than 15s in is "just started"; inside the last 10s is "finished".
         if (pos <= RESUME_MIN_MS) return null

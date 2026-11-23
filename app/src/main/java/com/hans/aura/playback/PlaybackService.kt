@@ -22,6 +22,7 @@ import com.hans.aura.BuildConfig
 import com.hans.aura.data.APP_NAME
 import com.hans.aura.data.APP_VERSION
 import com.hans.aura.data.AuthStore
+import com.hans.aura.data.ResumePoints
 import com.hans.aura.model.Track
 import com.hans.aura.data.Session
 import com.hans.aura.data.invalidateHistoryOnSuccess
@@ -297,6 +298,8 @@ internal class PlaybackReporter(
     private var lastTicksForCurrent = 0L
 
     fun start() {
+        // The service belongs to the session that started it, including ticks during teardown.
+        val session = jellyfin.auth.session
         val h = android.os.Handler(android.os.Looper.getMainLooper())
         handler = h
         h.post(object : Runnable {
@@ -330,7 +333,7 @@ internal class PlaybackReporter(
                             // it raced and stopped the NEW session instead of the
                             // one being replaced.
                             val oldSessionId = playSessionId
-                            com.hans.aura.data.ResumePoints.save(oldId, oldTicks / 10_000L)
+                            session?.let { ResumePoints.save(it, oldId, oldTicks / 10_000L) }
                             AuraLog.i(AuraTag.REPORT, "switch stop old=$oldId at=$oldTicks")
                             scope.launch {
                                 runCatching {
@@ -380,7 +383,7 @@ internal class PlaybackReporter(
                         // Remember where this track is for resume-where-you-left-
                         // off: the server does not store it (Jellyfin 12.2.0
                         // ignores PositionTicks on the report endpoints).
-                        com.hans.aura.data.ResumePoints.save(id, p.currentPosition)
+                        session?.let { ResumePoints.save(it, id, p.currentPosition) }
                         val pausedChanged = lastPausedReported != paused
                         if (pausedChanged) lastProgressAt = 0L
                         if (now - lastProgressAt >= 10_000L) {

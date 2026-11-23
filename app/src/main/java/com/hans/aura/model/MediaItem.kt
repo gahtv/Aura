@@ -22,6 +22,12 @@ data class ArtistRef(
     val name: String
 )
 
+@Immutable
+data class MediaPage<out T : MediaItem>(
+    val items: List<T>,
+    val total: Int
+)
+
 /**
  * UI-facing library item. List values are never mutated after construction.
  */
@@ -29,15 +35,16 @@ data class ArtistRef(
 sealed interface MediaItem {
     val id: String
     val name: String
-    val sortName: String?
     val artwork: Artwork?
 }
+
+@Immutable
+sealed interface CollectionItem : MediaItem
 
 @Immutable
 data class Track(
     override val id: String,
     override val name: String,
-    override val sortName: String? = null,
     override val artwork: Artwork? = null,
     val albumArtwork: Artwork? = null,
     val album: String? = null,
@@ -49,7 +56,6 @@ data class Track(
     val durationMs: Long = 0L,
     val trackNumber: Int? = null,
     val discNumber: Int? = null,
-    val genres: List<String> = emptyList(),
     val playlistItemId: String? = null,
     val container: String? = null,
     val isAtmos: Boolean = false,
@@ -63,7 +69,6 @@ data class Track(
 data class Album(
     override val id: String,
     override val name: String,
-    override val sortName: String? = null,
     override val artwork: Artwork? = null,
     val albumArtist: String? = null,
     val artistNames: String = "",
@@ -72,13 +77,12 @@ data class Album(
     val childCount: Int? = null,
     val overview: String? = null,
     val isFavorite: Boolean = false
-) : MediaItem
+) : CollectionItem
 
 @Immutable
 data class Artist(
     override val id: String,
     override val name: String,
-    override val sortName: String? = null,
     override val artwork: Artwork? = null,
     val overview: String? = null,
     val logo: Artwork? = null,
@@ -89,17 +93,15 @@ data class Artist(
 data class Playlist(
     override val id: String,
     override val name: String,
-    override val sortName: String? = null,
     override val artwork: Artwork? = null,
     val childCount: Int? = null,
     val overview: String? = null,
     val isFavorite: Boolean = false
-) : MediaItem
+) : CollectionItem
 
 @Immutable
 data class Genre(
     override val id: String,
     override val name: String,
-    override val sortName: String? = null,
     override val artwork: Artwork? = null
-) : MediaItem
+) : CollectionItem

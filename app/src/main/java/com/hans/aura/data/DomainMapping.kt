@@ -7,6 +7,7 @@ import com.hans.aura.model.Artwork
 import com.hans.aura.model.ArtworkKind
 import com.hans.aura.model.Genre
 import com.hans.aura.model.MediaItem
+import com.hans.aura.model.MediaPage
 import com.hans.aura.model.Playlist
 import com.hans.aura.model.Track
 import java.time.Instant
@@ -30,12 +31,27 @@ fun JellyfinItem.toDomainItem(): MediaItem? = when (type) {
 
 fun List<JellyfinItem>.toDomainItems(): List<MediaItem> = mapNotNull { it.toDomainItem() }
 
+fun List<JellyfinItem>.toTracks(): List<Track> = mapNotNull { it.toDomainItem() as? Track }
+
+fun List<JellyfinItem>.toAlbums(): List<Album> = mapNotNull { it.toDomainItem() as? Album }
+
+fun List<JellyfinItem>.toArtists(): List<Artist> = mapNotNull { it.toDomainItem() as? Artist }
+
+fun List<JellyfinItem>.toPlaylists(): List<Playlist> = mapNotNull { it.toDomainItem() as? Playlist }
+
+fun List<JellyfinItem>.toGenres(): List<Genre> = mapNotNull { it.toDomainItem() as? Genre }
+
+internal fun ItemsResponse.toDomainPage(): MediaPage<MediaItem> =
+    MediaPage(items = items.toDomainItems(), total = totalRecordCount)
+
+internal inline fun <reified T : MediaItem> MediaPage<MediaItem>.typed(): MediaPage<T> =
+    MediaPage(items = items.filterIsInstance<T>(), total = total)
+
 private fun JellyfinItem.toTrack(): Track {
     val artwork = baseArtwork()
     return Track(
         id = id,
         name = name,
-        sortName = sortName,
         artwork = artwork,
         albumArtwork = explicitAlbumArtwork() ?: artwork,
         album = album,
@@ -47,7 +63,6 @@ private fun JellyfinItem.toTrack(): Track {
         durationMs = durationMs,
         trackNumber = trackNumber,
         discNumber = discNumber,
-        genres = genres.orEmpty().toList(),
         playlistItemId = playlistItemId,
         container = mediaSources?.firstOrNull()?.container,
         isAtmos = hasAtmosStream(),
@@ -61,7 +76,6 @@ private fun JellyfinItem.toTrack(): Track {
 private fun JellyfinItem.toAlbum(): Album = Album(
     id = id,
     name = name,
-    sortName = sortName,
     artwork = baseArtwork(),
     albumArtist = albumArtist,
     artistNames = artistNames,
@@ -75,7 +89,6 @@ private fun JellyfinItem.toAlbum(): Album = Album(
 private fun JellyfinItem.toArtist(): Artist = Artist(
     id = id,
     name = name,
-    sortName = sortName,
     artwork = baseArtwork(),
     overview = overview,
     logo = imageArtwork(ArtworkKind.LOGO),
@@ -85,7 +98,6 @@ private fun JellyfinItem.toArtist(): Artist = Artist(
 private fun JellyfinItem.toPlaylist(): Playlist = Playlist(
     id = id,
     name = name,
-    sortName = sortName,
     artwork = baseArtwork(),
     childCount = childCount,
     overview = overview,
@@ -95,7 +107,6 @@ private fun JellyfinItem.toPlaylist(): Playlist = Playlist(
 private fun JellyfinItem.toGenre(): Genre = Genre(
     id = id,
     name = name,
-    sortName = sortName,
     artwork = baseArtwork()
 )
 

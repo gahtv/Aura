@@ -59,7 +59,7 @@ object AtmosBrowse {
             }.onSuccess { fetched += it.items }
                 .onFailure { Log.w(TAG, "hydrate type=$type chunk=${chunk.size} failed: ${it.message}") }
         }
-        val base = if (favoritesOnly) fetched.filter { Favorites.isFavorite(it) } else fetched
+        val base = if (favoritesOnly) fetched.filter { Favorites.isFavoriteRaw(it) } else fetched
         val result = sortItems(base.distinctBy { it.id }, sortBy, desc)
         LibraryCache.put(key, result)
         Log.d(TAG, "hydrate type=$type ids=${ids.size} fetched=${result.size} sort=$sortBy desc=$desc fav=$favoritesOnly")

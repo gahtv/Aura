@@ -1,5 +1,6 @@
 package com.hans.aura.data
 
+import com.hans.aura.model.Track as MediaTrack
 import android.util.Log
 import com.hans.aura.BuildConfig
 import kotlinx.coroutines.Dispatchers
@@ -76,10 +77,13 @@ object Lrclib {
     /**
      * Compatibility view for consumers that only need lyric lines.
      */
-    suspend fun lookup(item: JellyfinItem): List<LyricLine> = lookupResult(item).lines
+    suspend fun lookup(item: MediaTrack): List<LyricLine> = lookupResult(item).lines
+
+    suspend fun lookup(item: JellyfinItem): List<LyricLine> =
+        (item.toDomainItem() as? MediaTrack)?.let { lookup(it) }.orEmpty()
 
     /** Look [item] up without losing authoritative instrumental matches. Never throws. */
-    suspend fun lookupResult(item: JellyfinItem): LyricsResult = cachedLookup(item) {
+    suspend fun lookupResult(item: MediaTrack): LyricsResult = cachedLookup(item) {
         withContext(Dispatchers.IO) {
             val targetSec = (item.durationMs / 1000.0).roundToLong()
             val artist = primaryArtist(item)
@@ -90,7 +94,7 @@ object Lrclib {
         }
     }
 
-    internal suspend fun cachedLookup(item: JellyfinItem, load: suspend () -> LyricsResult): LyricsResult {
+    internal suspend fun cachedLookup(item: MediaTrack, load: suspend () -> LyricsResult): LyricsResult {
         cache[item.id]?.let { return logAndReturn(item, it, "cached") }
         val parsed = try {
             load()
@@ -109,15 +113,15 @@ object Lrclib {
         })
     }
 
-    private fun logAndReturn(item: JellyfinItem, lyrics: LyricsResult, result: String): LyricsResult {
+    private fun logAndReturn(item: MediaTrack, lyrics: LyricsResult, result: String): LyricsResult {
         Log.i(TAG, "AURA_LRCLIB item=${item.id} result=$result dur=${item.durationMs / 1000} lines=${lyrics.lines.size}")
         return lyrics
     }
 
     /** LRCLIB matches on ONE artist: prefer the album artist, then the first credited artist. */
-    private fun primaryArtist(item: JellyfinItem): String {
-        item.albumArtists?.firstOrNull()?.name?.takeIf { it.isNotBlank() }?.let { return it }
-        item.artists?.firstOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
+    private fun primaryArtist(item: MediaTrack): String {
+        item.albumArtists.firstOrNull()?.name?.takeIf { it.isNotBlank() }?.let { return it }
+        item.artists.firstOrNull()?.name?.takeIf { it.isNotBlank() }?.let { return it }
         return item.artistNames.substringBefore(',').trim()
     }
 

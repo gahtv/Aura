@@ -1,5 +1,12 @@
 package com.hans.aura.data
 
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.MediaItem
+import com.hans.aura.model.MediaPage
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +61,7 @@ class MediaRepository(
             ))
         }
         if (!response.isSuccessful) throw HttpException(response)
+        LibraryCache.evict("col:$playlistId")
         LibraryCache.clearDiskLists()
     }
 
@@ -61,7 +69,7 @@ class MediaRepository(
 
     // ---- Browse ------------------------------------------------------------
 
-    suspend fun recentlyPlayed(limit: Int = 20): List<JellyfinItem> = withContext(Dispatchers.IO) {
+    internal suspend fun rawRecentlyPlayed(limit: Int = 20): List<JellyfinItem> = withContext(Dispatchers.IO) {
         val uid = userId() ?: return@withContext emptyList()
         if (limit <= 0) return@withContext emptyList()
         LibraryFilter.queryItems(api(), uid, LibraryFilter.ItemsQuery(
@@ -70,10 +78,10 @@ class MediaRepository(
         )).items
     }
 
-    suspend fun recentArtists(limit: Int = 20): List<JellyfinItem> = withContext(Dispatchers.IO) {
+    internal suspend fun rawRecentArtists(limit: Int = 20): List<JellyfinItem> = withContext(Dispatchers.IO) {
         val uid = userId() ?: return@withContext emptyList()
         if (limit <= 0) return@withContext emptyList()
-        val ids = recentlyPlayed(maxOf(100, limit)).asSequence().flatMap { track ->
+        val ids = rawRecentlyPlayed(maxOf(100, limit)).asSequence().flatMap { track ->
             track.artistItems.orEmpty().filter { it.id.isNotBlank() }
                 .ifEmpty { track.albumArtists.orEmpty().filter { it.id.isNotBlank() } }
                 .asSequence()
@@ -92,10 +100,10 @@ class MediaRepository(
      * [LibraryCache] / [PagedLibrary] append the library-selection suffix
      * themselves, so callers pass the plain, stable key ("home_recent:…").
      */
-    suspend fun cached(prefix: String): List<JellyfinItem>? = LibraryCache.get(prefix)
+    internal suspend fun rawCached(prefix: String): List<JellyfinItem>? = LibraryCache.get(prefix)
 
     /** Stores a browse result under [prefix] (TTL + selection scoped). */
-    fun cache(prefix: String, items: List<JellyfinItem>) {
+    internal fun rawCache(prefix: String, items: List<JellyfinItem>) {
         LibraryCache.put(prefix, items)
     }
 
@@ -103,7 +111,7 @@ class MediaRepository(
      * Runs a browse query through [LibraryFilter] (hidden libraries excluded)
      * and caches it under [cachePrefix] when one is given.
      */
-    suspend fun browse(
+    internal suspend fun rawBrowse(
         query: LibraryFilter.ItemsQuery,
         cachePrefix: String? = null
     ): ItemsResponse = withContext(Dispatchers.IO) {
@@ -117,13 +125,13 @@ class MediaRepository(
     }
 
     /** Paged list store: accumulated page for a screen key, or null. */
-    fun cachedPage(key: String): PagedLibrary.Page? = PagedLibrary.get(key)
+    internal fun rawCachedPage(key: String): PagedLibrary.Page? = PagedLibrary.get(key)
 
-    fun storePage(key: String, items: List<JellyfinItem>, total: Int) {
-        PagedLibrary.put(key, items, total)
+    internal fun rawStorePage(key: String, items: List<JellyfinItem>, total: Int, requiresRefresh: Boolean = false) {
+        PagedLibrary.put(key, items, total, requiresRefresh)
     }
 
-    suspend fun createPlaylist(userId: String, name: String, trackIds: List<String>): JellyfinItem {
+    suspend fun createPlaylist(userId: String, name: String, trackIds: List<String>): Playlist {
         val created = withContext(Dispatchers.IO) {
             api().createPlaylist(
                 name = name,
@@ -141,11 +149,12 @@ class MediaRepository(
             LibraryCache.clearDiskLists()
             _playlistRevisions.update { it + (userId to ((it[userId] ?: 0L) + 1)) }
         }
-        return created
+        return created.toDomainItem() as? Playlist
+            ?: Playlist(id = created.id, name = created.name)
     }
 
     /** Item detail (never filtered: detail screens must open for any id). */
-    suspend fun item(itemId: String): JellyfinItem? = withContext(Dispatchers.IO) {
+    internal suspend fun rawItem(itemId: String): JellyfinItem? = withContext(Dispatchers.IO) {
         MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.item(itemId) }
         val uid = userId() ?: return@withContext null
         runCatching { api().getItem(itemId = itemId, userId = uid) }.getOrNull()
@@ -154,7 +163,7 @@ class MediaRepository(
     // ---- Artist ------------------------------------------------------------
 
     /** Albums by an album artist, both FLAC and Atmos copies (no dedupe). */
-    suspend fun artistAlbums(artistId: String, limit: Int = 100): List<JellyfinItem> =
+    internal suspend fun rawArtistAlbums(artistId: String, limit: Int = 100): List<JellyfinItem> =
         withContext(Dispatchers.IO) {
         MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.artistAlbums(artistId, limit) }
             val uid = userId() ?: return@withContext emptyList()
@@ -174,7 +183,7 @@ class MediaRepository(
         }
 
     /** Most-played tracks of an album artist. */
-    suspend fun artistTopTracks(artistId: String, limit: Int = 10): List<JellyfinItem> =
+    internal suspend fun rawArtistTopTracks(artistId: String, limit: Int = 10): List<JellyfinItem> =
         withContext(Dispatchers.IO) {
         MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.artistTopTracks(artistId, limit) }
             val uid = userId() ?: return@withContext emptyList()
@@ -193,7 +202,7 @@ class MediaRepository(
             }.getOrDefault(emptyList())
         }
 
-    suspend fun similarArtists(artistId: String, limit: Int = 20): List<JellyfinItem> =
+    internal suspend fun rawSimilarArtists(artistId: String, limit: Int = 20): List<JellyfinItem> =
         withContext(Dispatchers.IO) {
             val uid = userId() ?: return@withContext emptyList()
             runCatching { api().getSimilarArtists(artistId, uid, limit = limit).items }
@@ -203,7 +212,7 @@ class MediaRepository(
     // ---- Search / genres ---------------------------------------------------
 
     /** One query across tracks, albums, artists and playlists (split by caller). */
-    suspend fun search(term: String, limit: Int = 60): ItemsResponse = withContext(Dispatchers.IO) {
+    internal suspend fun rawSearch(term: String, limit: Int = 60): ItemsResponse = withContext(Dispatchers.IO) {
         MusicSources.current?.takeIf { it.id != "jellyfin" }?.let { return@withContext it.search(term, limit) }
         val uid = userId() ?: return@withContext ItemsResponse()
         runCatching {
@@ -226,11 +235,11 @@ class MediaRepository(
      * (it keeps every genre ever seen and most entries match nothing).
      * Cached under "genres:<userId>".
      */
-    suspend fun genres(): List<JellyfinItem> = withContext(Dispatchers.IO) {
+    internal suspend fun rawGenres(): List<JellyfinItem> = withContext(Dispatchers.IO) {
         val uid = userId() ?: return@withContext emptyList()
-        LibraryCache.get("genres:$uid")?.let { if (it.isNotEmpty()) return@withContext it }
+        LibraryCache.get("genres:$uid")?.let { return@withContext it }
 
-        val names = LinkedHashSet<String>()
+        val genreArt = LinkedHashMap<String, Pair<String?, String?>>()
         var start = 0
         var total = Int.MAX_VALUE
         var pages = 0
@@ -250,27 +259,39 @@ class MediaRepository(
                 )
             }.getOrNull() ?: break
             result.items.forEach { item ->
+                val artPair = (item.albumId ?: item.id) to (item.albumPrimaryImageTag ?: item.primaryImageTag)
                 item.genres.orEmpty().forEach { g ->
-                    g.trim().takeIf { it.isNotBlank() }?.let(names::add)
+                    val clean = g.trim()
+                    if (clean.isNotBlank() && !genreArt.containsKey(clean)) {
+                        genreArt[clean] = if (artPair.second != null) artPair else (null to null)
+                    }
                 }
             }
             if (result.items.isEmpty()) break
             total = result.totalRecordCount
-            start += 500
+            start += result.items.size
             pages++
         }
-        val items = names.map { JellyfinItem(id = it, name = it, type = "MusicGenre") }
+        val items = genreArt.entries.sortedBy { it.key.lowercase() }.map { (name, art) ->
+            JellyfinItem(
+                id = "genre:$name",
+                name = name,
+                type = "MusicGenre",
+                albumId = art.first,
+                albumPrimaryImageTag = art.second
+            )
+        }
         LibraryCache.put("genres:$uid", items)
         com.hans.aura.util.AuraLog.i(
             com.hans.aura.util.AuraTag.GENRES,
-            "scanned=$pages distinct=${items.size}"
+            "scanned=$start distinct=${items.size} pages=$pages"
         )
         items
     }
 
     // ---- Atmos -------------------------------------------------------------
 
-    suspend fun atmosAlbums(
+    internal suspend fun rawAtmosAlbums(
         sortBy: String = "SortName",
         desc: Boolean = false,
         favoritesOnly: Boolean = false,
@@ -282,7 +303,7 @@ class MediaRepository(
         AtmosBrowse.albums(api(), uid, sortBy, desc, favoritesOnly, startIndex, limit)
     }
 
-    suspend fun atmosTracks(
+    internal suspend fun rawAtmosTracks(
         sortBy: String = "SortName",
         desc: Boolean = false,
         favoritesOnly: Boolean = false,
@@ -306,6 +327,283 @@ class MediaRepository(
         val uid = userId() ?: return@withContext AtmosCatalog.Catalog()
         runCatching { AtmosCatalog.catalog(api(), uid) }.getOrDefault(AtmosCatalog.Catalog())
     }
+
+
+    // ---- Domain-facing browse -------------------------------------------------
+
+    suspend fun recentlyPlayed(limit: Int = 20): List<MediaItem> = rawRecentlyPlayed(limit).toDomainItems()
+
+    suspend fun recentArtists(limit: Int = 20): List<Artist> = rawRecentArtists(limit).toArtists()
+
+    suspend fun cached(prefix: String): List<MediaItem>? = rawCached(prefix)?.toDomainItems()
+
+    suspend fun browse(
+        query: LibraryFilter.ItemsQuery,
+        cachePrefix: String? = null
+    ): MediaPage<MediaItem> = rawBrowse(query, cachePrefix).toDomainPage()
+
+    suspend fun browseTracks(
+        query: LibraryFilter.ItemsQuery,
+        cachePrefix: String? = null
+    ): MediaPage<Track> = rawBrowse(query, cachePrefix).toDomainPage().typed()
+
+    suspend fun browseAlbums(
+        query: LibraryFilter.ItemsQuery,
+        cachePrefix: String? = null
+    ): MediaPage<Album> = rawBrowse(query, cachePrefix).toDomainPage().typed()
+
+    suspend fun browsePlaylists(
+        query: LibraryFilter.ItemsQuery,
+        cachePrefix: String? = null
+    ): MediaPage<Playlist> = rawBrowse(query, cachePrefix).toDomainPage().typed()
+
+    fun cachedPage(key: String): MediaPage<MediaItem>? = rawCachedPage(key)?.let {
+        MediaPage(items = it.items.toDomainItems(), total = it.total)
+    }
+
+    fun cachedPageRequiresRefresh(key: String): Boolean = rawCachedPage(key)?.requiresRefresh == true
+
+    fun hasCachedPage(key: String): Boolean = rawCachedPage(key) != null
+
+    suspend fun cachedLibraryPage(key: String): MediaPage<MediaItem>? {
+        cachedPage(key)?.let { return it }
+        val cached = rawCached(key)
+        if (cached.isNullOrEmpty()) return null
+        rawStorePage(key, cached, Int.MAX_VALUE, requiresRefresh = true)
+        return MediaPage(items = cached.toDomainItems(), total = Int.MAX_VALUE)
+    }
+
+    suspend fun libraryPage(
+        key: String,
+        kind: String,
+        sortBy: String,
+        desc: Boolean,
+        likedOnly: Boolean,
+        atmos: Boolean,
+        letter: String?,
+        startIndex: Int,
+        limit: Int,
+        replace: Boolean,
+        valid: () -> Boolean = { true }
+    ): MediaPage<MediaItem> = withContext(Dispatchers.IO) {
+        val order = if (desc) "Descending" else "Ascending"
+        val result = when {
+            atmos -> if (kind == "Tracks") {
+                rawAtmosTracks(sortBy, desc, likedOnly, startIndex, limit)
+            } else {
+                rawAtmosAlbums(sortBy, desc, likedOnly, startIndex, limit)
+            }
+            likedOnly -> rawBrowseLiked(sortBy, order, startIndex, limit)
+            letter != null -> rawLetterPage(kind, letter, startIndex, limit)
+            kind == "Artists" -> MusicSources.current?.takeIf { it.id != "jellyfin" }
+                ?.artists(sortBy, order, limit, startIndex)
+                ?: rawArtists(sortBy, order, limit, startIndex)
+            kind == "Albums" -> rawBrowse(LibraryFilter.ItemsQuery(
+                includeItemTypes = "MusicAlbum", recursive = true,
+                sortBy = sortBy, sortOrder = order, limit = limit, startIndex = startIndex
+            ))
+            kind == "Tracks" -> rawBrowse(LibraryFilter.ItemsQuery(
+                includeItemTypes = "Audio", recursive = true,
+                sortBy = sortBy, sortOrder = order, limit = limit, startIndex = startIndex
+            ))
+            kind == "Playlists" -> rawBrowse(LibraryFilter.ItemsQuery(
+                includeItemTypes = "Playlist", recursive = true,
+                sortBy = sortBy, sortOrder = order, limit = limit, startIndex = startIndex
+            ))
+            else -> throw IllegalArgumentException("Unknown kind $kind")
+        }
+        if (!valid()) throw CancellationException("stale library page")
+        val previous = if (replace) emptyList() else rawCachedPage(key)?.items.orEmpty()
+        val merged = if (replace) result.items else previous + result.items
+        val total = if (letter != null) {
+            if (result.items.size < 60) startIndex + result.items.size else Int.MAX_VALUE
+        } else {
+            result.totalRecordCount
+        }
+        rawStorePage(key, merged, total)
+        rawCache(key, merged.take(60))
+        MediaPage(items = merged.toDomainItems(), total = total)
+    }
+
+    internal suspend fun rawBrowseLiked(
+        sortBy: String,
+        sortOrder: String,
+        startIndex: Int,
+        limit: Int
+    ): ItemsResponse {
+        val uid = userId() ?: return ItemsResponse()
+        return Favorites.browseLiked(api(), uid, sortBy, sortOrder, startIndex, limit)
+    }
+
+    internal suspend fun rawLetterPage(
+        kind: String,
+        letter: String,
+        startIndex: Int,
+        limit: Int
+    ): ItemsResponse {
+        val uid = userId() ?: return ItemsResponse()
+        suspend fun onePage(parentId: String?, start: Int, size: Int): ItemsResponse =
+            if (kind == "Artists") {
+                api().getAlbumArtists(
+                    userId = uid,
+                    sortBy = "SortName",
+                    sortOrder = "Ascending",
+                    limit = size,
+                    startIndex = start,
+                    fields = "PrimaryImageAspectRatio",
+                    imageTypeLimit = 1,
+                    parentId = parentId,
+                    nameStartsWithOrGreater = letter
+                )
+            } else {
+                rawBrowse(LibraryFilter.ItemsQuery(
+                    includeItemTypes = "MusicAlbum",
+                    recursive = true,
+                    sortBy = "SortName",
+                    sortOrder = "Ascending",
+                    limit = size,
+                    startIndex = start,
+                    parentId = parentId,
+                    nameStartsWithOrGreater = letter
+                ))
+            }
+
+        if (!LibraryFilter.isActive()) return onePage(null, startIndex, limit)
+        val libs = LibraryFilter.visibleLibraries().filter {
+            it.collectionType == null || it.collectionType.equals("music", ignoreCase = true)
+        }
+        if (libs.isEmpty()) return ItemsResponse()
+        val wanted = startIndex + limit
+        val responses = libs.mapNotNull { lib ->
+            runCatching { onePage(lib.id, 0, wanted) }.getOrNull()
+        }
+        val all = responses.flatMap { it.items }
+            .distinctBy { it.id }
+            .sortedBy { (it.sortName ?: it.name).lowercase() }
+        return ItemsResponse(
+            items = all.drop(startIndex).take(limit),
+            totalRecordCount = responses.sumOf { it.totalRecordCount },
+            startIndex = startIndex
+        )
+    }
+
+    internal suspend fun rawArtists(
+        sortBy: String,
+        sortOrder: String,
+        limit: Int,
+        startIndex: Int
+    ): ItemsResponse = withContext(Dispatchers.IO) {
+        val uid = userId() ?: return@withContext ItemsResponse()
+        LibraryFilter.queryAlbumArtists(api(), uid, sortBy, sortOrder, limit, startIndex)
+    }
+
+    suspend fun artists(
+        sortBy: String = "SortName",
+        sortOrder: String = "Ascending",
+        limit: Int = 100,
+        startIndex: Int = 0
+    ): MediaPage<Artist> = withContext(Dispatchers.IO) {
+        val raw = MusicSources.current?.takeIf { it.id != "jellyfin" }?.artists(sortBy, sortOrder, limit, startIndex)
+            ?: rawArtists(sortBy, sortOrder, limit, startIndex)
+        raw.toDomainPage().typed()
+    }
+
+    suspend fun item(itemId: String): MediaItem? = rawItem(itemId)?.toDomainItem()
+
+    suspend fun artistAlbums(artistId: String, limit: Int = 100): List<Album> =
+        rawArtistAlbums(artistId, limit).toAlbums()
+
+    suspend fun artistTopTracks(artistId: String, limit: Int = 10): List<Track> =
+        rawArtistTopTracks(artistId, limit).toTracks()
+
+    suspend fun similarArtists(artistId: String, limit: Int = 20): List<Artist> =
+        rawSimilarArtists(artistId, limit).toArtists()
+
+    suspend fun search(term: String, limit: Int = 60): MediaPage<MediaItem> =
+        rawSearch(term, limit).toDomainPage()
+
+    suspend fun genres(): List<com.hans.aura.model.Genre> = rawGenres().toGenres()
+
+    suspend fun atmosAlbums(
+        sortBy: String = "SortName",
+        desc: Boolean = false,
+        favoritesOnly: Boolean = false,
+        startIndex: Int = 0,
+        limit: Int = 60
+    ): MediaPage<Album> = rawAtmosAlbums(sortBy, desc, favoritesOnly, startIndex, limit).toDomainPage().typed()
+
+    suspend fun atmosTracks(
+        sortBy: String = "SortName",
+        desc: Boolean = false,
+        favoritesOnly: Boolean = false,
+        startIndex: Int = 0,
+        limit: Int = 60
+    ): MediaPage<Track> = rawAtmosTracks(sortBy, desc, favoritesOnly, startIndex, limit).toDomainPage().typed()
+
+    suspend fun browseLiked(
+        sortBy: String = "SortName",
+        sortOrder: String = "Ascending",
+        startIndex: Int = 0,
+        limit: Int = 60
+    ): MediaPage<Track> = rawBrowseLiked(sortBy, sortOrder, startIndex, limit).toDomainPage().typed()
+
+    internal suspend fun rawPlaylistItems(playlistId: String): List<JellyfinItem> = withContext(Dispatchers.IO) {
+        val uid = checkNotNull(userId()) { "Not signed in" }
+        api().getPlaylistItems(playlistId, uid).items
+    }
+
+    suspend fun playlistItems(playlistId: String): List<Track> = rawPlaylistItems(playlistId).toTracks()
+
+    suspend fun addToPlaylist(playlistId: String, trackIds: List<String>) = withContext(Dispatchers.IO) {
+        val uid = checkNotNull(userId()) { "Not signed in" }
+        val resp = api().addToPlaylist(playlistId, trackIds.joinToString(","), uid)
+        if (!resp.isSuccessful) throw HttpException(resp)
+        LibraryCache.evict("col:$playlistId")
+        LibraryCache.evict("home_playlists:$uid")
+        LibraryCache.clearDiskLists()
+    }
+
+    suspend fun movePlaylistItem(playlistId: String, itemId: String, newIndex: Int) = withContext(Dispatchers.IO) {
+        val resp = api().movePlaylistItem(playlistId, itemId, newIndex)
+        if (!resp.isSuccessful) throw HttpException(resp)
+        LibraryCache.evict("col:$playlistId")
+        LibraryCache.clearDiskLists()
+    }
+
+    suspend fun toggleFavorite(item: MediaItem): Boolean? = withContext(Dispatchers.IO) {
+        val uid = userId() ?: return@withContext null
+        Favorites.toggle(api(), uid, item)
+    }
+
+    suspend fun preferredLyrics(itemId: String): List<LyricLine> = withContext(Dispatchers.IO) {
+        LyricsStore.fetchPreferred(api(), itemId)
+    }
+
+    internal suspend fun rawInstantMix(itemId: String, limit: Int): List<JellyfinItem> = withContext(Dispatchers.IO) {
+        val uid = userId() ?: return@withContext emptyList()
+        api().instantMix(itemId, userId = uid, limit = limit).items
+    }
+
+    internal suspend fun rawArtistInstantMix(artistId: String, limit: Int): List<JellyfinItem> = withContext(Dispatchers.IO) {
+        val uid = userId() ?: return@withContext emptyList()
+        api().artistInstantMix(artistId, userId = uid, limit = limit).items
+    }
+
+    internal suspend fun rawGenreInstantMix(name: String, limit: Int): List<JellyfinItem> = withContext(Dispatchers.IO) {
+        val uid = userId() ?: return@withContext emptyList()
+        api().genreInstantMix(name, userId = uid, limit = limit).items
+    }
+
+    private fun List<JellyfinItem>.mixTracks(): List<Track> =
+        filter { it.type.isEmpty() || it.type == "Audio" }.toTracks()
+
+    suspend fun trackMix(track: Track, limit: Int): List<Track> = rawInstantMix(track.id, limit).mixTracks()
+
+    suspend fun albumMix(album: Album, limit: Int): List<Track> = rawInstantMix(album.id, limit).mixTracks()
+
+    suspend fun artistMix(artist: Artist, limit: Int): List<Track> = rawArtistInstantMix(artist.id, limit).mixTracks()
+
+    suspend fun genreMix(name: String, limit: Int): List<Track> = rawGenreInstantMix(name, limit).mixTracks()
 
     // ---- Libraries / refresh ----------------------------------------------
 

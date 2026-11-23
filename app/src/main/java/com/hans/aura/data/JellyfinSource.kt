@@ -111,53 +111,53 @@ class JellyfinSource(
 
     // ---- Browse ------------------------------------------------------------
 
-    override suspend fun cached(prefix: String): List<JellyfinItem>? = media.cached(prefix)
+    override suspend fun cached(prefix: String): List<JellyfinItem>? = media.rawCached(prefix)
 
-    override fun cache(prefix: String, items: List<JellyfinItem>) = media.cache(prefix, items)
+    override fun cache(prefix: String, items: List<JellyfinItem>) = media.rawCache(prefix, items)
 
     override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse =
-        media.browse(query, cachePrefix)
+        media.rawBrowse(query, cachePrefix)
+
+    override suspend fun playlistItems(playlistId: String): List<JellyfinItem> =
+        media.rawPlaylistItems(playlistId)
 
     override suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) =
         media.removeFromPlaylist(playlistId, itemId, occurrence)
 
-    override suspend fun recentlyPlayed(limit: Int): List<JellyfinItem> = media.recentlyPlayed(limit)
+    override suspend fun recentlyPlayed(limit: Int): List<JellyfinItem> = media.rawRecentlyPlayed(limit)
 
-    override suspend fun recentArtists(limit: Int): List<JellyfinItem> = media.recentArtists(limit)
+    override suspend fun recentArtists(limit: Int): List<JellyfinItem> = media.rawRecentArtists(limit)
 
     override suspend fun artists(
         sortBy: String,
         sortOrder: String,
         limit: Int,
         startIndex: Int
-    ): ItemsResponse = withContext(Dispatchers.IO) {
-        val uid = client.auth.session?.userId ?: return@withContext ItemsResponse()
-        LibraryFilter.queryAlbumArtists(client.api, uid, sortBy, sortOrder, limit, startIndex)
-    }
+    ): ItemsResponse = media.rawArtists(sortBy, sortOrder, limit, startIndex)
 
-    override fun cachedPage(key: String): PagedLibrary.Page? = media.cachedPage(key)
+    override fun cachedPage(key: String): PagedLibrary.Page? = media.rawCachedPage(key)
 
-    override fun storePage(key: String, items: List<JellyfinItem>, total: Int) =
-        media.storePage(key, items, total)
+    override fun storePage(key: String, items: List<JellyfinItem>, total: Int, requiresRefresh: Boolean) =
+        media.rawStorePage(key, items, total, requiresRefresh)
 
-    override suspend fun item(itemId: String): JellyfinItem? = media.item(itemId)?.also { item ->
+    override suspend fun item(itemId: String): JellyfinItem? = media.rawItem(itemId)?.also { item ->
         bios[itemId] = item.overview?.let {
             HtmlCompat.fromHtml(it, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
         }.orEmpty()
     }
 
     override suspend fun artistAlbums(artistId: String, limit: Int): List<JellyfinItem> =
-        media.artistAlbums(artistId, limit)
+        media.rawArtistAlbums(artistId, limit)
 
     override suspend fun artistTopTracks(artistId: String, limit: Int): List<JellyfinItem> =
-        media.artistTopTracks(artistId, limit)
+        media.rawArtistTopTracks(artistId, limit)
 
     override suspend fun similarArtists(artistId: String, limit: Int): List<JellyfinItem> =
-        media.similarArtists(artistId, limit)
+        media.rawSimilarArtists(artistId, limit)
 
-    override suspend fun search(term: String, limit: Int): ItemsResponse = media.search(term, limit)
+    override suspend fun search(term: String, limit: Int): ItemsResponse = media.rawSearch(term, limit)
 
-    override suspend fun genres(): List<JellyfinItem> = media.genres()
+    override suspend fun genres(): List<JellyfinItem> = media.rawGenres()
 
     override suspend fun atmosAlbums(
         sortBy: String,
@@ -165,7 +165,7 @@ class JellyfinSource(
         favoritesOnly: Boolean,
         startIndex: Int,
         limit: Int
-    ): ItemsResponse = media.atmosAlbums(sortBy, desc, favoritesOnly, startIndex, limit)
+    ): ItemsResponse = media.rawAtmosAlbums(sortBy, desc, favoritesOnly, startIndex, limit)
 
     override suspend fun atmosTracks(
         sortBy: String,
@@ -173,7 +173,7 @@ class JellyfinSource(
         favoritesOnly: Boolean,
         startIndex: Int,
         limit: Int
-    ): ItemsResponse = media.atmosTracks(sortBy, desc, favoritesOnly, startIndex, limit)
+    ): ItemsResponse = media.rawAtmosTracks(sortBy, desc, favoritesOnly, startIndex, limit)
 
     override suspend fun atmosAlbumIds(): Set<String> = media.atmosAlbumIds()
 

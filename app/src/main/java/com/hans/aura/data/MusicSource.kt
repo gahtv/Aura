@@ -174,6 +174,10 @@ interface MusicSource {
     /** Runs one browse query, filtered by the current library selection. */
     suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String? = null): ItemsResponse
 
+    /** Playlist rows in server order; the default approximates them through the parent browse query. */
+    suspend fun playlistItems(playlistId: String): List<JellyfinItem> =
+        browse(LibraryFilter.ItemsQuery(parentId = playlistId, includeItemTypes = "Audio", limit = 500)).items
+
     /** Remove the zero-based occurrence of an item among same-id rows; failures propagate. */
     suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) {
         throw UnsupportedOperationException("Playlist removal is not supported")
@@ -193,7 +197,7 @@ interface MusicSource {
     /** Paged list store: accumulated page for a screen key, or null. */
     fun cachedPage(key: String): PagedLibrary.Page?
 
-    fun storePage(key: String, items: List<JellyfinItem>, total: Int)
+    fun storePage(key: String, items: List<JellyfinItem>, total: Int, requiresRefresh: Boolean = false)
 
     /** Single item detail (never filtered: detail screens open for any id). */
     suspend fun item(itemId: String): JellyfinItem?

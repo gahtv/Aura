@@ -2,6 +2,7 @@ package com.hans.aura.player.controller
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Bundle
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
@@ -9,7 +10,12 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.hans.aura.playback.PlaybackService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +60,24 @@ class PlaybackController(
     @Volatile
     private var released = false
 
+    private val sessionListener = object : MediaController.Listener {
+        @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+        override fun onCustomCommand(
+            controller: MediaController,
+            command: SessionCommand,
+            args: Bundle
+        ): ListenableFuture<SessionResult> {
+            if (command != RepeatPlaybackAnchor.command || released) {
+                return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
+            }
+            val anchor = RepeatPlaybackAnchor.read(args)
+                ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+            _clock.value = anchor
+            _durationMs.value = anchor.durationMs
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+    }
+
     fun setListener(listener: Listener?) {
         this.listener = listener
     }
@@ -73,7 +97,7 @@ class PlaybackController(
 
     fun connect() {
         val token = SessionToken(appContext, ComponentName(appContext, PlaybackService::class.java))
-        val future = MediaController.Builder(appContext, token).buildAsync()
+        val future = MediaController.Builder(appContext, token).setListener(sessionListener).buildAsync()
         future.addListener({
             val c = runCatching { future.get() }.getOrNull() ?: return@addListener
             // A teardown/disconnect may land while the controller is still

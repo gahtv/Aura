@@ -20,6 +20,8 @@ import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.ComposeUiTestConfig
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
@@ -98,6 +100,12 @@ class PanelFocusTrapTest {
             }
         }
         compose.mainClock.advanceTimeBy(1500)
+        when (panel) {
+            Panel.Bio -> compose.onNode(isFocused() and hasAnyDescendant(hasText("Biography text"))).assertExists()
+            Panel.Confirm, Panel.Login -> compose.onNodeWithText("Cancel").assertIsFocused()
+            Panel.Context -> compose.onNodeWithText("Action").assertIsFocused()
+            Panel.Queue -> compose.onNodeWithText("Queued track").assertIsFocused()
+        }
         compose.onNode(isFocused()).performKeyInput { pressKey(direction) }
         listOf("left", "right", "up", "down").forEach {
             compose.onNodeWithText("Behind $it").assertIsNotFocused()

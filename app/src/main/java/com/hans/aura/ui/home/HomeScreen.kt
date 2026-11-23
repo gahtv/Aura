@@ -99,6 +99,8 @@ private data class HomeRow(
 
 private fun keepForHome(item: MediaItem): Boolean = AtmosFilter.keep(item)
 
+internal fun collectionMenuTarget(item: MediaItem): CollectionItem? = item as? CollectionItem
+
 @Composable
 fun HomeScreen(
     app: AuraApp,
@@ -164,10 +166,10 @@ fun HomeScreen(
     }
 
     fun albumMenu(item: MediaItem) {
-        if (item !is Album) return
+        val collection = collectionMenuTarget(item) ?: return
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forAlbum(
-                app, player, scope, item, onOpenArtist = onOpenArtist
+                app, player, scope, collection, onOpenArtist = onOpenArtist
             )
         )
     }

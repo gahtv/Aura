@@ -11,14 +11,6 @@ import androidx.room.RoomDatabase
 import java.util.concurrent.Executors
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-
-internal val jellyfinJson = Json {
-    ignoreUnknownKeys = true
-    explicitNulls = false
-    coerceInputValues = true
-    encodeDefaults = true
-}
 
 @Entity(tableName = "library_lists")
 data class CachedLibraryList(@PrimaryKey val key: String, val savedAtMs: Long, val items: String)

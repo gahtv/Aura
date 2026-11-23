@@ -2,12 +2,23 @@ package com.hans.aura.data
 
 import android.content.Context
 import com.hans.aura.BuildConfig
+import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 const val APP_NAME = "Aura"
+
+internal val jellyfinJson = Json {
+    ignoreUnknownKeys = true
+    explicitNulls = false
+    coerceInputValues = true
+    // Fields with defaults (e.g. CanSeek on playback reports) must still be
+    // serialized: the server resets session PlayState.CanSeek when the field
+    // is absent, which makes Jellyfin Web refuse remote seeks.
+    encodeDefaults = true
+}
 
 /**
  * Reported to the server as the client version.

@@ -73,7 +73,7 @@ private fun ConnectedSegment(
     start: Boolean,
     end: Boolean,
     compact: Boolean,
-    navigation: Modifier
+    modifier: Modifier
 ) {
     var focused by remember { mutableStateOf(false) }
     val inner by animateDpAsState(
@@ -93,7 +93,7 @@ private fun ConnectedSegment(
     )
     Box(
         action.modifier
-            .then(navigation)
+            .then(modifier)
             .height(if (compact) AuraSizes.compactHeaderActionHeight else AuraSizes.minTarget)
             .clip(shape)
             .background(if (action.fill.isSpecified) action.fill else fill)

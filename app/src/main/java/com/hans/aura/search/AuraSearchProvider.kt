@@ -61,7 +61,7 @@ class AuraSearchProvider : ContentProvider() {
             SearchManager.SUGGEST_COLUMN_TEXT_2,
             SearchManager.SUGGEST_COLUMN_RESULT_CARD_IMAGE,
             SearchManager.SUGGEST_COLUMN_INTENT_ACTION,
-            SearchManager.SUGGEST_COLUMN_INTENT_DATA_ID
+            SearchManager.SUGGEST_COLUMN_INTENT_DATA
         )
 
         fun emptyCursor(): MatrixCursor = MatrixCursor(COLUMNS)
@@ -88,7 +88,14 @@ class AuraSearchProvider : ContentProvider() {
                         subtitle,
                         imageUrl,
                         "android.intent.action.VIEW",
-                        "${item.type}/${item.id}"
+                        Uri.Builder()
+                            .scheme("content")
+                            .authority("com.hans.aura.search")
+                            .appendPath("item")
+                            .appendPath(item.type)
+                            .appendPath(item.id)
+                            .build()
+                            .toString()
                     )
                 )
             }

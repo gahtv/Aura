@@ -26,6 +26,8 @@ internal val AuraColorScheme = androidx.tv.material3.darkColorScheme(
     onPrimaryContainer = TextPrimary,
     tertiary = Accent,
     onTertiary = AuraColors.OnAccent,
+    tertiaryContainer = AuraColors.BadgeScrim,
+    onTertiaryContainer = Accent,
     secondaryContainer = Accent.copy(alpha = 0.16f),
     onSecondaryContainer = Accent,
     onBackground = TextPrimary,

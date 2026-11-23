@@ -59,7 +59,6 @@ import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
-import com.hans.aura.ui.theme.LocalDynamicTheme
 import com.hans.aura.ui.theme.Surface
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
@@ -91,7 +90,6 @@ fun ArtworkCard(
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    val dynamic = LocalDynamicTheme.current
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) AuraMotion.artworkFocusedScale else 1f,
@@ -168,14 +166,14 @@ fun ArtworkCard(
                                 .align(Alignment.BottomEnd)
                                 .padding(AuraSpacing.xxs)
                                 .background(
-                                    if (dynamic) colors.tertiary else AuraColors.BadgeScrim,
+                                    colors.tertiaryContainer,
                                     AuraShapes.badge
                                 )
                                 .padding(horizontal = AuraSpacing.xxs, vertical = 2.dp)
                         ) {
                             androidx.tv.material3.Text(
                                 label,
-                                color = if (dynamic) colors.onTertiary else colors.tertiary,
+                                color = colors.onTertiaryContainer,
                                 fontSize = AuraTypography.caption,
                                 fontWeight = FontWeight.Bold
                             )

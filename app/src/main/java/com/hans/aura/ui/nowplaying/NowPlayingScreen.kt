@@ -81,6 +81,24 @@ fun NowPlayingScreen(
 ) {
     val session = app.jellyfin.auth.session ?: return
     val item by player.current.collectAsState()
+    val artUrl = item?.resolveArtwork()?.url(session.serverUrl, maxWidth = 480)
+    AuraDynamicTheme(artUrl) {
+        NowPlayingContent(app, player, onBack, initialFocus, onOpenQueue, onOpenAlbum, onOpenArtist, item)
+    }
+}
+
+@Composable
+private fun NowPlayingContent(
+    app: AuraApp,
+    player: PlayerConnection,
+    onBack: () -> Unit,
+    initialFocus: Boolean,
+    onOpenQueue: () -> Unit,
+    onOpenAlbum: (JellyfinItem) -> Unit,
+    onOpenArtist: (JellyfinItem) -> Unit,
+    item: JellyfinItem?
+) {
+    val session = app.jellyfin.auth.session ?: return
     val isPlaying by player.isPlaying.collectAsState()
     var showLyrics by remember { mutableStateOf(false) }
     // Own scope for the heart toggle (a favourite write is fire-and-forget).
@@ -96,6 +114,7 @@ fun NowPlayingScreen(
 
     // One stable local for the current track so nothing below has to force-unwrap.
     val currentItem = item
+    val artwork = currentItem?.resolveArtwork()
     val providerSource = MusicSources.current?.takeIf { it.supportsProviderLyrics }
     var findLyricsOpen by remember(currentItem?.id) { mutableStateOf(false) }
     var lyricsRevision by remember(currentItem?.id) { mutableIntStateOf(0) }
@@ -113,8 +132,6 @@ fun NowPlayingScreen(
         JellyfinItem(id = it.id, name = it.name, type = "MusicArtist")
     }
 
-    val artwork = currentItem?.resolveArtwork()
-    val dynArtUrl = artwork?.url(session.serverUrl, maxWidth = 480)
     var dimMode by remember { mutableStateOf(Prefs.nowPlayingDimMode) }
 
     val ambientEnabled = remember { Prefs.ambientNowPlaying }
@@ -214,215 +231,213 @@ fun NowPlayingScreen(
     )
     val wakeKeys = remember { mutableSetOf<Key>() }
 
-    AuraDynamicTheme(dynArtUrl) {
-        val colors = MaterialTheme.colorScheme
-        Box(
+    val colors = MaterialTheme.colorScheme
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                if (event.key in wakeKeys) {
+                    if (event.type == KeyEventType.KeyUp) wakeKeys.remove(event.key)
+                    return@onPreviewKeyEvent true
+                }
+                if (event.type == KeyEventType.KeyDown) {
+                    hudInteractionTick++
+                    if (ambientHidden) {
+                        ambientHidden = false
+                        android.util.Log.d("AURA_NP", "ambient=off")
+                        runCatching { playPauseFocus.requestFocus() }
+                        if (event.key != Key.Back) {
+                            wakeKeys.add(event.key)
+                            return@onPreviewKeyEvent true
+                        }
+                    }
+                }
+                false
+            }
+    ) {
+        Column(
             Modifier
                 .fillMaxSize()
-                .onPreviewKeyEvent { event ->
-                    if (event.key in wakeKeys) {
-                        if (event.type == KeyEventType.KeyUp) wakeKeys.remove(event.key)
-                        return@onPreviewKeyEvent true
-                    }
-                    if (event.type == KeyEventType.KeyDown) {
-                        hudInteractionTick++
-                        if (ambientHidden) {
-                            ambientHidden = false
-                            android.util.Log.d("AURA_NP", "ambient=off")
-                            runCatching { playPauseFocus.requestFocus() }
-                            if (event.key != Key.Back) {
-                                wakeKeys.add(event.key)
-                                return@onPreviewKeyEvent true
-                            }
-                        }
-                    }
-                    false
-                }
+                .background(Brush.verticalGradient(listOf(if (dimMode) colors.background else colors.primaryContainer, colors.surface)))
+                // Lyrics view is full-bleed edge to edge; the track view keeps the
+                // standard screen insets.
+                .padding(
+                    horizontal = if (showLyrics) 0.dp else AuraSpacing.npHorizontal,
+                    vertical = if (showLyrics) 0.dp else AuraSpacing.xl
+                )
         ) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(if (dimMode) colors.background else colors.primaryContainer, colors.surface)))
-                    // Lyrics view is full-bleed edge to edge; the track view keeps the
-                    // standard screen insets.
-                    .padding(
-                        horizontal = if (showLyrics) 0.dp else AuraSpacing.npHorizontal,
-                        vertical = if (showLyrics) 0.dp else AuraSpacing.xl
-                    )
-            ) {
-                // Top controls auto-hide after a pause on the lyrics view; any key press
-                // brings them back for another cycle.
-                var controlsVisible by remember { mutableStateOf(true) }
-                LaunchedEffect(showLyrics, controlsVisible, findLyricsOpen) {
-                    if (showLyrics && controlsVisible && !findLyricsOpen) {
-                        delay(6000)
-                        controlsVisible = false
-                    }
-                }
-                if (!showLyrics) controlsVisible = true
-
-                Box(Modifier.graphicsLayer { alpha = if (showLyrics) 1f else hudAlpha }) {
-                    NowPlayingTopRow(
-                        visible = controlsVisible || !showLyrics,
-                        lyricsMode = showLyrics,
-                        item = currentItem,
-                        queue = queueState,
-                        onBack = onBack,
-                        onOpenQueue = onOpenQueue,
-                        onFindLyrics = if (providerSource != null && currentItem != null) {
-                            { findLyricsOpen = true }
-                        } else null,
-                        onToggleLyrics = { showLyrics = !showLyrics }
-                    )
-                }
-
-                if (showLyrics) {
-                    Box(Modifier.fillMaxSize()) {
-                        key(lyricsRevision) {
-                            LyricsPane(
-                                app,
-                                player,
-                                onUserInteraction = { controlsVisible = true }
-                            )
-                        }
-                        // Album art + song details, bottom-left, ALWAYS visible —
-                        // draws over the lyric lines once the controls hide.
-                        NowPlayingChip(currentItem, artwork?.url(session.serverUrl, maxWidth = 200))
-                    }
-                } else {
-                    Row(Modifier.fillMaxSize()) {
-                        if (artwork != null) {
-                            // Motion artwork for the playing album when the source provides it.
-                            // Elsewhere this is exactly the still cover it always was.
-                            MotionArtwork(
-                                itemId = artwork.itemId,
-                                posterModel = artwork.url(session.serverUrl, maxWidth = 800),
-                                contentDescription = currentItem?.name,
-                                playing = isPlaying,
-                                modifier = Modifier
-                                    .width(AuraSizes.artworkLarge)
-                                    .height(AuraSizes.artworkLarge)
-                                    .clip(AuraShapes.card)
-                                    .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
-                            )
-                        }
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .padding(start = AuraSpacing.xxl, top = AuraSpacing.npTitleTop)
-                                .graphicsLayer { alpha = hudAlpha }
-                        ) {
-                            // Big title: shrink to fit, then marquee. Available width
-                            // comes from the row's weight(1f) column.
-                            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                                AutoFitMarqueeText(
-                                    text = currentItem?.name ?: "Nothing playing",
-                                    widthCap = maxWidth,
-                                    sizes = AuraTypography.npTitleFit,
-                                    color = colors.onSurface
-                                )
-                            }
-                            // Album / artist lines open their detail screens.
-                            albumItem?.let { ab ->
-                                JumpText(tag = "album", text = ab.name.ifBlank { "Album" }) {
-                                    onOpenAlbum(ab)
-                                }
-                            }
-                            artistItem?.let { ar ->
-                                JumpText(tag = "artist", text = ar.name.ifBlank { "Artist" }) {
-                                    onOpenArtist(ar)
-                                }
-                            }
-                            Spacer(Modifier.height(AuraSpacing.xl))
-                            LiveTransportBar(
-                                player = player,
-                                isPlaying = isPlaying,
-                                playPauseFocus = playPauseFocus,
-                                favorite = currentItem?.let { Favorites.isFavorite(it) } == true,
-                                onToggleFavorite = currentItem?.let { cur ->
-                                    {
-                                        npScope.launch {
-                                            Favorites.toggle(app.jellyfin.api, session.userId, cur)
-                                        }
-                                    }
-                                },
-                                onOpenPeek = ::openPeek,
-                                // Track radio: re-seed an Instant Mix from the
-                                // CURRENT track through the shared Mixes entry
-                                // point (the request itself is not reimplemented).
-                                onRadio = currentItem?.let { seed ->
-                                    {
-                                        npScope.launch {
-                                            Mixes.playMix(
-                                                api = app.jellyfin.api,
-                                                userId = session.userId,
-                                                player = player,
-                                                kind = Mixes.Kind.TRACK,
-                                                seed = seed
-                                            )
-                                        }
-                                    }
-                                },
-                                dimMode = dimMode,
-                                onToggleDimMode = {
-                                    dimMode = !dimMode
-                                    Prefs.nowPlayingDimMode = dimMode
-                                }
-                            )
-                        }
-                    }
+            // Top controls auto-hide after a pause on the lyrics view; any key press
+            // brings them back for another cycle.
+            var controlsVisible by remember { mutableStateOf(true) }
+            LaunchedEffect(showLyrics, controlsVisible, findLyricsOpen) {
+                if (showLyrics && controlsVisible && !findLyricsOpen) {
+                    delay(6000)
+                    controlsVisible = false
                 }
             }
-            if (!showLyrics && hudAlpha < 0.99f) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = 1f - hudAlpha }
-                ) {
+            if (!showLyrics) controlsVisible = true
+
+            Box(Modifier.graphicsLayer { alpha = if (showLyrics) 1f else hudAlpha }) {
+                NowPlayingTopRow(
+                    visible = controlsVisible || !showLyrics,
+                    lyricsMode = showLyrics,
+                    item = currentItem,
+                    queue = queueState,
+                    onBack = onBack,
+                    onOpenQueue = onOpenQueue,
+                    onFindLyrics = if (providerSource != null && currentItem != null) {
+                        { findLyricsOpen = true }
+                    } else null,
+                    onToggleLyrics = { showLyrics = !showLyrics }
+                )
+            }
+
+            if (showLyrics) {
+                Box(Modifier.fillMaxSize()) {
+                    key(lyricsRevision) {
+                        LyricsPane(
+                            app,
+                            player,
+                            onUserInteraction = { controlsVisible = true }
+                        )
+                    }
+                    // Album art + song details, bottom-left, ALWAYS visible —
+                    // draws over the lyric lines once the controls hide.
                     NowPlayingChip(currentItem, artwork?.url(session.serverUrl, maxWidth = 200))
                 }
-            }
-            // Queue peek (B14): the LAST child of the screen-root Box, so it draws
-            // over the lower part of the screen — including the transport row that
-            // opened it — and never in place of the full queue screen, which the
-            // Queue button still opens.
-            if (peekSize > 0) {
-                QueuePeekOverlay(
-                    upcoming = upcoming.take(peekSize),
-                    total = upcoming.size,
-                    focusToken = peekFocusToken,
-                    graceUntil = peekGraceUntil,
-                    onExtend = { extendPeek() },
-                    onCollapse = {
-                        // 5 -> 3 -> closed, so UP mirrors DOWN instead of throwing
-                        // the whole list away from the extended state.
-                        if (peekSize > 3) {
-                            peekSize = 3
-                            android.util.Log.d("AURA_PEEK", "open=3 index=$queueIndexState")
-                        } else {
-                            closePeek()
+            } else {
+                Row(Modifier.fillMaxSize()) {
+                    if (artwork != null) {
+                        // Motion artwork for the playing album when the source provides it.
+                        // Elsewhere this is exactly the still cover it always was.
+                        MotionArtwork(
+                            itemId = artwork.itemId,
+                            posterModel = artwork.url(session.serverUrl, maxWidth = 800),
+                            contentDescription = currentItem?.name,
+                            playing = isPlaying,
+                            modifier = Modifier
+                                .width(AuraSizes.artworkLarge)
+                                .height(AuraSizes.artworkLarge)
+                                .clip(AuraShapes.card)
+                                .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
+                        )
+                    }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .padding(start = AuraSpacing.xxl, top = AuraSpacing.npTitleTop)
+                            .graphicsLayer { alpha = hudAlpha }
+                    ) {
+                        // Big title: shrink to fit, then marquee. Available width
+                        // comes from the row's weight(1f) column.
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            AutoFitMarqueeText(
+                                text = currentItem?.name ?: "Nothing playing",
+                                widthCap = maxWidth,
+                                sizes = AuraTypography.npTitleFit,
+                                color = colors.onSurface
+                            )
                         }
-                    },
-                    onJump = { row ->
-                        val qIndex = upcomingEntries.getOrNull(row)?.index ?: return@QueuePeekOverlay
-                        android.util.Log.d("AURA_PEEK", "jump index=$qIndex")
-                        closePeek(log = false)
-                        player.skipToQueue(qIndex)
+                        // Album / artist lines open their detail screens.
+                        albumItem?.let { ab ->
+                            JumpText(tag = "album", text = ab.name.ifBlank { "Album" }) {
+                                onOpenAlbum(ab)
+                            }
+                        }
+                        artistItem?.let { ar ->
+                            JumpText(tag = "artist", text = ar.name.ifBlank { "Artist" }) {
+                                onOpenArtist(ar)
+                            }
+                        }
+                        Spacer(Modifier.height(AuraSpacing.xl))
+                        LiveTransportBar(
+                            player = player,
+                            isPlaying = isPlaying,
+                            playPauseFocus = playPauseFocus,
+                            favorite = currentItem?.let { Favorites.isFavorite(it) } == true,
+                            onToggleFavorite = currentItem?.let { cur ->
+                                {
+                                    npScope.launch {
+                                        Favorites.toggle(app.jellyfin.api, session.userId, cur)
+                                    }
+                                }
+                            },
+                            onOpenPeek = ::openPeek,
+                            // Track radio: re-seed an Instant Mix from the
+                            // CURRENT track through the shared Mixes entry
+                            // point (the request itself is not reimplemented).
+                            onRadio = currentItem?.let { seed ->
+                                {
+                                    npScope.launch {
+                                        Mixes.playMix(
+                                            api = app.jellyfin.api,
+                                            userId = session.userId,
+                                            player = player,
+                                            kind = Mixes.Kind.TRACK,
+                                            seed = seed
+                                        )
+                                    }
+                                }
+                            },
+                            dimMode = dimMode,
+                            onToggleDimMode = {
+                                dimMode = !dimMode
+                                Prefs.nowPlayingDimMode = dimMode
+                            }
+                        )
                     }
-                )
+                }
             }
-            if (findLyricsOpen && providerSource != null && currentItem != null) {
-                ProviderLyricsDialog(
-                    source = providerSource,
-                    track = currentItem,
-                    onDismiss = { findLyricsOpen = false },
-                    onSaved = {
-                        findLyricsOpen = false
-                        lyricsRevision++
-                        showLyrics = true
+        }
+        if (!showLyrics && hudAlpha < 0.99f) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = 1f - hudAlpha }
+            ) {
+                NowPlayingChip(currentItem, artwork?.url(session.serverUrl, maxWidth = 200))
+            }
+        }
+        // Queue peek (B14): the LAST child of the screen-root Box, so it draws
+        // over the lower part of the screen — including the transport row that
+        // opened it — and never in place of the full queue screen, which the
+        // Queue button still opens.
+        if (peekSize > 0) {
+            QueuePeekOverlay(
+                upcoming = upcoming.take(peekSize),
+                total = upcoming.size,
+                focusToken = peekFocusToken,
+                graceUntil = peekGraceUntil,
+                onExtend = { extendPeek() },
+                onCollapse = {
+                    // 5 -> 3 -> closed, so UP mirrors DOWN instead of throwing
+                    // the whole list away from the extended state.
+                    if (peekSize > 3) {
+                        peekSize = 3
+                        android.util.Log.d("AURA_PEEK", "open=3 index=$queueIndexState")
+                    } else {
+                        closePeek()
                     }
-                )
-            }
+                },
+                onJump = { row ->
+                    val qIndex = upcomingEntries.getOrNull(row)?.index ?: return@QueuePeekOverlay
+                    android.util.Log.d("AURA_PEEK", "jump index=$qIndex")
+                    closePeek(log = false)
+                    player.skipToQueue(qIndex)
+                }
+            )
+        }
+        if (findLyricsOpen && providerSource != null && currentItem != null) {
+            ProviderLyricsDialog(
+                source = providerSource,
+                track = currentItem,
+                onDismiss = { findLyricsOpen = false },
+                onSaved = {
+                    findLyricsOpen = false
+                    lyricsRevision++
+                    showLyrics = true
+                }
+            )
         }
     }
 }

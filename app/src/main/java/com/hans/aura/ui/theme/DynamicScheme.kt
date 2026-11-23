@@ -5,13 +5,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import com.materialkolor.dynamiccolor.MaterialDynamicColors
@@ -208,8 +206,6 @@ internal val AuraComposeColorScheme = darkColorScheme(
     scrim = AuraColorScheme.scrim
 )
 
-internal val LocalDynamicTheme = staticCompositionLocalOf { false }
-
 @Composable
 fun AuraDynamicTheme(artworkUrl: String?, content: @Composable () -> Unit) {
     val seed = rememberArtworkSeed(artworkUrl)
@@ -225,13 +221,11 @@ fun AuraDynamicTheme(artworkUrl: String?, content: @Composable () -> Unit) {
         progress.animateTo(1f, tween(durationMillis = 500))
     }
     val scheme = lerpScheme(start, end, progress.value)
-    CompositionLocalProvider(LocalDynamicTheme provides (seed != null)) {
-        androidx.compose.material3.MaterialTheme(colorScheme = scheme) {
-            androidx.tv.material3.MaterialTheme(
-                colorScheme = scheme.toTvColorScheme(),
-                typography = AuraTypography.expressive,
-                content = content
-            )
-        }
+    androidx.compose.material3.MaterialTheme(colorScheme = scheme) {
+        androidx.tv.material3.MaterialTheme(
+            colorScheme = scheme.toTvColorScheme(),
+            typography = AuraTypography.expressive,
+            content = content
+        )
     }
 }

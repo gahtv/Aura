@@ -34,7 +34,6 @@ import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
-import com.hans.aura.ui.theme.LocalDynamicTheme
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 
@@ -107,15 +106,14 @@ internal fun NowPlayingTopRow(
 @Composable
 fun AtmosBadge() {
     val colors = MaterialTheme.colorScheme
-    val dynamic = LocalDynamicTheme.current
     Box(
         Modifier
-            .background(if (dynamic) colors.tertiary else colors.tertiary.copy(alpha = 0.20f), AuraShapes.badge)
+            .background(colors.tertiaryContainer, AuraShapes.badge)
             .padding(horizontal = AuraSpacing.sm, vertical = AuraSpacing.xxs)
     ) {
         androidx.tv.material3.Text(
             "DD+ \u2022 ATMOS",
-            color = if (dynamic) colors.onTertiary else colors.tertiary,
+            color = colors.onTertiaryContainer,
             fontSize = AuraTypography.caption,
             fontWeight = FontWeight.SemiBold
         )

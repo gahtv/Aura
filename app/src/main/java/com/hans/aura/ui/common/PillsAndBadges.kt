@@ -28,7 +28,6 @@ import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
-import com.hans.aura.ui.theme.LocalDynamicTheme
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
 import com.hans.aura.data.SourceQueries
@@ -56,7 +55,6 @@ fun HeartToggle(
     interactive: Boolean = true
 ) {
     val colors = MaterialTheme.colorScheme
-    val dynamic = LocalDynamicTheme.current
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.pill
     val focusableModifier = if (!interactive) {
@@ -66,7 +64,7 @@ fun HeartToggle(
             .clip(shape)
             .background(
                 when {
-                    focused -> if (dynamic) colors.secondaryContainer else colors.primary.copy(alpha = 0.25f)
+                    focused -> colors.secondaryContainer
                     else -> Color.Transparent
                 }
             )
@@ -91,7 +89,7 @@ fun HeartToggle(
                 else R.drawable.ic_favorite
             ),
             contentDescription = null,
-            tint = if (focused && dynamic) colors.onSecondaryContainer else if (favorite) colors.primary else TextSecondary,
+            tint = if (focused) colors.onSecondaryContainer else if (favorite) colors.primary else TextSecondary,
             modifier = Modifier.size(iconSize)
         )
     }
@@ -113,7 +111,6 @@ fun AtmosFilterPill(
     modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
-    val dynamic = LocalDynamicTheme.current
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.control
     Box(
@@ -123,7 +120,7 @@ fun AtmosFilterPill(
             .clip(shape)
             .background(
                 when {
-                    selected -> if (dynamic) colors.secondaryContainer else colors.primary
+                    selected -> colors.secondaryContainer
                     focused -> AuraColors.FocusedFillSubtle
                     else -> Color.Transparent
                 }
@@ -143,8 +140,7 @@ fun AtmosFilterPill(
             ),
             contentDescription = "Only Atmos",
             tint = when {
-                selected && dynamic -> colors.onSecondaryContainer
-                selected -> AuraColors.OnAccentText
+                selected -> colors.onSecondaryContainer
                 else -> TextPrimary
             },
             modifier = Modifier.size(AuraSizes.iconBadge)
@@ -156,14 +152,13 @@ fun AtmosFilterPill(
 @Composable
 fun AtmosChip() {
     val colors = MaterialTheme.colorScheme
-    val dynamic = LocalDynamicTheme.current
     androidx.tv.material3.Text(
         "ATMOS",
-        color = if (dynamic) colors.onTertiary else colors.tertiary,
+        color = colors.onTertiaryContainer,
         fontSize = AuraTypography.caption,
         fontWeight = FontWeight.Bold,
         modifier = Modifier
-            .background(if (dynamic) colors.tertiary else AuraColors.BadgeScrim, AuraShapes.badge)
+            .background(colors.tertiaryContainer, AuraShapes.badge)
             .padding(horizontal = AuraSpacing.xs, vertical = 2.dp)
     )
 }

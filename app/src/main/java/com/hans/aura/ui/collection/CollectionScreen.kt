@@ -84,6 +84,30 @@ fun CollectionScreen(
 ) {
     val session = app.jellyfin.auth.session ?: return
     val state by viewModel.state.collectAsState()
+    val shown = state.fullItem ?: collection
+    val artUrl = shown.primaryImageTag?.let {
+        AuthStore.imageUrl(session.serverUrl, shown.id, it, maxWidth = 480)
+    }
+    AuraDynamicTheme(artUrl) {
+        CollectionContent(
+            app, collection, player, onBack, focusTick, initialFocus, onOpenArtist, viewModel, state
+        )
+    }
+}
+
+@Composable
+private fun CollectionContent(
+    app: AuraApp,
+    collection: JellyfinItem,
+    player: PlayerConnection,
+    onBack: () -> Unit,
+    focusTick: Int,
+    initialFocus: Boolean,
+    onOpenArtist: (JellyfinItem) -> Unit,
+    viewModel: CollectionViewModel,
+    state: CollectionUiState
+) {
+    val session = app.jellyfin.auth.session ?: return
     val tracks = state.tracks
     var showBio by remember { mutableStateOf(false) }
     var sourceBio by remember(collection.id) { mutableStateOf<String?>(null) }
@@ -99,9 +123,6 @@ fun CollectionScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     val shown = state.fullItem ?: collection
-    val artUrl = shown.primaryImageTag?.let {
-        AuthStore.imageUrl(session.serverUrl, shown.id, it, maxWidth = 480)
-    }
 
     val contentFocus = remember { FocusRequester() }
     val playButtonFocus = remember { FocusRequester() }
@@ -110,282 +131,280 @@ fun CollectionScreen(
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedTrackId, focusKeeper)
     com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, playButtonFocus)
 
-    AuraDynamicTheme(artUrl) {
-        val colors = MaterialTheme.colorScheme
+    val colors = MaterialTheme.colorScheme
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        colors.primaryContainer,
+                        colors.surface,
+                        colors.background
+                    )
+                )
+            )
+    ) {
+        // Subtle atmospheric backdrop behind the split view.
+        shown.primaryImageTag?.let { tag ->
+            AsyncImage(
+                model = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 720),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alpha = 0.16f,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
         Box(
             Modifier
                 .fillMaxSize()
                 .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            colors.primaryContainer,
-                            colors.surface,
-                            colors.background
-                        )
+                    Brush.horizontalGradient(
+                        0.0f to colors.primaryContainer.copy(alpha = 0.78f),
+                        0.45f to colors.background.copy(alpha = 0.85f),
+                        1.0f to colors.background.copy(alpha = 0.94f)
                     )
                 )
-        ) {
-            // Subtle atmospheric backdrop behind the split view.
-            shown.primaryImageTag?.let { tag ->
-                AsyncImage(
-                    model = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 720),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    alpha = 0.16f,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.horizontalGradient(
-                            0.0f to colors.primaryContainer.copy(alpha = 0.78f),
-                            0.45f to colors.background.copy(alpha = 0.85f),
-                            1.0f to colors.background.copy(alpha = 0.94f)
-                        )
-                    )
-            )
+        )
 
-            Row(
-                Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = AuraSpacing.screenHorizontal, vertical = AuraSpacing.lg),
-                horizontalArrangement = Arrangement.spacedBy(AuraSpacing.xl)
+        Row(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = AuraSpacing.screenHorizontal, vertical = AuraSpacing.lg),
+            horizontalArrangement = Arrangement.spacedBy(AuraSpacing.xl)
+        ) {
+            // Left pane (~36%): cover, metadata, bio, and action buttons (no fixed height clipping).
+            Column(
+                modifier = Modifier
+                    .weight(0.36f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.Top
             ) {
-                // Left pane (~36%): cover, metadata, bio, and action buttons (no fixed height clipping).
-                Column(
-                    modifier = Modifier
-                        .weight(0.36f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.Top
-                ) {
-                    shown.primaryImageTag?.let { tag ->
-                        Box(
-                            Modifier
-                                .size(216.dp)
-                                .clip(AuraShapes.cardHero)
-                                .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
-                        ) {
-                            MotionArtwork(
-                                itemId = shown.id,
-                                posterModel = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 480),
-                                contentDescription = collection.name,
-                                playing = motionPlaying,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        Spacer(Modifier.height(AuraSpacing.md))
-                    }
-                    androidx.tv.material3.Text(
-                        when (collection.type) {
-                            "Playlist" -> "Playlist"
-                            else -> collection.year?.toString() ?: "Album"
-                        },
-                        fontSize = 13.sp,
-                        color = colors.primary
-                    )
-                    Spacer(Modifier.height(AuraSpacing.xxs))
-                    androidx.tv.material3.Text(
-                        shown.name,
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = colors.onSurface,
-                        maxLines = 3,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                    )
-                    Spacer(Modifier.height(AuraSpacing.xs))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.tv.material3.Text(
-                            subtitle(collection, tracks),
-                            fontSize = 14.sp,
-                            color = colors.onSurfaceVariant,
-                            modifier = Modifier.weight(1f, fill = false)
+                shown.primaryImageTag?.let { tag ->
+                    Box(
+                        Modifier
+                            .size(216.dp)
+                            .clip(AuraShapes.cardHero)
+                            .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
+                    ) {
+                        MotionArtwork(
+                            itemId = shown.id,
+                            posterModel = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 480),
+                            contentDescription = collection.name,
+                            playing = motionPlaying,
+                            modifier = Modifier.fillMaxSize()
                         )
-                        if (tracks?.any { PlayerConnection.isAtmos(it) } == true) {
-                            Spacer(Modifier.width(AuraSpacing.sm))
-                            AtmosBadge()
-                        }
-                    }
-                    bio?.let { text ->
-                        Row(
-                            Modifier
-                                .padding(top = AuraSpacing.sm)
-                                .fillMaxWidth()
-                                .clickable { showBio = true },
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            androidx.tv.material3.Text(
-                                text,
-                                fontSize = 13.sp,
-                                color = colors.onSurface,
-                                maxLines = 2,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            androidx.tv.material3.Text(
-                                "  More",
-                                fontSize = 13.sp,
-                                color = colors.primary
-                            )
-                        }
                     }
                     Spacer(Modifier.height(AuraSpacing.md))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm),
-                        verticalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
+                }
+                androidx.tv.material3.Text(
+                    when (collection.type) {
+                        "Playlist" -> "Playlist"
+                        else -> collection.year?.toString() ?: "Album"
+                    },
+                    fontSize = 13.sp,
+                    color = colors.primary
+                )
+                Spacer(Modifier.height(AuraSpacing.xxs))
+                androidx.tv.material3.Text(
+                    shown.name,
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = colors.onSurface,
+                    maxLines = 3,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(AuraSpacing.xs))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.tv.material3.Text(
+                        subtitle(collection, tracks),
+                        fontSize = 14.sp,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (tracks?.any { PlayerConnection.isAtmos(it) } == true) {
+                        Spacer(Modifier.width(AuraSpacing.sm))
+                        AtmosBadge()
+                    }
+                }
+                bio?.let { text ->
+                    Row(
+                        Modifier
+                            .padding(top = AuraSpacing.sm)
+                            .fillMaxWidth()
+                            .clickable { showBio = true },
+                        verticalAlignment = Alignment.Top
                     ) {
-                        androidx.tv.material3.Button(
-                            modifier = Modifier
-                                .focusRequester(playButtonFocus)
-                                .focusProperties { right = contentFocus },
-                            colors = androidx.tv.material3.ButtonDefaults.colors(
-                                containerColor = colors.primary,
-                                contentColor = colors.onPrimary,
-                                focusedContainerColor = colors.onSurface,
-                                focusedContentColor = colors.inverseOnSurface
-                            ),
-                            onClick = { tracks?.let { player.playQueue(it, 0, resume = false) } }
-                        ) { androidx.tv.material3.Text("Play") }
+                        androidx.tv.material3.Text(
+                            text,
+                            fontSize = 13.sp,
+                            color = colors.onSurface,
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        androidx.tv.material3.Text(
+                            "  More",
+                            fontSize = 13.sp,
+                            color = colors.primary
+                        )
+                    }
+                }
+                Spacer(Modifier.height(AuraSpacing.md))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
+                ) {
+                    androidx.tv.material3.Button(
+                        modifier = Modifier
+                            .focusRequester(playButtonFocus)
+                            .focusProperties { right = contentFocus },
+                        colors = androidx.tv.material3.ButtonDefaults.colors(
+                            containerColor = colors.primary,
+                            contentColor = colors.onPrimary,
+                            focusedContainerColor = colors.onSurface,
+                            focusedContentColor = colors.inverseOnSurface
+                        ),
+                        onClick = { tracks?.let { player.playQueue(it, 0, resume = false) } }
+                    ) { androidx.tv.material3.Text("Play") }
+                    androidx.tv.material3.Button(
+                        modifier = Modifier.focusProperties { right = contentFocus },
+                        onClick = {
+                            tracks?.let { list ->
+                                player.playQueue(list.shuffled(), 0, resume = false)
+                            }
+                        }
+                    ) { androidx.tv.material3.Text("Shuffle") }
+                    if (collection.type != "Playlist") {
                         androidx.tv.material3.Button(
                             modifier = Modifier.focusProperties { right = contentFocus },
                             onClick = {
-                                tracks?.let { list ->
-                                    player.playQueue(list.shuffled(), 0, resume = false)
+                                scope.launch {
+                                    Mixes.playMix(
+                                        api = app.jellyfin.api,
+                                        userId = session.userId,
+                                        player = player,
+                                        kind = Mixes.Kind.ALBUM,
+                                        seed = shown
+                                    )
                                 }
                             }
-                        ) { androidx.tv.material3.Text("Shuffle") }
-                        if (collection.type != "Playlist") {
-                            androidx.tv.material3.Button(
-                                modifier = Modifier.focusProperties { right = contentFocus },
-                                onClick = {
-                                    scope.launch {
-                                        Mixes.playMix(
-                                            api = app.jellyfin.api,
-                                            userId = session.userId,
-                                            player = player,
-                                            kind = Mixes.Kind.ALBUM,
-                                            seed = shown
-                                        )
-                                    }
-                                }
-                            ) { androidx.tv.material3.Text("Radio") }
-                        }
-                        androidx.tv.material3.Button(
-                            modifier = Modifier.focusProperties { right = contentFocus },
-                            onClick = onBack
-                        ) { androidx.tv.material3.Text("Back") }
+                        ) { androidx.tv.material3.Text("Radio") }
                     }
+                    androidx.tv.material3.Button(
+                        modifier = Modifier.focusProperties { right = contentFocus },
+                        onClick = onBack
+                    ) { androidx.tv.material3.Text("Back") }
+                }
+            }
+
+            // Right pane (~64%): full-height scrollable tracklist.
+            Column(
+                modifier = Modifier
+                    .weight(0.64f)
+                    .fillMaxHeight()
+            ) {
+                if (state.error != null && tracks != null) {
+                    androidx.tv.material3.Text(
+                        state.error.orEmpty(),
+                        color = colors.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = AuraSpacing.xs)
+                    )
                 }
 
-                // Right pane (~64%): full-height scrollable tracklist.
-                Column(
-                    modifier = Modifier
-                        .weight(0.64f)
-                        .fillMaxHeight()
-                ) {
-                    if (state.error != null && tracks != null) {
+                val atmosFiltered = collection.type == "MusicAlbum" && com.hans.aura.data.AtmosFilter.on
+                val shownTracks = if (atmosFiltered) {
+                    tracks?.let { com.hans.aura.data.AtmosFilter.tracks(it) }
+                } else tracks
+
+                when {
+                    state.error != null && shownTracks == null -> ErrorPane(
+                        message = "Couldn't load from server",
+                        detail = state.error,
+                        onRetry = { viewModel.retry() }
+                    )
+                    shownTracks == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        androidx.tv.material3.Text("Loading\u2026", color = colors.onSurfaceVariant)
+                    }
+                    shownTracks.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                         androidx.tv.material3.Text(
-                            state.error.orEmpty(),
-                            color = colors.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(bottom = AuraSpacing.xs)
+                            if (atmosFiltered) "No Atmos tracks in this album" else "Empty",
+                            color = colors.onSurfaceVariant
                         )
                     }
-
-                    val atmosFiltered = collection.type == "MusicAlbum" && com.hans.aura.data.AtmosFilter.on
-                    val shownTracks = if (atmosFiltered) {
-                        tracks?.let { com.hans.aura.data.AtmosFilter.tracks(it) }
-                    } else tracks
-
-                    when {
-                        state.error != null && shownTracks == null -> ErrorPane(
-                            message = "Couldn't load from server",
-                            detail = state.error,
-                            onRetry = { viewModel.retry() }
-                        )
-                        shownTracks == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                            androidx.tv.material3.Text("Loading\u2026", color = colors.onSurfaceVariant)
-                        }
-                        shownTracks.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                            androidx.tv.material3.Text(
-                                if (atmosFiltered) "No Atmos tracks in this album" else "Empty",
-                                color = colors.onSurfaceVariant
+                    else -> LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusRequester(contentFocus)
+                            .focusRestorer()
+                            .focusProperties { left = playButtonFocus },
+                        contentPadding = PaddingValues(bottom = AuraSizes.bottomBarClearance)
+                    ) {
+                        val multiDisc = collection.type == "MusicAlbum" && tracks.orEmpty().spansSeveralDiscs()
+                        val rows = tracklistRows(shownTracks, multiDisc)
+                        itemsIndexed(
+                            items = rows,
+                            key = { idx, row ->
+                                when (row) {
+                                    is TracklistRow.Disc -> "disc_${row.number}"
+                                    is TracklistRow.Track -> "track_${row.track.id}_$idx"
+                                }
+                            },
+                            contentType = { _, row ->
+                                if (row is TracklistRow.Disc) "disc" else "track"
+                            }
+                        ) { rowIndex, row ->
+                            if (row is TracklistRow.Disc) {
+                                DiscHeader(row.number, first = rowIndex == 0)
+                                return@itemsIndexed
+                            }
+                            val (i, number, track) = row as TracklistRow.Track
+                            val removeFromPlaylist: (() -> Unit)? = if (collection.type == "Playlist") {
+                                { viewModel.removeFromPlaylist(track.id, shownTracks.take(i).count { it.id == track.id }) }
+                            } else null
+                            TrackRow(
+                                index = number,
+                                track = track,
+                                isCurrent = track.id == currentId?.id,
+                                atmos = track.albumId?.let { it in atmosAlbumIds } == true,
+                                onClick = { player.playQueue(shownTracks, i, resume = true) },
+                                focusKeeper = focusKeeper,
+                                onFocused = { focusedTrackId = it },
+                                onRemove = removeFromPlaylist,
+                                onLongPress = {
+                                    com.hans.aura.ui.common.ContextMenuHost.open(
+                                        com.hans.aura.ui.common.ContextMenus.forTrack(
+                                            app, player, scope, track,
+                                            onOpenArtist = onOpenArtist,
+                                            onOpenCollection = null,
+                                            onRemoveFromPlaylist = removeFromPlaylist,
+                                            playlistMove = if (collection.type == "Playlist") {
+                                                com.hans.aura.ui.common.ContextMenus.PlaylistMove(
+                                                    playlistId = collection.id,
+                                                    itemId = track.id,
+                                                    index = i,
+                                                    size = shownTracks.size,
+                                                    onMoved = { viewModel.refresh() }
+                                                )
+                                            } else null
+                                        )
+                                    )
+                                }
                             )
                         }
-                        else -> LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .focusRequester(contentFocus)
-                                .focusRestorer()
-                                .focusProperties { left = playButtonFocus },
-                            contentPadding = PaddingValues(bottom = AuraSizes.bottomBarClearance)
-                        ) {
-                            val multiDisc = collection.type == "MusicAlbum" && tracks.orEmpty().spansSeveralDiscs()
-                            val rows = tracklistRows(shownTracks, multiDisc)
-                            itemsIndexed(
-                                items = rows,
-                                key = { idx, row ->
-                                    when (row) {
-                                        is TracklistRow.Disc -> "disc_${row.number}"
-                                        is TracklistRow.Track -> "track_${row.track.id}_$idx"
-                                    }
-                                },
-                                contentType = { _, row ->
-                                    if (row is TracklistRow.Disc) "disc" else "track"
-                                }
-                            ) { rowIndex, row ->
-                                if (row is TracklistRow.Disc) {
-                                    DiscHeader(row.number, first = rowIndex == 0)
-                                    return@itemsIndexed
-                                }
-                                val (i, number, track) = row as TracklistRow.Track
-                                val removeFromPlaylist: (() -> Unit)? = if (collection.type == "Playlist") {
-                                    { viewModel.removeFromPlaylist(track.id, shownTracks.take(i).count { it.id == track.id }) }
-                                } else null
-                                TrackRow(
-                                    index = number,
-                                    track = track,
-                                    isCurrent = track.id == currentId?.id,
-                                    atmos = track.albumId?.let { it in atmosAlbumIds } == true,
-                                    onClick = { player.playQueue(shownTracks, i, resume = true) },
-                                    focusKeeper = focusKeeper,
-                                    onFocused = { focusedTrackId = it },
-                                    onRemove = removeFromPlaylist,
-                                    onLongPress = {
-                                        com.hans.aura.ui.common.ContextMenuHost.open(
-                                            com.hans.aura.ui.common.ContextMenus.forTrack(
-                                                app, player, scope, track,
-                                                onOpenArtist = onOpenArtist,
-                                                onOpenCollection = null,
-                                                onRemoveFromPlaylist = removeFromPlaylist,
-                                                playlistMove = if (collection.type == "Playlist") {
-                                                    com.hans.aura.ui.common.ContextMenus.PlaylistMove(
-                                                        playlistId = collection.id,
-                                                        itemId = track.id,
-                                                        index = i,
-                                                        size = shownTracks.size,
-                                                        onMoved = { viewModel.refresh() }
-                                                    )
-                                                } else null
-                                            )
-                                        )
-                                    }
-                                )
-                            }
-                        }
                     }
                 }
             }
+        }
 
-            val shownBio = bio
-            if (showBio && shownBio != null) {
-                com.hans.aura.ui.common.BioDialog(
-                    title = collection.name,
-                    subtitle = collection.albumArtist,
-                    text = shownBio,
-                    onDismiss = { showBio = false }
-                )
-            }
+        val shownBio = bio
+        if (showBio && shownBio != null) {
+            com.hans.aura.ui.common.BioDialog(
+                title = collection.name,
+                subtitle = collection.albumArtist,
+                text = shownBio,
+                onDismiss = { showBio = false }
+            )
         }
     }
 }

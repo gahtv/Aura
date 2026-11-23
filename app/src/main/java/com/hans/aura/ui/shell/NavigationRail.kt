@@ -60,7 +60,6 @@ import com.hans.aura.ui.common.resolveArtwork
 import com.hans.aura.ui.nav.NavSpec
 import com.hans.aura.ui.nav.Screen
 import com.hans.aura.ui.player.PlayerConnection
-import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
@@ -260,14 +259,15 @@ private fun RailItem(
     playback: RailPlayback? = null,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.control
     val fill = when {
-        selected -> Accent
+        selected -> colors.primary
         focused -> AuraColors.FocusedFill
         else -> Color.Transparent
     }
-    val ink = if (selected) AuraColors.OnAccent else TextPrimary
+    val ink = if (selected) colors.onPrimary else colors.onSurface
     val outline = if (focused) Modifier.border(AuraSizes.focusBorder, AuraColors.CursorRing, shape)
     else Modifier
     val description = if (playback == null) destination.label else buildString {
@@ -310,7 +310,7 @@ private fun RailItem(
                     ) {
                         PlayingEqualizerIndicator(
                             playback.isPlaying,
-                            tint = Accent,
+                            tint = colors.primary,
                             modifier = Modifier.graphicsLayer {
                                 scaleX = 0.65f
                                 scaleY = 0.65f

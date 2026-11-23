@@ -42,7 +42,7 @@ class ExpressiveControlsTest {
             AuraTheme {
                 ConnectedActions(
                     listOf(
-                        ConnectedAction("Play", { clicked += "Play" }, Modifier.focusRequester(first)),
+                        ConnectedAction("Play", { clicked += "Play" }, Modifier.focusRequester(first), primary = true),
                         ConnectedAction("Shuffle", { clicked += "Shuffle" }),
                         ConnectedAction("Radio", { clicked += "Radio" })
                     )

@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -63,7 +62,6 @@ import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.hans.aura.AuraApp
-import com.hans.aura.data.ArtistArtwork
 import com.hans.aura.data.AuthStore
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Mixes
@@ -74,17 +72,14 @@ import com.hans.aura.ui.common.TrackRow
 import com.hans.aura.ui.common.filterPillShape
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraColors
+import com.hans.aura.ui.theme.AuraDynamicTheme
+import com.hans.aura.ui.theme.artworkWash
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.Canvas
-import com.hans.aura.ui.theme.Surface
-import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
-import com.hans.aura.ui.theme.TextSecondary
-import com.hans.aura.ui.theme.darken
-import com.hans.aura.ui.theme.rememberDynamicColors
 import kotlinx.coroutines.launch
 
 private enum class ArtistTab(val label: String) {
@@ -112,16 +107,39 @@ fun ArtistScreen(
 ) {
     val session = app.jellyfin.auth.session ?: return
     val state by viewModel.state.collectAsState()
+    val shownArtist = state.shown(artist)
+    val artUrl = shownArtist.primaryImageTag?.let {
+        AuthStore.imageUrl(session.serverUrl, shownArtist.id, it, maxWidth = 480)
+    }
+    AuraDynamicTheme(artUrl) {
+        ArtistContent(
+            app, artist, player, onBack, focusTick, initialFocus,
+            onOpenCollection, onOpenArtist, viewModel, state, artUrl
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ArtistContent(
+    app: AuraApp,
+    artist: JellyfinItem,
+    player: PlayerConnection,
+    onBack: () -> Unit,
+    focusTick: Int,
+    initialFocus: Boolean,
+    onOpenCollection: (JellyfinItem) -> Unit,
+    onOpenArtist: (JellyfinItem) -> Unit,
+    viewModel: ArtistViewModel,
+    state: ArtistUiState,
+    artUrl: String?
+) {
+    val session = app.jellyfin.auth.session ?: return
     val current by player.current.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     val shownArtist = state.shown(artist)
     val artwork = shownArtist.artistArtwork(session.serverUrl)
-    val artUrl = shownArtist.primaryImageTag?.let {
-        AuthStore.imageUrl(session.serverUrl, shownArtist.id, it, maxWidth = 480)
-    }
-    val dyn = rememberDynamicColors(artUrl)
-    val accent = dyn?.secondary ?: com.hans.aura.ui.theme.Accent
     val atmosAlbumIds = state.atmosAlbumIds
     var showBioDialog by remember { mutableStateOf(false) }
     var sourceBio by remember(artist.id) { mutableStateOf<String?>(null) }
@@ -169,15 +187,16 @@ fun ArtistScreen(
     com.hans.aura.ui.common.InitialFocusOnPush(initialFocus, contentFocus,
         ready = contentReady, cancelled = emptyResult)
 
+    val colors = MaterialTheme.colorScheme
     Box(
         Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        dyn?.primary ?: Surface,
-                        dyn?.let { darken(it.primary, 0.55f) } ?: SurfaceHigh,
-                        Canvas
+                        colors.artworkWash,
+                        colors.surface,
+                        colors.background
                     )
                 )
             )
@@ -196,9 +215,9 @@ fun ArtistScreen(
                 .fillMaxSize()
                 .background(
                     Brush.horizontalGradient(
-                        0.0f to (dyn?.primary ?: Surface).copy(alpha = 0.80f),
-                        0.45f to Canvas.copy(alpha = 0.86f),
-                        1.0f to Canvas.copy(alpha = 0.94f)
+                        0.0f to colors.artworkWash.copy(alpha = 0.80f),
+                        0.45f to colors.background.copy(alpha = 0.86f),
+                        1.0f to colors.background.copy(alpha = 0.94f)
                     )
                 )
         )
@@ -224,7 +243,7 @@ fun ArtistScreen(
                         modifier = Modifier
                             .size(180.dp)
                             .clip(CircleShape)
-                            .background(SurfaceHigh)
+                            .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
                     )
                     Spacer(Modifier.height(AuraSpacing.md))
                 }
@@ -240,7 +259,7 @@ fun ArtistScreen(
                         androidx.tv.material3.Text(
                             text,
                             fontSize = 13.sp,
-                            color = TextPrimary,
+                            color = colors.onSurface,
                             maxLines = 2,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
@@ -248,7 +267,7 @@ fun ArtistScreen(
                         androidx.tv.material3.Text(
                             "  More",
                             fontSize = 13.sp,
-                            color = accent
+                            color = colors.primary
                         )
                     }
                 }
@@ -258,7 +277,6 @@ fun ArtistScreen(
                     verticalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
                 ) {
                     ArtistRadioButton(
-                        accent = accent,
                         modifier = Modifier
                             .focusRequester(leftFocus)
                             .focusProperties { right = contentFocus },
@@ -277,7 +295,6 @@ fun ArtistScreen(
                     if (!com.hans.aura.data.AtmosFilter.on) {
                         com.hans.aura.ui.common.AtmosFilterPill(
                             selected = state.atmosView,
-                            accent = accent,
                             onClick = { viewModel.toggleAtmos() }
                         )
                     }
@@ -304,7 +321,6 @@ fun ArtistScreen(
                         ArtistTabPill(
                             label = tab.label,
                             selected = tab == activeTab,
-                            accent = accent,
                             onClick = { selectedTab = tab }
                         )
                     }
@@ -343,8 +359,6 @@ fun ArtistScreen(
                                     serverUrl = session.serverUrl,
                                     size = 176.dp,
                                     badge = "ATMOS".takeIf { album.id in atmosAlbumIds },
-                                    badgeColor = accent,
-                                    accent = accent,
                                     focusKeeper = focusKeeper,
                                     onFocused = {
                                         focusedId = it
@@ -373,7 +387,6 @@ fun ArtistScreen(
                                     track = track,
                                     isCurrent = track.id == current?.id,
                                     atmos = track.albumId?.let { it in atmosAlbumIds } == true,
-                                    accent = accent,
                                     onClick = { player.playQueue(visibleTracks, i, resume = true) },
                                     focusKeeper = focusKeeper,
                                     onFocused = {
@@ -415,7 +428,6 @@ fun ArtistScreen(
                                     item = similar,
                                     serverUrl = session.serverUrl,
                                     size = 176.dp,
-                                    accent = accent,
                                     focusKeeper = focusKeeper,
                                     onFocused = {
                                         focusedId = it
@@ -446,9 +458,9 @@ fun ArtistScreen(
 private fun ArtistTabPill(
     label: String,
     selected: Boolean,
-    accent: Color,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val shape = filterPillShape(selected, focused)
     val fill by animateColorAsState(
@@ -465,7 +477,7 @@ private fun ArtistTabPill(
         Modifier
             .semantics { this.selected = selected }
             .clip(shape)
-            .background(if (selected) accent else fill)
+            .background(if (selected) colors.secondaryContainer else fill)
             .border(if (focused) AuraSizes.focusBorder else AuraSizes.hairline, borderColor, shape)
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
@@ -473,8 +485,11 @@ private fun ArtistTabPill(
     ) {
         androidx.tv.material3.Text(
             text = label,
-            color = if (selected) collectionPlayContentColor(accent) else TextPrimary,
-            fontSize = 14.sp,
+            color = when {
+                selected -> colors.onSecondaryContainer
+                else -> colors.onSurface
+            },
+            style = MaterialTheme.typography.labelLarge,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
         )
     }
@@ -508,10 +523,10 @@ private fun ArtistTitle(name: String, logoUrl: String?) {
 
 @Composable
 private fun ArtistRadioButton(
-    accent: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.control
     Box(
@@ -519,14 +534,14 @@ private fun ArtistRadioButton(
             .onFocusChanged { focused = it.isFocused }
             .clickable { onClick() }
             .clip(shape)
-            .background(if (focused) TextPrimary else accent)
+            .background(if (focused) TextPrimary else colors.primary)
             .border(3.dp, if (focused) TextPrimary else Color.Transparent, shape)
             .padding(horizontal = 18.dp, vertical = 10.dp)
     ) {
         androidx.tv.material3.Text(
             "Radio",
-            color = if (focused) Canvas else collectionPlayContentColor(accent),
-            fontSize = 15.sp,
+            color = if (focused) Canvas else colors.onPrimary,
+            style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold
         )
     }

@@ -25,7 +25,6 @@ import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.Session
 import com.hans.aura.playback.PlaybackService
 import com.hans.aura.ui.player.PlayerConnection
-import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
@@ -131,7 +130,6 @@ class TransportBarFocusTest {
                     duration = 0,
                     isPlaying = true,
                     playPauseFocus = remember { FocusRequester() },
-                    accent = Accent,
                     onOpenPeek = { onOpen(); true },
                     onToggleFavorite = {},
                     onRadio = {}

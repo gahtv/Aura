@@ -3,12 +3,10 @@
 package com.hans.aura.ui.nowplaying
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -31,7 +29,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -39,12 +36,14 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.AuraApp
 import com.hans.aura.data.Favorites
 import com.hans.aura.data.JellyfinItem
@@ -58,18 +57,13 @@ import com.hans.aura.ui.common.MotionArtwork
 import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.common.resolveArtwork
 import com.hans.aura.ui.player.PlayerConnection
-import com.hans.aura.ui.theme.Accent
+import com.hans.aura.ui.theme.AuraDynamicTheme
+import com.hans.aura.ui.theme.artworkWash
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.AuraTypography
-import com.hans.aura.ui.theme.Canvas
-import com.hans.aura.ui.theme.Surface
-import com.hans.aura.ui.theme.SurfaceHigh
-import com.hans.aura.ui.theme.TextPrimary
-import com.hans.aura.ui.theme.TextSecondary
-import com.hans.aura.ui.theme.rememberDynamicColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -89,6 +83,23 @@ fun NowPlayingScreen(
 ) {
     val session = app.jellyfin.auth.session ?: return
     val item by player.current.collectAsState()
+    val artUrl = item?.resolveArtwork()?.url(session.serverUrl, maxWidth = 480)
+    AuraDynamicTheme(artUrl) {
+        NowPlayingContent(app, player, onBack, onOpenQueue, onOpenAlbum, onOpenArtist, item)
+    }
+}
+
+@Composable
+private fun NowPlayingContent(
+    app: AuraApp,
+    player: PlayerConnection,
+    onBack: () -> Unit,
+    onOpenQueue: () -> Unit,
+    onOpenAlbum: (JellyfinItem) -> Unit,
+    onOpenArtist: (JellyfinItem) -> Unit,
+    item: JellyfinItem?
+) {
+    val session = app.jellyfin.auth.session ?: return
     val isPlaying by player.isPlaying.collectAsState()
     var showLyrics by remember { mutableStateOf(false) }
     // Own scope for the heart toggle (a favourite write is fire-and-forget).
@@ -104,6 +115,7 @@ fun NowPlayingScreen(
 
     // One stable local for the current track so nothing below has to force-unwrap.
     val currentItem = item
+    val artwork = currentItem?.resolveArtwork()
     val providerSource = MusicSources.current?.takeIf { it.supportsProviderLyrics }
     var findLyricsOpen by remember(currentItem?.id) { mutableStateOf(false) }
     var lyricsRevision by remember(currentItem?.id) { mutableIntStateOf(0) }
@@ -121,19 +133,11 @@ fun NowPlayingScreen(
         JellyfinItem(id = it.id, name = it.name, type = "MusicArtist")
     }
 
-    // Dynamic color wash from the playing track's album art: darkened dominant
-    // as the background, a distinct lighter swatch as the transport/lyric accent.
-    val artwork = currentItem?.resolveArtwork()
-    val dynArtUrl = artwork?.url(session.serverUrl, maxWidth = 480)
-    val dyn = rememberDynamicColors(dynArtUrl)
-    val dynBg = dyn?.primary ?: Surface
-    val dynAccent = dyn?.secondary ?: Accent
-
     var dimMode by remember { mutableStateOf(Prefs.nowPlayingDimMode) }
-    val bgTop by animateColorAsState(
-        targetValue = if (dimMode) Canvas else dynBg,
+    val dimFraction by animateFloatAsState(
+        targetValue = if (dimMode) 1f else 0f,
         animationSpec = AuraMotion.scheme.slowEffectsSpec(),
-        label = "npDimBg"
+        label = "npDim"
     )
 
     val ambientEnabled = remember { Prefs.ambientNowPlaying }
@@ -217,6 +221,7 @@ fun NowPlayingScreen(
     )
     val wakeKeys = remember { mutableSetOf<Key>() }
 
+    val colors = MaterialTheme.colorScheme
     Box(
         Modifier
             .fillMaxSize()
@@ -243,7 +248,7 @@ fun NowPlayingScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(bgTop, Canvas)))
+                .background(Brush.verticalGradient(listOf(lerp(colors.artworkWash, colors.background, dimFraction), colors.surface)))
                 // Lyrics view is full-bleed edge to edge; the track view keeps the
                 // standard screen insets.
                 .padding(
@@ -268,7 +273,6 @@ fun NowPlayingScreen(
                     lyricsMode = showLyrics,
                     item = currentItem,
                     queue = queueState,
-                    accent = dynAccent,
                     onBack = onBack,
                     onOpenQueue = onOpenQueue,
                     onFindLyrics = if (providerSource != null && currentItem != null) {
@@ -284,7 +288,6 @@ fun NowPlayingScreen(
                         LyricsPane(
                             app,
                             player,
-                            highlightColor = dynAccent,
                             onUserInteraction = { controlsVisible = true }
                         )
                     }
@@ -306,7 +309,7 @@ fun NowPlayingScreen(
                                 .width(AuraSizes.artworkLarge)
                                 .height(AuraSizes.artworkLarge)
                                 .clip(AuraShapes.card)
-                                .background(SurfaceHigh)
+                                .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
                         )
                     }
                     Column(
@@ -322,17 +325,17 @@ fun NowPlayingScreen(
                                 text = currentItem?.name ?: "Nothing playing",
                                 widthCap = maxWidth,
                                 sizes = AuraTypography.npTitleFit,
-                                color = TextPrimary
+                                color = colors.onSurface
                             )
                         }
                         // Album / artist lines open their detail screens.
                         albumItem?.let { ab ->
-                            JumpText(tag = "album", text = ab.name.ifBlank { "Album" }, accent = dynAccent) {
+                            JumpText(tag = "album", text = ab.name.ifBlank { "Album" }) {
                                 onOpenAlbum(ab)
                             }
                         }
                         artistItem?.let { ar ->
-                            JumpText(tag = "artist", text = ar.name.ifBlank { "Artist" }, accent = dynAccent) {
+                            JumpText(tag = "artist", text = ar.name.ifBlank { "Artist" }) {
                                 onOpenArtist(ar)
                             }
                         }
@@ -341,7 +344,6 @@ fun NowPlayingScreen(
                             player = player,
                             isPlaying = isPlaying,
                             playPauseFocus = playPauseFocus,
-                            accent = dynAccent,
                             favorite = currentItem?.let { Favorites.isFavorite(it) } == true,
                             onToggleFavorite = currentItem?.let { cur ->
                                 {
@@ -394,7 +396,6 @@ fun NowPlayingScreen(
             QueuePeekOverlay(
                 upcoming = upcoming.take(peekSize),
                 total = upcoming.size,
-                accent = dynAccent,
                 focusToken = peekFocusToken,
                 graceUntil = peekGraceUntil,
                 onExtend = { extendPeek() },
@@ -433,7 +434,8 @@ fun NowPlayingScreen(
 
 /** Clickable "jump to album/artist" line with a clear focus state. */
 @Composable
-private fun JumpText(tag: String, text: String, accent: Color, onClick: () -> Unit) {
+private fun JumpText(tag: String, text: String, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     Box(
         Modifier
@@ -441,10 +443,10 @@ private fun JumpText(tag: String, text: String, accent: Color, onClick: () -> Un
             .offset(x = -AuraSpacing.sm)
             .padding(top = AuraSpacing.xs)
             .clip(AuraShapes.control)
-            .background(if (focused) accent.copy(alpha = 0.25f) else Color.Transparent)
+            .background(if (focused) colors.secondaryContainer else Color.Transparent)
             .border(
                 width = if (focused) AuraSizes.focusBorderLoud else 0.dp,
-                color = if (focused) accent else Color.Transparent,
+                color = if (focused) colors.primary else Color.Transparent,
                 shape = AuraShapes.control
             )
             // Before the focus target, like every other focusable in the app.
@@ -455,6 +457,6 @@ private fun JumpText(tag: String, text: String, accent: Color, onClick: () -> Un
             .clickable(onClickLabel = tag) { onClick() }
             .padding(horizontal = AuraSpacing.sm, vertical = AuraSpacing.xs)
     ) {
-        androidx.tv.material3.Text(text, fontSize = AuraTypography.subtitle, color = TextSecondary)
+        androidx.tv.material3.Text(text, fontSize = AuraTypography.subtitle, color = if (focused) colors.onSecondaryContainer else colors.primary)
     }
 }

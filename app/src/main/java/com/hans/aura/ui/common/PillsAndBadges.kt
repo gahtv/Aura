@@ -6,8 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,7 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
@@ -57,12 +55,12 @@ import com.hans.aura.data.SourceQueries
 @Composable
 fun HeartToggle(
     favorite: Boolean,
-    accent: Color,
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     iconSize: Dp = AuraSizes.iconSmall,
     interactive: Boolean = true
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val shape = AuraShapes.pill
     val focusableModifier = if (!interactive) {
@@ -72,7 +70,7 @@ fun HeartToggle(
             .clip(shape)
             .background(
                 when {
-                    focused -> accent.copy(alpha = 0.25f)
+                    focused -> colors.secondaryContainer
                     else -> Color.Transparent
                 }
             )
@@ -97,7 +95,7 @@ fun HeartToggle(
                 else R.drawable.ic_favorite
             ),
             contentDescription = null,
-            tint = if (favorite) accent else TextSecondary,
+            tint = if (focused) colors.onSecondaryContainer else if (favorite) colors.primary else TextSecondary,
             modifier = Modifier.size(iconSize)
         )
     }
@@ -116,9 +114,9 @@ fun HeartToggle(
 fun AtmosFilterPill(
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    accent: Color = com.hans.aura.ui.theme.Accent
+    modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val shape = filterPillShape(selected, focused)
     val fill by animateColorAsState(
@@ -132,7 +130,7 @@ fun AtmosFilterPill(
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClickLabel = "Only Atmos") { onClick() }
             .clip(shape)
-            .background(if (selected) accent else fill)
+            .background(if (selected) colors.primary else fill)
             .border(
                 width = if (focused) AuraSizes.focusBorderLoud else 0.dp,
                 color = if (focused) TextPrimary else Color.Transparent,
@@ -147,7 +145,10 @@ fun AtmosFilterPill(
                 else R.drawable.ic_spatial_audio_off
             ),
             contentDescription = "Only Atmos",
-            tint = if (selected) AuraColors.OnAccentText else TextPrimary,
+            tint = when {
+                selected -> colors.onPrimary
+                else -> TextPrimary
+            },
             modifier = Modifier.size(AuraSizes.iconBadge)
         )
     }
@@ -170,14 +171,15 @@ internal fun filterPillShape(selected: Boolean, focused: Boolean): RoundedCorner
 
 /** Small ATMOS marker used on rows (the card equivalent is ArtworkCard's badge). */
 @Composable
-fun AtmosChip(color: Color = com.hans.aura.ui.theme.Accent) {
+fun AtmosChip() {
+    val colors = MaterialTheme.colorScheme
     androidx.tv.material3.Text(
         "ATMOS",
-        color = color,
+        color = colors.onTertiaryContainer,
         fontSize = AuraTypography.caption,
         fontWeight = FontWeight.Bold,
         modifier = Modifier
-            .background(AuraColors.BadgeScrim, AuraShapes.badge)
+            .background(colors.tertiaryContainer, AuraShapes.badge)
             .padding(horizontal = AuraSpacing.xs, vertical = 2.dp)
     )
 }

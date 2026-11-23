@@ -24,27 +24,23 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
 import com.hans.aura.ui.theme.AuraSizes
 import com.hans.aura.ui.theme.AuraSpacing
 import com.hans.aura.ui.theme.SurfaceHigh
-import com.hans.aura.ui.theme.TextPrimary
 
 internal data class ConnectedAction(
     val label: String,
     val onClick: () -> Unit,
     val modifier: Modifier = Modifier,
     val active: Boolean = false,
-    val fill: Color = Color.Unspecified,
-    val contentColor: Color = AuraColors.OnAccent
+    val primary: Boolean = false
 )
 
 @Composable
@@ -75,6 +71,7 @@ private fun ConnectedSegment(
     compact: Boolean,
     modifier: Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
     val inner by animateDpAsState(
         if (focused) AuraShapes.pillFocusRadius else AuraShapes.connectedInnerRadius,
@@ -87,7 +84,11 @@ private fun ConnectedSegment(
         RoundedCornerShape(leading, trailing, trailing, leading)
     }
     val fill by animateColorAsState(
-        if (focused) AuraColors.FocusedFill else SurfaceHigh,
+        when {
+            action.primary -> colors.primary
+            focused || action.active -> colors.secondaryContainer
+            else -> SurfaceHigh
+        },
         animationSpec = AuraMotion.scheme.fastEffectsSpec(),
         label = "connectedActionFill"
     )
@@ -96,7 +97,7 @@ private fun ConnectedSegment(
             .then(modifier)
             .height(if (compact) AuraSizes.compactHeaderActionHeight else AuraSizes.minTarget)
             .clip(shape)
-            .background(if (action.fill.isSpecified) action.fill else fill)
+            .background(fill)
             .border(AuraSizes.focusBorder, if (focused) AuraColors.CursorRing else Color.Transparent, shape)
             .onFocusChanged { focused = it.isFocused }
             .clickable(role = Role.Button, onClick = action.onClick)
@@ -107,9 +108,9 @@ private fun ConnectedSegment(
             action.label,
             style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall,
             color = when {
-                action.fill.isSpecified -> action.contentColor
-                action.active -> Accent
-                else -> TextPrimary
+                action.primary -> colors.onPrimary
+                focused || action.active -> colors.onSecondaryContainer
+                else -> colors.onSurface
             },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

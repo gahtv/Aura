@@ -4,12 +4,14 @@ package com.hans.aura.ui.common
 
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -22,6 +24,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
+import com.hans.aura.ui.theme.ArtworkSeedCache
+import com.hans.aura.ui.theme.AuraDynamicTheme
+import com.hans.aura.ui.theme.AuraTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -34,6 +39,44 @@ import org.robolectric.annotation.Config
 @Config(qualifiers = "w960dp-h540dp-land")
 class FocusSupportTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun artworkThemeChangesDoNotRepeatEntryFocus() = themeChangesKeepFocus(false)
+
+    @Test
+    fun artworkThemeChangesDoNotRepeatBackFocus() = themeChangesKeepFocus(true)
+
+    private fun themeChangesKeepFocus(back: Boolean) {
+        compose.mainClock.autoAdvance = false
+        val artwork = mutableStateOf<String?>("focus-theme-red")
+        ArtworkSeedCache.put("focus-theme-red", 0xFFDD2222.toInt())
+        ArtworkSeedCache.put("focus-theme-blue", 0xFF2244DD.toInt())
+        try {
+            compose.setContent {
+                AuraTheme {
+                    AuraDynamicTheme(artwork.value) {
+                        val first = remember { FocusRequester() }
+                        Column(Modifier.background(androidx.tv.material3.MaterialTheme.colorScheme.surface)) {
+                            Box(Modifier.size(40.dp).testTag("first").focusRequester(first).focusable())
+                            Box(Modifier.size(40.dp).testTag("second").focusable())
+                        }
+                        if (back) RestoreFocusOnBack(1, first) else InitialFocusOnPush(true, first)
+                    }
+                }
+            }
+            repeat(6) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+            compose.onNodeWithTag("first").assertIsFocused().performKeyInput { pressKey(Key.DirectionDown) }
+            compose.onNodeWithTag("second").assertIsFocused()
+            for (url in listOf("focus-theme-blue", "file:///nonexistent-focus-artwork.jpg", null)) {
+                compose.runOnIdle { artwork.value = url }
+                compose.mainClock.advanceTimeBy(600)
+                compose.waitForIdle()
+                compose.onNodeWithTag("second").assertIsFocused()
+            }
+        } finally {
+            ArtworkSeedCache.clear()
+        }
+    }
 
     @Test
     fun retriesUntilTargetAttachesOnLaterFrames() {

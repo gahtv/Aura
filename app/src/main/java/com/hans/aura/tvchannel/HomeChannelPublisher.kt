@@ -8,7 +8,7 @@ import android.media.tv.TvContract
 import android.net.Uri
 import android.util.Log
 import com.hans.aura.data.AuthStore
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
 import com.hans.aura.data.Prefs
 
 /**
@@ -21,7 +21,7 @@ object HomeChannelPublisher {
     private val CHANNEL_URI = Uri.parse("content://android.media.tv/channel")
     private val PROGRAM_URI = Uri.parse("content://android.media.tv/preview_program")
 
-    fun publish(context: Context, items: List<JellyfinItem>, serverUrl: String) {
+    fun publish(context: Context, items: List<Album>, serverUrl: String) {
         if (items.isEmpty() || serverUrl.isBlank()) return
         runCatching {
             val resolver = context.applicationContext.contentResolver
@@ -89,7 +89,7 @@ object HomeChannelPublisher {
 
     internal fun buildProgramValues(
         channelId: Long,
-        item: JellyfinItem,
+        item: Album,
         serverUrl: String,
         weight: Int
     ): ContentValues = ContentValues().apply {
@@ -98,13 +98,13 @@ object HomeChannelPublisher {
         put("title", item.name)
         val author = item.albumArtist ?: item.artistNames
         if (author.isNotBlank()) put("short_description", author)
-        val artTag = item.primaryImageTag ?: item.albumPrimaryImageTag
-        if (artTag != null) {
-            AuthStore.imageUrl(serverUrl, item.id, artTag, maxWidth = 480)?.let {
+        val artwork = item.artwork
+        if (artwork?.tag != null) {
+            AuthStore.imageUrl(serverUrl, artwork.itemId, artwork.tag, maxWidth = 480)?.let {
                 put("poster_art_uri", it)
             }
         }
-        put("intent_uri", "aura://item/${item.type}/${item.id}")
+        put("intent_uri", "aura://item/MusicAlbum/${item.id}")
         put("internal_provider_id", item.id)
         put("weight", weight)
     }

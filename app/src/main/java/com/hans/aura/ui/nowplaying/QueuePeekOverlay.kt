@@ -37,6 +37,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.common.OverlayVisibility
 import com.hans.aura.ui.common.formatDuration
@@ -50,7 +51,6 @@ import com.hans.aura.ui.theme.FocusOutline
 import com.hans.aura.ui.theme.SurfaceHigh
 import com.hans.aura.ui.theme.TextPrimary
 import com.hans.aura.ui.theme.TextSecondary
-import kotlinx.coroutines.delay
 
 /**
  * Inline queue peek (B14): the next few tracks as a compact list over the
@@ -101,11 +101,7 @@ internal fun QueuePeekOverlay(
     // focusToken changes on every OPEN (not on extend), so extending does not
     // yank focus back to the top row.
     LaunchedEffect(focusToken) {
-        delay(100)
-        repeat(6) {
-            if (runCatching { firstFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(100)
-        }
+        firstFocus.requestFocusOnFrame()
     }
 
     Box(

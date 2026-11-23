@@ -46,6 +46,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.AuraApp
 import com.hans.aura.data.Favorites
 import com.hans.aura.data.JellyfinItem
@@ -146,19 +147,7 @@ fun NowPlayingScreen(
     BackHandler(enabled = showLyrics) { showLyrics = false }
 
     val playPauseFocus = remember { FocusRequester() }
-    InitialFocusOnPush(initialFocus, playPauseFocus)
-
-    // The auto-push into Now Playing does not always set pendingFocus, so the
-    // screen could open with NOTHING focused — no ring anywhere and the D-pad
-    // felt dead until the first press — or with focus parked on Back (pressing
-    // OK immediately left the screen). Always claim play/pause on entry.
-    LaunchedEffect(Unit) {
-        delay(250)
-        repeat(6) {
-            if (runCatching { playPauseFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(100)
-        }
-    }
+    InitialFocusOnPush(true, playPauseFocus)
 
     // ---- Queue peek (B14) ---------------------------------------------------
     // 0 = closed, 3 = peek, 5 = extended peek.
@@ -179,11 +168,7 @@ fun NowPlayingScreen(
         peekOrigin = null
         if (log) android.util.Log.d("AURA_PEEK", "closed")
         npScope.launch {
-            delay(120)
-            repeat(5) {
-                if (runCatching { restoreFocus.requestFocus() }.isSuccess) return@launch
-                delay(80)
-            }
+            restoreFocus.requestFocusOnFrame()
         }
     }
 

@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
@@ -80,12 +81,7 @@ fun PlaylistPickerDialog(
     // button that opened the dialog keeps focus and OK keeps hitting it.
     val firstFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(100)
-        repeat(5) {
-            val ok = runCatching { firstFocus.requestFocus() }.isSuccess
-            if (ok) return@LaunchedEffect
-            kotlinx.coroutines.delay(100)
-        }
+        firstFocus.requestFocusOnFrame()
     }
     var playlists by remember { mutableStateOf<List<JellyfinItem>?>(null) }
     var creatingName by remember { mutableStateOf<String?>(null) }
@@ -127,11 +123,7 @@ fun PlaylistPickerDialog(
     // Put the cursor in the name field as soon as create mode opens.
     LaunchedEffect(creatingName) {
         if (creatingName != null) {
-            kotlinx.coroutines.delay(120)
-            repeat(5) {
-                if (runCatching { fieldFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-                kotlinx.coroutines.delay(100)
-            }
+            fieldFocus.requestFocusOnFrame()
         }
     }
 

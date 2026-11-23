@@ -54,6 +54,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.common.AuraTextField
@@ -186,22 +187,13 @@ fun SearchScreen(
         val searchFieldFocus = remember { FocusRequester() }
         val recentFocus = remember { FocusRequester() }
         LaunchedEffect(Unit) {
-            var tries = 0
-            while (tries < 10) {
-                try { searchFieldFocus.requestFocus(); break } catch (_: Exception) { }
-                delay(100)
-                tries++
-            }
+            searchFieldFocus.requestFocusOnFrame()
         }
         // Return focus to the field after a chip tap / voice result removed the
         // focused chip; a submit must never leave the screen focus-less.
         LaunchedEffect(focusFieldTick) {
             if (focusFieldTick == 0) return@LaunchedEffect
-            delay(80)
-            repeat(5) {
-                if (runCatching { searchFieldFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-                delay(80)
-            }
+            searchFieldFocus.requestFocusOnFrame()
         }
 
         val showRecent = query.isBlank() && state.recentSearches.isNotEmpty()

@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.AuraApp
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.common.ArtworkCard
@@ -148,7 +149,7 @@ internal fun LibraryScreen(
     // "B"s. BACK restores the same key and is deliberately left alone.
     LaunchedEffect(state.jumpTick) {
         if (state.jumpTick == 0) return@LaunchedEffect
-        kotlinx.coroutines.delay(50)
+        androidx.compose.runtime.withFrameNanos { }
         runCatching {
             if (kind == "Tracks") listState.scrollToItem(0) else gridState.scrollToItem(0)
         }
@@ -243,7 +244,7 @@ internal fun LibraryScreen(
         if (azOpen) {
             androidx.activity.compose.BackHandler(enabled = azOpen) {
                 azOpen = false
-                scope.launch { kotlinx.coroutines.delay(60); azPillFocus.requestFocus() }
+                scope.launch { azPillFocus.requestFocusOnFrame() }
             }
             Row(
                 Modifier
@@ -263,8 +264,7 @@ internal fun LibraryScreen(
                         azOpen = false
                         viewModel.clearLetter(null)
                         scope.launch {
-                            kotlinx.coroutines.delay(150)
-                            runCatching { contentFocus.requestFocus() }
+                            contentFocus.requestFocusOnFrame()
                         }
                     }
                 )
@@ -281,8 +281,7 @@ internal fun LibraryScreen(
                             // The rail disappears when a letter is taken; hand
                             // focus to the grid or the selector is stranded.
                             scope.launch {
-                                kotlinx.coroutines.delay(150)
-                                runCatching { contentFocus.requestFocus() }
+                                contentFocus.requestFocusOnFrame()
                             }
                         }
                     )
@@ -290,8 +289,7 @@ internal fun LibraryScreen(
             }
             LaunchedEffect(azOpen) {
                 if (azOpen) {
-                    kotlinx.coroutines.delay(80)
-                    runCatching { railFocus.requestFocus() }
+                    railFocus.requestFocusOnFrame()
                 }
             }
         }

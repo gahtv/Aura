@@ -61,8 +61,7 @@ fun BioDialog(title: String, subtitle: String?, text: String, onDismiss: () -> U
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(100)
-        runCatching { textFocus.requestFocus() }
+        textFocus.requestFocusOnFrame()
     }
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose { com.hans.aura.ui.common.OverlayVisibility.dialogOpen = false }

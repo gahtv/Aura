@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,6 +27,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.collection.ArtistScreen
 import com.hans.aura.ui.collection.CollectionScreen
@@ -88,6 +92,14 @@ fun AppRoot() {
     }
 
     key(sessionGeneration) {
+    val sessionViewModels = remember {
+        object : ViewModelStoreOwner {
+            override val viewModelStore = ViewModelStore()
+        }
+    }
+    DisposableEffect(sessionViewModels) {
+        onDispose { sessionViewModels.viewModelStore.clear() }
+    }
     val player = remember { PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session } }
     val nav = rememberNavState()
 
@@ -228,6 +240,7 @@ fun AppRoot() {
                     stateHolder.SaveableStateProvider(key = "$index:${NavSpec.key(screen)}") {
                         val artworkSource = rememberSaveable { mutableStateOf<Long?>(null) }
                         CompositionLocalProvider(
+                            LocalViewModelStoreOwner provides sessionViewModels,
                             LocalArtworkTransition provides this@SharedTransitionLayout,
                             LocalArtworkVisibility provides this@AnimatedContent,
                             LocalDestinationActive provides active,

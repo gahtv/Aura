@@ -90,9 +90,7 @@ internal fun LibraryScreen(
     onSwitchCategory: (Screen) -> Unit = {},
     likedOnly: Boolean = false,
     viewModel: LibraryViewModel = viewModel(
-        // AppRoot's manual back-stack keeps LocalViewModelStoreOwner at the
-        // Activity, so every tab needs its own key (and a new user needs a new
-        // one or the previous session's pages would be served).
+        // The tabs share a ViewModel store within the signed-in session.
         key = "library:${if (likedOnly) "Liked" else kind}:${app.jellyfin.auth.session?.userId ?: "anon"}",
         factory = viewModelFactory { initializer { LibraryViewModel(app, kind, likedOnly) } }
     )

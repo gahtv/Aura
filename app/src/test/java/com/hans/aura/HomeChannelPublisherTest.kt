@@ -3,6 +3,7 @@ package com.hans.aura
 import android.content.ContentProvider
 import android.content.ContentUris
 import android.content.ContentValues
+import android.content.Context
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.media.tv.TvContract
@@ -17,9 +18,13 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowContentResolver
 
 @RunWith(RobolectricTestRunner::class)
+@Config(shadows = [HomeChannelPublisherTest.BrowsableRequests::class])
 class HomeChannelPublisherTest {
     private val app = ApplicationProvider.getApplicationContext<AuraApp>()
     private lateinit var provider: PreviewProvider
@@ -27,9 +32,66 @@ class HomeChannelPublisherTest {
     @Before
     fun setUp() {
         Prefs.init(app)
+        Prefs.file()!!.edit().clear().commit()
         Prefs.tvChannelId = 7L
         provider = PreviewProvider()
         ShadowContentResolver.registerProviderInternal("android.media.tv", provider)
+        BrowsableRequests.ids.clear()
+        BrowsableRequests.onRequest = { assertTrue(provider.inserted.isNotEmpty()) }
+    }
+
+    @Test
+    fun firstPublishCreatesChannelThenRequestsBrowsableOnce() {
+        Prefs.tvChannelId = -1L
+        HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test")
+        assertEquals(7L, Prefs.tvChannelId)
+        assertEquals(listOf(7L), BrowsableRequests.ids)
+    }
+
+    @Test
+    fun cachedChannelRequestsOnceAndDoesNotOverrideLaterUserChoice() {
+        HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test")
+        assertEquals(listOf(7L), BrowsableRequests.ids)
+        Prefs.init(app)
+        HomeChannelPublisher.publish(app, listOf(Fixtures.album("second")), "http://example.test")
+        assertEquals(listOf(7L), BrowsableRequests.ids)
+    }
+
+    @Test
+    fun platformRejectionIsNotRetriedOnRefresh() {
+        BrowsableRequests.onRequest = { throw IllegalArgumentException("Not a default channel") }
+        repeat(2) { HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test") }
+        assertEquals(listOf(7L), BrowsableRequests.ids)
+        assertEquals(2, provider.inserted.size)
+    }
+
+    @Test
+    fun unsuccessfulPublishDoesNotRequestBrowsable() {
+        provider.failQuery = true
+        HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test")
+        assertTrue(BrowsableRequests.ids.isEmpty())
+    }
+
+    @Test
+    fun nullInsertDoesNotRequestBrowsable() {
+        provider.failInsert = true
+        HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test")
+        assertTrue(BrowsableRequests.ids.isEmpty())
+    }
+
+    @Implements(TvContract::class)
+    class BrowsableRequests {
+        companion object {
+            val ids = mutableListOf<Long>()
+            var onRequest: () -> Unit = {}
+
+            @JvmStatic
+            @Implementation
+            fun requestChannelBrowsable(context: Context, channelId: Long) {
+                ids.add(channelId)
+                onRequest()
+            }
+        }
     }
 
     @Test
@@ -78,6 +140,7 @@ class HomeChannelPublisherTest {
         val deletes = mutableListOf<Uri>()
         val inserted = mutableListOf<ContentValues>()
         var failQuery = false
+        var failInsert = false
         private var nextId = 20L
 
         override fun onCreate() = true
@@ -98,8 +161,10 @@ class HomeChannelPublisherTest {
             return if (programs.remove(ContentUris.parseId(uri)) != null) 1 else 0
         }
 
-        override fun insert(uri: Uri, values: ContentValues?): Uri {
+        override fun insert(uri: Uri, values: ContentValues?): Uri? {
+            if (uri == TvContract.Channels.CONTENT_URI) return TvContract.buildChannelUri(7)
             assertEquals(TvContract.PreviewPrograms.CONTENT_URI, uri)
+            if (failInsert) return null
             val program = ContentValues(requireNotNull(values))
             inserted.add(program)
             val id = nextId++

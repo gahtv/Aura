@@ -212,6 +212,23 @@ Consequences that are easy to break:
   `pendingFocus` (set on push so a new screen claims focus) and `focusTick` (bumped on pop
   so the revealed screen pulls focus back into content). Screens receive individual
   callbacks from `AppRoot`; nothing navigates by calling a global.
+- The stack is a `SnapshotStateList<StackEntry>` hosted by `NavDisplay`. Each `StackEntry`
+  carries a monotonic id, so pushing the same album twice (A → Artist → A) yields distinct
+  NavDisplay entries instead of a key collision. Stack replacements are atomic
+  (`Snapshot.withMutableSnapshot`) and `resetToHome` is a no-op when already on Home.
+- Scoping is deliberate: rail tab roots (Home, Library kinds, Liked, Playlists, Genres,
+  Search, Settings) stay **session-scoped** (`sessionOwner` + a `SaveableStateHolder`) so
+  switching tabs keeps their ViewModels, scroll and focus. Pushed destinations
+  (Collection, Artist, Genre, Queue, NowPlaying) get a **per-entry** ViewModel store and
+  saveable state from `rememberViewModelStoreNavEntryDecorator` /
+  `rememberSaveableStateHolderNavEntryDecorator`, cleared when the entry is popped.
+- The stack survives process death: `rememberNavState` is backed by
+  `rememberNavBackStack`, and `Screen` subtypes are `@Serializable` with a serializable
+  `StackEntry` key. Item screens persist only **id + name + kind** (the full
+  `CollectionItem`/`Artist` is `@Transient`), because a deep stack of full items risks
+  `TransactionTooLargeException`; the destination ViewModel re-hydrates the rest. Call
+  `rememberNavState` inside `key(sessionGeneration)` so a profile switch starts fresh
+  instead of restoring the previous profile's screens.
 
 `ui/AppRoot.kt` is the shell: auth gate, the destination host, the side navigation rail
 and the overlay hosts. `NavigationRail.kt` replaces the top bar: it expands when focused,
@@ -226,8 +243,10 @@ because Compose focus groups consume it as "move focus out" before any `BackHand
 The dispatcher then routes to the enabled `BackHandler` (return from the expanded rail
 to content, pop, dismiss overlay, or go from a root tab to Home) or the default exit on Home.
 
-Screen state survives BACK via `rememberSaveableStateHolder().SaveableStateProvider` keyed
-by stack index + `NavSpec.key`. Exact-focus restore is a second layer: `FocusKeeper`
+Screen state survives BACK through the two `NavDisplay` entry decorators (per-entry
+saveable state and ViewModel store) plus the session-scoped `SaveableStateHolder` for tab
+roots, keyed by `NavSpec.key` (byte-identical to the old keys). Exact-focus restore is a
+second layer: `FocusKeeper`
 (`ui/common/FocusSupport.kt`) holds per-item `FocusRequester`s, each card/row reports the
 focused id via `onFocused`, and `RestoreFocusOnBack` waits until the active destination
 has focusable content. It requests the saved item on a frame, falling back to the container

@@ -3,25 +3,29 @@ package com.hans.aura.ui.nav
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
-import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.rememberNavBackStack
 import com.hans.aura.model.Artist as MediaArtist
 import com.hans.aura.model.CollectionItem
+import kotlinx.serialization.Serializable
 
 /**
  * One entry in [NavState]'s Navigation 3 back stack. The monotonic [id] keeps
  * duplicate pushes (e.g. Album A -> Artist X -> Album A) distinct in
  * `NavDisplay`, `SaveableStateHolderNavEntryDecorator` and
- * `ViewModelStoreNavEntryDecorator`.
+ * `ViewModelStoreNavEntryDecorator`. Serializable so `rememberNavBackStack`
+ * can restore the stack after process death.
  */
+@Serializable
 internal data class StackEntry(
     val id: Long,
     val screen: Screen
-)
+) : NavKey
 
 /**
  * The navigation surface screens get. Implemented over a back stack today
@@ -48,14 +52,32 @@ internal interface NavActions {
  *    its content.
  */
 @Stable
-internal class NavState {
-    private var nextEntryId = 1L
+internal class NavState(
+    /**
+     * Backing stack. [rememberNavState] hands in the `rememberNavBackStack`
+     * list so every push/pop is written through to saved state and restored
+     * after process death; tests use a plain in-memory list.
+     */
+    private val backing: MutableList<NavKey> =
+        NavBackStack<NavKey>(StackEntry(0L, Screen.Home))
+) {
+    init {
+        // A restored stack from an older build (or an empty one) falls back to
+        // Home instead of rendering an unknown key.
+        if (backing.isEmpty() || backing.any { it !is StackEntry }) {
+            backing.clear()
+            backing.add(StackEntry(0L, Screen.Home))
+        }
+    }
 
-    val entries: SnapshotStateList<StackEntry> = mutableStateListOf(StackEntry(0L, Screen.Home))
+    private var nextEntryId: Long =
+        (backing.maxOfOrNull { (it as StackEntry).id } ?: 0L) + 1L
+
+    val entries: List<StackEntry> get() = backing.map { it as StackEntry }
 
     val stack: List<Screen> get() = entries.map { it.screen }
 
-    val topEntry: StackEntry get() = entries.last()
+    val topEntry: StackEntry get() = backing.last() as StackEntry
 
     val top: Screen get() = topEntry.screen
 
@@ -73,26 +95,26 @@ internal class NavState {
     private fun replaceStack(vararg screens: Screen) {
         require(screens.isNotEmpty())
         Snapshot.withMutableSnapshot {
-            entries.clear()
-            screens.forEach { entries.add(newEntry(it)) }
+            backing.clear()
+            screens.forEach { backing.add(newEntry(it)) }
         }
     }
 
     fun push(screen: Screen) {
         pendingFocus = true
-        entries.add(newEntry(screen))
+        backing.add(newEntry(screen))
     }
 
     fun pop() {
-        if (entries.size > 1) {
-            entries.removeAt(entries.lastIndex)
+        if (backing.size > 1) {
+            backing.removeAt(backing.lastIndex)
             focusTick++
             pendingFocus = false
         }
     }
 
     fun back() {
-        if (entries.size > 1) pop() else if (top != Screen.Home) resetToHome()
+        if (backing.size > 1) pop() else if (top != Screen.Home) resetToHome()
     }
 
     /** Tab switch resets the stack to that tab. */
@@ -125,7 +147,7 @@ internal class NavState {
     fun openNowPlaying() {
         if (top != Screen.NowPlaying) {
             pendingFocus = true
-            entries.add(newEntry(Screen.NowPlaying))
+            backing.add(newEntry(Screen.NowPlaying))
         }
     }
 
@@ -143,7 +165,7 @@ internal class NavState {
     /** BACK on a root tab other than Home: go Home instead of exiting. */
     fun resetToHome() {
         pendingFocus = false
-        if (entries.size == 1 && top == Screen.Home) return
+        if (backing.size == 1 && top == Screen.Home) return
         replaceStack(Screen.Home)
     }
 
@@ -159,5 +181,13 @@ internal class NavState {
     }
 }
 
+/**
+ * Session back stack, restored across process death by `rememberNavBackStack`.
+ * Call this inside AppRoot's `key(sessionGeneration)` so a profile switch
+ * starts a fresh stack instead of restoring the previous profile's screens.
+ */
 @Composable
-internal fun rememberNavState(): NavState = remember { NavState() }
+internal fun rememberNavState(): NavState {
+    val backStack = rememberNavBackStack(StackEntry(0L, Screen.Home))
+    return remember(backStack) { NavState(backStack) }
+}

@@ -19,6 +19,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.isSpecified
@@ -46,18 +49,32 @@ internal data class ConnectedAction(
 
 @Composable
 internal fun ConnectedActions(actions: List<ConnectedAction>, compact: Boolean = false) {
+    val requesters = remember(actions.size) { List(actions.size) { FocusRequester() } }
     Row(
         horizontalArrangement = Arrangement.spacedBy(AuraSpacing.xxs / 2),
         verticalAlignment = Alignment.CenterVertically
     ) {
         actions.forEachIndexed { index, action ->
-            ConnectedSegment(action, start = index == 0, end = index == actions.lastIndex, compact)
+            // Keep D-pad moves inside the group until its edge, even beside offset controls.
+            val navigation = Modifier
+                .focusRequester(requesters[index])
+                .focusProperties {
+                    requesters.getOrNull(index - 1)?.let { start = it }
+                    requesters.getOrNull(index + 1)?.let { end = it }
+                }
+            ConnectedSegment(action, index == 0, index == actions.lastIndex, compact, navigation)
         }
     }
 }
 
 @Composable
-private fun ConnectedSegment(action: ConnectedAction, start: Boolean, end: Boolean, compact: Boolean) {
+private fun ConnectedSegment(
+    action: ConnectedAction,
+    start: Boolean,
+    end: Boolean,
+    compact: Boolean,
+    navigation: Modifier
+) {
     var focused by remember { mutableStateOf(false) }
     val inner by animateDpAsState(
         if (focused) AuraShapes.pillFocusRadius else AuraShapes.connectedInnerRadius,
@@ -76,6 +93,7 @@ private fun ConnectedSegment(action: ConnectedAction, start: Boolean, end: Boole
     )
     Box(
         action.modifier
+            .then(navigation)
             .height(if (compact) AuraSizes.compactHeaderActionHeight else AuraSizes.minTarget)
             .clip(shape)
             .background(if (action.fill.isSpecified) action.fill else fill)

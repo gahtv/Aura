@@ -73,8 +73,11 @@ class ExpressiveControlsTest {
             assertEquals(8f, radius, 0.01f)
             selected.value = true
         }
-        compose.mainClock.advanceTimeBy(48)
-        compose.runOnIdle { assertTrue(radius > 4f && radius < 8f) }
+        val samples = List(15) {
+            compose.mainClock.advanceTimeByFrame()
+            compose.runOnIdle { radius }
+        }
+        assertTrue("Expected an intermediate corner radius: $samples", samples.any { it in 4.01f..7.99f })
         compose.mainClock.advanceTimeBy(500)
         compose.runOnIdle { assertEquals(4f, radius, 0.01f) }
     }

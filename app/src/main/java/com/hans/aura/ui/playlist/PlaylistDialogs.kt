@@ -47,8 +47,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
-import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LibraryCache
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.countLabel
 import com.hans.aura.ui.common.requestFocusOnFrame
 import com.hans.aura.ui.theme.AuraShapes
@@ -67,7 +67,7 @@ import com.hans.aura.data.SourceQueries
 @Composable
 fun PlaylistPickerDialog(
     app: AuraApp,
-    tracksToAdd: List<JellyfinItem>,
+    tracksToAdd: List<Track>,
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -83,7 +83,7 @@ fun PlaylistPickerDialog(
     LaunchedEffect(Unit) {
         firstFocus.requestFocusOnFrame()
     }
-    var playlists by remember { mutableStateOf<List<JellyfinItem>?>(null) }
+    var playlists by remember { mutableStateOf<List<Playlist>?>(null) }
     var creatingName by remember { mutableStateOf<String?>(null) }
     var newName by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
@@ -129,14 +129,9 @@ fun PlaylistPickerDialog(
 
     LaunchedEffect(Unit) {
         runCatching {
-            SourceQueries.items(
-                userId = userId,
-                includeItemTypes = "Playlist", recursive = true,
-                sortBy = "SortName", limit = 100
-            ).items
+            SourceQueries.playlists(limit = 100).items
         }.onSuccess {
             playlists = it
-            LibraryCache.put("home_playlists:$userId", it)
         }.onFailure { playlists = emptyList() }
     }
 
@@ -271,33 +266,13 @@ fun PlaylistPickerDialog(
                                     .clickable {
                                         scope.launch {
                                             runCatching {
-                                                val resp = app.jellyfin.api.addToPlaylist(
-                                                    playlistId = pl.id,
-                                                    ids = tracksToAdd.joinToString(",") { it.id },
-                                                    userId = userId
-                                                )
-                                                // Retrofit's Response<T> does NOT throw on
-                                                // 4xx/5xx — without this check a rejected
-                                                // add looked identical to success and the
-                                                // dialog just closed.
-                                                android.util.Log.d(
-                                                    "AURA_MENU",
-                                                    "picker add -> HTTP ${resp.code()} for \"${pl.name}\"" +
-                                                        (resp.errorBody()?.string()?.take(160)?.let { " body=$it" } ?: "")
-                                                )
-                                                if (!resp.isSuccessful) {
-                                                    throw IllegalStateException("HTTP ${resp.code()}")
-                                                }
-                                                resp
+                                                app.container.media.addToPlaylist(pl.id, tracksToAdd.map { it.id })
                                             }.onSuccess {
                                                 android.util.Log.d(
                                                     "AURA_MENU",
                                                     "picker added ${tracksToAdd.size} track(s) to \"${pl.name}\" (${pl.id})"
                                                 )
-                                                LibraryCache.evict("col:${pl.id}")
-                                                LibraryCache.evict("home_playlists:$userId")
-                                                LibraryCache.clearDiskLists()
-                                                onDismiss()
+                                                                                                onDismiss()
                                             }.onFailure { e ->
                                                 android.util.Log.w(
                                                     "AURA_MENU",

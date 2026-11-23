@@ -1,17 +1,17 @@
 package com.hans.aura.ui.collection
 
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track as MediaTrack
 
 /** One row of a collection's tracklist: a disc separator or a track. */
 internal sealed interface TracklistRow {
     data class Disc(val number: Int) : TracklistRow
 
     /** [position] indexes the played list; [number] is the label the row shows. */
-    data class Track(val position: Int, val number: Int, val track: JellyfinItem) : TracklistRow
+    data class Track(val position: Int, val number: Int, val track: MediaTrack) : TracklistRow
 }
 
 /** True when [this] album's tracks span several disc numbers. */
-internal fun List<JellyfinItem>.spansSeveralDiscs(): Boolean =
+internal fun List<MediaTrack>.spansSeveralDiscs(): Boolean =
     mapNotNullTo(HashSet()) { it.discNumber }.size > 1
 
 /**
@@ -20,7 +20,7 @@ internal fun List<JellyfinItem>.spansSeveralDiscs(): Boolean =
  * without a number falls back to its place on the disc. Otherwise (single-disc
  * albums, albums with no disc tags, playlists) rows keep positional numbers.
  */
-internal fun tracklistRows(tracks: List<JellyfinItem>, multiDisc: Boolean): List<TracklistRow> {
+internal fun tracklistRows(tracks: List<MediaTrack>, multiDisc: Boolean): List<TracklistRow> {
     if (!multiDisc) return tracks.mapIndexed { i, track -> TracklistRow.Track(i, i + 1, track) }
     val rows = ArrayList<TracklistRow>(tracks.size + 4)
     var disc: Int? = null

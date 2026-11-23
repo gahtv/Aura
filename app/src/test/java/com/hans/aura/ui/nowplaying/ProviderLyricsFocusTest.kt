@@ -49,7 +49,7 @@ class ProviderLyricsFocusTest {
         }
         compose.setContent {
             AuraTheme {
-                ProviderLyricsDialog(source, JellyfinItem("track", "Test track"), {}, {})
+                ProviderLyricsDialog(source, com.hans.aura.model.Track("track", "Test track"), {}, {})
             }
         }
         fun result(index: Int) = compose.onNodeWithText("Match $index · Synced")

@@ -186,10 +186,7 @@ fun AtmosChip() {
 
 /** Loads (session-cached) the set of album ids containing an Atmos track. */
 @Composable
-fun rememberAtmosAlbumIds(
-    api: com.hans.aura.data.JellyfinApi,
-    userId: String
-): Set<String> {
+fun rememberAtmosAlbumIds(userId: String): Set<String> {
     var ids by remember { mutableStateOf<Set<String>>(emptySet()) }
     androidx.compose.runtime.LaunchedEffect(userId) {
         ids = runCatching {

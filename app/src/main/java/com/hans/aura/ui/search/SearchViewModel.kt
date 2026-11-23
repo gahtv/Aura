@@ -1,12 +1,11 @@
 package com.hans.aura.ui.search
 
 import android.util.Log
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
 import com.hans.aura.data.CatalogHit
-import com.hans.aura.data.JellyfinItem
-import com.hans.aura.data.LibraryFilter
 import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
@@ -20,6 +19,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.hans.aura.data.SourceQueries
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 
 private const val TAG = "AURA_SEARCH"
 private const val DEBOUNCE_MS = 220L
@@ -28,11 +32,12 @@ private const val DEBOUNCE_MS = 220L
 private const val JOB_POLL_MS = 2_000L
 private const val JOB_MAX_POLLS = 450 // ~15 minutes
 
+@Immutable
 data class SearchUiState(
     val query: String = "",
-    val tracks: List<JellyfinItem>? = null,
-    val albums: List<JellyfinItem>? = null,
-    val artists: List<JellyfinItem>? = null,
+    val tracks: List<Track>? = null,
+    val albums: List<CollectionItem>? = null,
+    val artists: List<Artist>? = null,
     val searching: Boolean = false,
     val recentSearches: List<String> = emptyList(),
     val error: String? = null,
@@ -221,20 +226,14 @@ class SearchViewModel(private val app: AuraApp) : ViewModel() {
         _state.update { it.copy(searching = true) }
         runCatching {
             withContext(Dispatchers.IO) {
-                // Search is a browse query: hidden libraries are not queried.
-                SourceQueries.items(LibraryFilter.ItemsQuery(
-                        searchTerm = term, recursive = true,
-                        includeItemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
-                        limit = 50
-                    )
-                )
+                SourceQueries.searchLibrary(term)
             }
         }.onSuccess { result ->
             _state.update {
                 it.copy(
-                    tracks = result.items.filter { item -> item.type == "Audio" },
-                    albums = result.items.filter { item -> item.type == "MusicAlbum" || item.type == "Playlist" },
-                    artists = result.items.filter { item -> item.type == "MusicArtist" },
+                    tracks = result.items.filterIsInstance<Track>(),
+                    albums = result.items.filterIsInstance<CollectionItem>(),
+                    artists = result.items.filterIsInstance<Artist>(),
                     searching = false,
                     error = null
                 )

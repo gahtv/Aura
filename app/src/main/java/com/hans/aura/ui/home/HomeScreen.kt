@@ -58,7 +58,13 @@ import androidx.tv.material3.MaterialTheme
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AtmosFilter
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Genre
+import com.hans.aura.model.MediaItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.FocusKeeper
 import com.hans.aura.ui.common.ItemShelf
@@ -66,7 +72,7 @@ import com.hans.aura.ui.common.RestoreFocusOnBack
 import com.hans.aura.ui.common.contextMenuKeys
 import com.hans.aura.ui.common.rememberAtmosAlbumIds
 import com.hans.aura.ui.common.listMotionWindow
-import com.hans.aura.ui.common.resolveArtwork
+import com.hans.aura.ui.common.url
 import com.hans.aura.ui.nowplaying.AtmosBadge
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.Accent
@@ -87,9 +93,13 @@ import kotlinx.coroutines.flow.first
 private data class HomeRow(
     val key: String,
     val contentType: String,
-    val items: List<JellyfinItem>?,
+    val items: List<MediaItem>?,
     val content: @Composable LazyItemScope.(Int, FocusKeeper) -> Unit
 )
+
+private fun keepForHome(item: MediaItem): Boolean = AtmosFilter.keep(item)
+
+internal fun collectionMenuTarget(item: MediaItem): CollectionItem? = item as? CollectionItem
 
 @Composable
 fun HomeScreen(
@@ -97,9 +107,9 @@ fun HomeScreen(
     player: PlayerConnection,
     onSignOut: () -> Unit,
     onOpenSearch: () -> Unit,
-    onOpenCollection: (JellyfinItem) -> Unit,
-    onOpenArtist: (JellyfinItem) -> Unit,
-    onPlayTrack: (track: JellyfinItem, queue: List<JellyfinItem>, index: Int) -> Unit,
+    onOpenCollection: (CollectionItem) -> Unit,
+    onOpenArtist: (Artist) -> Unit,
+    onPlayTrack: (track: Track, queue: List<Track>, index: Int) -> Unit,
     refreshKey: Int = 0,
     focusTick: Int = 0,
     viewModel: HomeViewModel = viewModel(
@@ -111,12 +121,12 @@ fun HomeScreen(
     val serverUrl = session.serverUrl
     val state by viewModel.state.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val atmosAlbumIds = rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
+    val atmosAlbumIds = rememberAtmosAlbumIds(session.userId)
 
     LaunchedEffect(refreshKey) { viewModel.onRefreshKey(refreshKey) }
 
     val quickAccessItems = remember(state) {
-        state.quickAccess.filter { AtmosFilter.keep(it) }
+        state.quickAccess.filter(::keepForHome)
     }
     val itemsById = remember(state) {
         buildMap {
@@ -132,7 +142,7 @@ fun HomeScreen(
             }
         }
     }
-    var previewItem by remember { mutableStateOf<JellyfinItem?>(null) }
+    var previewItem by remember { mutableStateOf<MediaItem?>(null) }
     val activePreview = previewItem ?: quickAccessItems.firstOrNull() ?: state.recentAlbums?.firstOrNull()
 
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
@@ -145,7 +155,8 @@ fun HomeScreen(
         derivedStateOf { listMotionWindow(listState.layoutInfo) }
     }
 
-    fun trackMenu(track: JellyfinItem) {
+    fun trackMenu(track: MediaItem) {
+        if (track !is Track) return
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forTrack(
                 app, player, scope, track,
@@ -154,19 +165,26 @@ fun HomeScreen(
         )
     }
 
-    fun albumMenu(item: JellyfinItem) {
+    fun albumMenu(item: MediaItem) {
+        val collection = collectionMenuTarget(item) ?: return
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forAlbum(
-                app, player, scope, item, onOpenArtist = onOpenArtist
+                app, player, scope, collection, onOpenArtist = onOpenArtist
             )
         )
     }
 
-    fun openItem(item: JellyfinItem, shelfList: List<JellyfinItem>?, idx: Int) {
-        when (item.type) {
-            "MusicArtist" -> onOpenArtist(item)
-            "Audio" -> onPlayTrack(item, shelfList ?: listOf(item), idx.coerceAtLeast(0))
-            else -> onOpenCollection(item)
+    fun openItem(item: MediaItem, shelfList: List<MediaItem>?, idx: Int) {
+        when (item) {
+            is Artist -> onOpenArtist(item)
+            is Track -> {
+                val queue = shelfList?.filterIsInstance<Track>() ?: listOf(item)
+                val index = queue.indexOf(item).takeIf { it >= 0 } ?: idx.coerceAtLeast(0)
+                onPlayTrack(item, queue, index)
+            }
+            is Album -> onOpenCollection(item)
+            is Playlist -> onOpenCollection(item)
+            is Genre -> onOpenCollection(item)
         }
     }
 
@@ -196,7 +214,7 @@ fun HomeScreen(
             fun homeItem(
                 key: String,
                 contentType: String,
-                items: List<JellyfinItem>? = null,
+                items: List<MediaItem>? = null,
                 content: @Composable LazyItemScope.(Int, FocusKeeper) -> Unit
             ) {
                 add(HomeRow(key, contentType, items, content))
@@ -217,7 +235,7 @@ fun HomeScreen(
                     HomeLivePreviewHero(
                         item = activePreview,
                         serverUrl = serverUrl,
-                        isAtmos = activePreview.id in atmosAlbumIds || activePreview.albumId in atmosAlbumIds
+                        isAtmos = activePreview.id in atmosAlbumIds || (activePreview as? Track)?.albumId in atmosAlbumIds
                     )
                     Spacer(Modifier.height(AuraSpacing.md))
                 }
@@ -233,8 +251,13 @@ fun HomeScreen(
                         onFocused = { onItemFocused(it, "quickAccess") },
                         onOpen = { item -> openItem(item, listOf(item), 0) },
                         onLongPress = { item ->
-                            if (item.type == "Audio") trackMenu(item)
-                            else if (item.type != "MusicArtist") albumMenu(item)
+                            when (item) {
+                                is Artist -> Unit
+                                is Track -> trackMenu(item)
+                                is Album -> albumMenu(item)
+                                is Playlist -> albumMenu(item)
+                                is Genre -> albumMenu(item)
+                            }
                         }
                     )
                     Spacer(Modifier.height(AuraSpacing.lg))
@@ -254,7 +277,11 @@ fun HomeScreen(
                         onFocused = { onItemFocused(it, "shelf_recent_played") },
                         onLongPress = { trackMenu(it) },
                         onOpen = { item, idx ->
-                            onPlayTrack(item, state.recentlyPlayed ?: listOf(item), idx)
+                            (item as? Track)?.let { track ->
+                                val queue = (state.recentlyPlayed ?: listOf(track)).filterIsInstance<Track>()
+                                val index = queue.indexOf(track).takeIf { it >= 0 } ?: idx
+                                onPlayTrack(track, queue, index)
+                            }
                         }
                     )
                 }
@@ -269,7 +296,7 @@ fun HomeScreen(
                         serverUrl = serverUrl,
                         focusKeeper = focusKeeper,
                         onFocused = { onItemFocused(it, "shelf_recent_artists") },
-                        onOpen = { item, _ -> onOpenArtist(item) }
+                        onOpen = { item, _ -> (item as? Artist)?.let(onOpenArtist) }
                     )
                 }
             }
@@ -283,7 +310,7 @@ fun HomeScreen(
                     focusKeeper = focusKeeper,
                     onFocused = { onItemFocused(it, "shelf_recent_albums") },
                     onLongPress = { albumMenu(it) },
-                    onOpen = { item, _ -> onOpenCollection(item) }
+                    onOpen = { item, _ -> (item as? CollectionItem)?.let(onOpenCollection) }
                 )
             }
             homeItem(key = "shelf_atmos", contentType = "shelf", items = state.atmosAlbums) { index, focusKeeper ->
@@ -297,7 +324,7 @@ fun HomeScreen(
                     onFocused = { onItemFocused(it, "shelf_atmos") },
                     badgeFor = { "ATMOS" },
                     onLongPress = { albumMenu(it) },
-                    onOpen = { item, _ -> onOpenCollection(item) }
+                    onOpen = { item, _ -> (item as? CollectionItem)?.let(onOpenCollection) }
                 )
             }
             homeItem(key = "shelf_artists", contentType = "shelf", items = state.artists) { index, focusKeeper ->
@@ -309,7 +336,7 @@ fun HomeScreen(
                     serverUrl = serverUrl,
                     focusKeeper = focusKeeper,
                     onFocused = { onItemFocused(it, "shelf_artists") },
-                    onOpen = { item, _ -> onOpenArtist(item) }
+                    onOpen = { item, _ -> (item as? Artist)?.let(onOpenArtist) }
                 )
             }
             if (!state.playlists.isNullOrEmpty()) {
@@ -323,7 +350,7 @@ fun HomeScreen(
                         focusKeeper = focusKeeper,
                         onFocused = { onItemFocused(it, "shelf_playlists") },
                         onLongPress = { albumMenu(it) },
-                        onOpen = { item, _ -> onOpenCollection(item) }
+                        onOpen = { item, _ -> (item as? CollectionItem)?.let(onOpenCollection) }
                     )
                 }
             }
@@ -332,15 +359,15 @@ fun HomeScreen(
             }
         }
         val savedCardAvailable = rows.firstOrNull { it.key == focusedShelfKey }?.items.orEmpty()
-            .any { it.id == focusedCardId?.removePrefix("qa:") && AtmosFilter.keep(it) }
+            .any { it.id == focusedCardId?.removePrefix("qa:") && keepForHome(it) }
         val shelfReady = homeShelfReady(focusTick, listState, rows.map { it.key }, focusedShelfKey,
             savedCardAvailable)
         RestoreFocusOnBack(focusTick, contentFocus, focusedCardId, focusedShelfKey?.let { keeperForShelf(it) },
-            ready = (quickAccessItems.isNotEmpty() || itemsById.values.any { AtmosFilter.keep(it) }) &&
+            ready = (quickAccessItems.isNotEmpty() || itemsById.values.any { keepForHome(it) }) &&
                 (focusedCardId == null || (savedCardAvailable && shelfReady) ||
                     (!savedCardAvailable && !state.loading)),
             cancelled = !state.loading && quickAccessItems.isEmpty() &&
-                itemsById.values.none { AtmosFilter.keep(it) })
+                itemsById.values.none { keepForHome(it) })
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             itemsIndexed(rows, key = { _, row -> row.key }, contentType = { _, row -> row.contentType }) { index, row ->
                 row.content(this, index, keeperForShelf(row.key))
@@ -393,11 +420,11 @@ internal fun homeShelfReady(
  */
 @Composable
 private fun HomeLivePreviewHero(
-    item: JellyfinItem,
+    item: MediaItem,
     serverUrl: String,
     isAtmos: Boolean
 ) {
-    val art = item.resolveArtwork()
+    val art = item.artwork
     val artUrl = art?.url(serverUrl, maxWidth = 720)
     AuraDynamicTheme(art?.url(serverUrl, maxWidth = 240)) {
         val colors = MaterialTheme.colorScheme
@@ -457,12 +484,12 @@ private fun HomeLivePreviewHero(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
                 ) {
-                    val typeLabel = when (item.type) {
-                        "MusicAlbum" -> item.year?.toString()?.let { "ALBUM \u00B7 $it" } ?: "ALBUM"
-                        "MusicArtist" -> "ARTIST"
-                        "Playlist" -> "PLAYLIST"
-                        "Audio" -> "TRACK"
-                        else -> item.type.uppercase()
+                    val typeLabel = when (item) {
+                        is Album -> item.year?.toString()?.let { "ALBUM · $it" } ?: "ALBUM"
+                        is Artist -> "ARTIST"
+                        is Playlist -> "PLAYLIST"
+                        is Track -> "TRACK"
+                        is Genre -> ""
                     }
                     androidx.tv.material3.Text(
                         text = typeLabel,
@@ -481,11 +508,12 @@ private fun HomeLivePreviewHero(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                val subtitle = when (item.type) {
-                    "MusicAlbum" -> item.albumArtist ?: item.artistNames
-                    "Audio" -> listOfNotNull(item.artistNames.takeIf { it.isNotBlank() }, item.album).joinToString(" \u00B7 ")
-                    "Playlist" -> item.childCount?.let { "$it tracks" } ?: "Playlist"
-                    else -> ""
+                val subtitle = when (item) {
+                    is Album -> item.albumArtist ?: item.artistNames
+                    is Track -> listOfNotNull(item.artistNames.takeIf { it.isNotBlank() }, item.album).joinToString(" · ")
+                    is Playlist -> item.childCount?.let { "$it tracks" } ?: "Playlist"
+                    is Artist -> ""
+                    is Genre -> ""
                 }
                 if (subtitle.isNotBlank()) {
                     androidx.tv.material3.Text(
@@ -504,13 +532,13 @@ private fun HomeLivePreviewHero(
 /** Compact 2x4 Quick-Access shortcut grid below the Home hero. */
 @Composable
 private fun QuickAccessGrid(
-    items: List<JellyfinItem>,
+    items: List<MediaItem>,
     serverUrl: String,
     atmosAlbumIds: Set<String>,
     focusKeeper: FocusKeeper,
     onFocused: (String) -> Unit,
-    onOpen: (JellyfinItem) -> Unit,
-    onLongPress: (JellyfinItem) -> Unit
+    onOpen: (MediaItem) -> Unit,
+    onLongPress: (MediaItem) -> Unit
 ) {
     val rows = items.take(8).chunked(4)
     Column(
@@ -528,7 +556,7 @@ private fun QuickAccessGrid(
                     QuickAccessTile(
                         item = item,
                         serverUrl = serverUrl,
-                        isAtmos = item.id in atmosAlbumIds || item.albumId in atmosAlbumIds,
+                        isAtmos = item.id in atmosAlbumIds || (item as? Track)?.albumId in atmosAlbumIds,
                         focusKeeper = focusKeeper,
                         onFocused = { onFocused("qa:${item.id}") },
                         onLongPress = { onLongPress(item) },
@@ -546,7 +574,7 @@ private fun QuickAccessGrid(
 
 @Composable
 private fun QuickAccessTile(
-    item: JellyfinItem,
+    item: MediaItem,
     serverUrl: String,
     isAtmos: Boolean,
     focusKeeper: FocusKeeper,
@@ -566,8 +594,8 @@ private fun QuickAccessTile(
         animationSpec = AuraMotion.scheme.fastEffectsSpec(),
         label = "quickTileBg"
     )
-    val thumbShape = if (item.type == "MusicArtist") CircleShape else RoundedCornerShape(8.dp)
-    val artUrl = item.resolveArtwork()?.url(serverUrl, maxWidth = 160)
+    val thumbShape = if (item is Artist) CircleShape else RoundedCornerShape(8.dp)
+    val artUrl = item.artwork?.url(serverUrl, maxWidth = 160)
 
     Row(
         modifier = modifier
@@ -647,14 +675,14 @@ private fun QuickAccessTile(
 private fun MotionShelf(
     animate: Boolean,
     title: String,
-    items: List<JellyfinItem>?,
+    items: List<MediaItem>?,
     showLoading: Boolean,
     serverUrl: String,
     focusKeeper: FocusKeeper,
     onFocused: (String) -> Unit,
-    onOpen: (JellyfinItem, Int) -> Unit,
-    badgeFor: ((JellyfinItem) -> String?)? = null,
-    onLongPress: ((JellyfinItem) -> Unit)? = null
+    onOpen: (MediaItem, Int) -> Unit,
+    badgeFor: ((MediaItem) -> String?)? = null,
+    onLongPress: ((MediaItem) -> Unit)? = null
 ) {
     ItemShelf(
         title = title,

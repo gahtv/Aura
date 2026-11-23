@@ -35,7 +35,7 @@ class LrclibTest {
 
     @Test
     fun `instrumental result is cached and line-only consumers do not re-fetch`() = runTest {
-        val item = JellyfinItem(id = "instrumental-cache", name = "")
+        val item = JellyfinItem(id = "instrumental-cache", name = "", type = "Audio").toDomainItem() as com.hans.aura.model.Track
         val result = Lrclib.cachedLookup(item) {
             Lrclib.parseResponse("""{"instrumental":true,"plainLyrics":null,"syncedLyrics":null}""")
         }
@@ -48,7 +48,7 @@ class LrclibTest {
 
     @Test
     fun `malformed response is not cached and can recover`() = runTest {
-        val item = JellyfinItem(id = "instrumental-retry", name = "")
+        val item = JellyfinItem(id = "instrumental-retry", name = "", type = "Audio").toDomainItem() as com.hans.aura.model.Track
         assertEquals(LyricsResult.NotFound, Lrclib.cachedLookup(item) {
             Lrclib.parseResponse("not json")
         })

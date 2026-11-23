@@ -46,7 +46,11 @@ import androidx.tv.material3.MaterialTheme
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
 import com.hans.aura.data.AuthStore
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 import com.hans.aura.data.Mixes
 import com.hans.aura.ui.common.ConnectedAction
 import com.hans.aura.ui.common.ConnectedActions
@@ -75,24 +79,24 @@ import kotlinx.coroutines.launch
 @Composable
 fun CollectionScreen(
     app: AuraApp,
-    collection: JellyfinItem,
+    collection: CollectionItem,
     player: PlayerConnection,
     onBack: () -> Unit,
     focusTick: Int = 0,
     initialFocus: Boolean = false,
-    onOpenArtist: (JellyfinItem) -> Unit = {},
+    onOpenArtist: (Artist) -> Unit = {},
     viewModel: CollectionViewModel = viewModel(
         key = "collection:${collection.id}:${app.jellyfin.auth.session?.userId ?: "anon"}",
         factory = viewModelFactory {
-            initializer { CollectionViewModel(app, collection.id, collection.type) }
+            initializer { CollectionViewModel(app, collection) }
         }
     )
 ) {
     val session = app.jellyfin.auth.session ?: return
     val state by viewModel.state.collectAsState()
     val shown = state.fullItem ?: collection
-    val artUrl = shown.primaryImageTag?.let {
-        AuthStore.imageUrl(session.serverUrl, shown.id, it, maxWidth = 480)
+    val artUrl = shown.artwork?.let { art ->
+        AuthStore.imageUrl(session.serverUrl, art.itemId, art.tag, maxWidth = 480)
     }
     AuraDynamicTheme(artUrl) {
         CollectionContent(
@@ -104,12 +108,12 @@ fun CollectionScreen(
 @Composable
 private fun CollectionContent(
     app: AuraApp,
-    collection: JellyfinItem,
+    collection: CollectionItem,
     player: PlayerConnection,
     onBack: () -> Unit,
     focusTick: Int,
     initialFocus: Boolean,
-    onOpenArtist: (JellyfinItem) -> Unit,
+    onOpenArtist: (Artist) -> Unit,
     viewModel: CollectionViewModel,
     state: CollectionUiState
 ) {
@@ -125,7 +129,7 @@ private fun CollectionContent(
     val currentId by player.current.collectAsState()
     val audioPlaying by player.isPlaying.collectAsState()
     val motionPlaying = audioPlaying || currentId == null
-    val atmosAlbumIds = if (collection.type == "Playlist") state.atmosAlbumIds else emptySet()
+    val atmosAlbumIds = if (collection is Playlist) state.atmosAlbumIds else emptySet()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     val shown = state.fullItem ?: collection
@@ -134,8 +138,8 @@ private fun CollectionContent(
     val playButtonFocus = remember { FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedTrackId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    val atmosFiltered = collection.type == "MusicAlbum" && com.hans.aura.data.AtmosFilter.on
-    val shownTracks = if (atmosFiltered) tracks?.let { com.hans.aura.data.AtmosFilter.tracks(it) } else tracks
+    val atmosFiltered = collection is Album && com.hans.aura.data.AtmosFilter.on
+    val shownTracks = if (atmosFiltered) tracks?.let { it.filter { track -> com.hans.aura.data.AtmosFilter.keep(track) } } else tracks
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedTrackId, focusKeeper,
         ready = !shownTracks.isNullOrEmpty(),
         cancelled = shownTracks.isNullOrEmpty() && (shownTracks != null || state.error != null))
@@ -156,9 +160,9 @@ private fun CollectionContent(
             )
     ) {
         // Subtle atmospheric backdrop behind the split view.
-        shown.primaryImageTag?.let { tag ->
+        shown.artwork?.let { art ->
             AsyncImage(
-                model = AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 720),
+                model = AuthStore.imageUrl(session.serverUrl, art.itemId, art.tag, maxWidth = 720),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 alpha = 0.16f,
@@ -190,7 +194,7 @@ private fun CollectionContent(
                     .fillMaxHeight(),
                 verticalArrangement = Arrangement.Top
             ) {
-                shown.primaryImageTag?.let { tag ->
+                shown.artwork?.let { art ->
                     Box(
                         Modifier
                             .size(216.dp)
@@ -202,7 +206,7 @@ private fun CollectionContent(
                     ) {
                         MotionArtwork(
                             itemId = shown.id,
-                            posterModel = artworkRequest(AuthStore.imageUrl(session.serverUrl, shown.id, tag, maxWidth = 480)),
+                            posterModel = artworkRequest(AuthStore.imageUrl(session.serverUrl, art.itemId, art.tag, maxWidth = 480)),
                             contentDescription = collection.name,
                             playing = motionPlaying,
                             modifier = Modifier.fillMaxSize()
@@ -211,9 +215,10 @@ private fun CollectionContent(
                     Spacer(Modifier.height(AuraSpacing.md))
                 }
                 androidx.tv.material3.Text(
-                    when (collection.type) {
-                        "Playlist" -> "Playlist"
-                        else -> collection.year?.toString() ?: "Album"
+                    when (collection) {
+                        is Playlist -> "Playlist"
+                        is Album -> collection.year?.toString() ?: "Album"
+                        is com.hans.aura.model.Genre -> "Album"
                     },
                     fontSize = 13.sp,
                     color = colors.primary
@@ -234,7 +239,7 @@ private fun CollectionContent(
                         color = colors.onSurfaceVariant,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (tracks?.any { PlayerConnection.isAtmos(it) } == true) {
+                    if (tracks?.any { it.isAtmos } == true) {
                         Spacer(Modifier.width(AuraSpacing.sm))
                         AtmosBadge()
                     }
@@ -278,12 +283,11 @@ private fun CollectionContent(
                             label = "Shuffle",
                             onClick = { tracks?.let { player.playQueue(it.shuffled(), 0, resume = false) } }
                         ))
-                        if (collection.type != "Playlist") {
+                        if (collection !is Playlist) {
                             add(ConnectedAction(label = "Radio", onClick = {
                                 scope.launch {
                                     Mixes.playMix(
-                                        api = app.jellyfin.api,
-                                        userId = session.userId,
+                                        media = app.container.media,
                                         player = player,
                                         kind = Mixes.Kind.ALBUM,
                                         seed = shown
@@ -337,7 +341,7 @@ private fun CollectionContent(
                             .focusProperties { left = playButtonFocus },
                         contentPadding = PaddingValues(bottom = AuraSizes.bottomBarClearance)
                     ) {
-                        val multiDisc = collection.type == "MusicAlbum" && tracks.orEmpty().spansSeveralDiscs()
+                        val multiDisc = collection is Album && tracks.orEmpty().spansSeveralDiscs()
                         val rows = tracklistRows(shownTracks, multiDisc)
                         itemsIndexed(
                             items = rows,
@@ -356,7 +360,7 @@ private fun CollectionContent(
                                 return@itemsIndexed
                             }
                             val (i, number, track) = row as TracklistRow.Track
-                            val removeFromPlaylist: (() -> Unit)? = if (collection.type == "Playlist") {
+                            val removeFromPlaylist: (() -> Unit)? = if (collection is Playlist) {
                                 { viewModel.removeFromPlaylist(track.id, shownTracks.take(i).count { it.id == track.id }) }
                             } else null
                             TrackRow(
@@ -375,7 +379,7 @@ private fun CollectionContent(
                                             onOpenArtist = onOpenArtist,
                                             onOpenCollection = null,
                                             onRemoveFromPlaylist = removeFromPlaylist,
-                                            playlistMove = if (collection.type == "Playlist") {
+                                            playlistMove = if (collection is Playlist) {
                                                 com.hans.aura.ui.common.ContextMenus.PlaylistMove(
                                                     playlistId = collection.id,
                                                     itemId = track.id,
@@ -398,7 +402,7 @@ private fun CollectionContent(
         if (showBio && shownBio != null) {
             com.hans.aura.ui.common.BioDialog(
                 title = collection.name,
-                subtitle = collection.albumArtist,
+                subtitle = (collection as? Album)?.albumArtist,
                 text = shownBio,
                 onDismiss = { showBio = false }
             )
@@ -435,15 +439,15 @@ private fun DiscHeader(number: Int, first: Boolean) {
     }
 }
 
-internal fun subtitle(collection: JellyfinItem, tracks: List<JellyfinItem>?): String {
-    val noun = if (collection.type == "Playlist") "track" else "song"
-    val expected = collection.childCount ?: 0
+internal fun subtitle(collection: CollectionItem, tracks: List<Track>?): String {
+    val noun = if (collection is Playlist) "track" else "song"
+    val expected = (collection as? Album)?.childCount ?: (collection as? Playlist)?.childCount ?: 0
     val count = tracks?.size ?: expected
-    val kind = if (collection.type != "Playlist" && expected > count) {
+    val kind = if (collection !is Playlist && expected > count) {
         "$count of " + com.hans.aura.ui.common.countLabel(expected, noun)
     } else {
         com.hans.aura.ui.common.countLabel(count, noun)
     }
-    val artist = collection.albumArtist?.let { " \u00B7 $it" } ?: ""
+    val artist = (collection as? Album)?.albumArtist?.let { " \u00B7 $it" } ?: ""
     return "$kind$artist"
 }

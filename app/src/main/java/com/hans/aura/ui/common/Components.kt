@@ -53,7 +53,12 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.tv.material3.MaterialTheme
 import com.hans.aura.R
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.Genre
+import com.hans.aura.model.MediaItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraMotion
 import com.hans.aura.ui.theme.AuraShapes
@@ -70,7 +75,7 @@ private val CardFocusedShape = RoundedCornerShape(AuraShapes.cardRadius - AuraSi
 /** D-pad-focusable artwork card, circular for artists and rounded-square for albums/playlists. */
 @Composable
 fun ArtworkCard(
-    item: JellyfinItem,
+    item: MediaItem,
     serverUrl: String,
     size: Dp,
     badge: String? = null,
@@ -87,7 +92,7 @@ fun ArtworkCard(
     animate: Boolean = false,
     // Rank used by the budget to prefer on-screen rows over prefetch rows.
     motionPriority: Int = 0,
-    circular: Boolean = item.type == "MusicArtist",
+    circular: Boolean = item is Artist,
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
@@ -151,7 +156,7 @@ fun ArtworkCard(
                     ) else Modifier
                 )
         ) {
-            val artwork = item.resolveArtwork()
+            val artwork = item.artwork
             if (artwork != null) {
                 Box {
                     val still = artworkRequest(artwork.url(serverUrl, maxWidth = 480))
@@ -237,18 +242,19 @@ fun ArtworkCard(
     }
 }
 
-private fun subtitleOf(item: JellyfinItem): String = when (item.type) {
-    "MusicAlbum" -> item.albumArtist ?: item.artistNames.ifBlank { "Album" }
-    "MusicArtist" -> "Artist"
-    "Playlist" -> "Playlist"
-    else -> item.artistNames.ifBlank { "" }
+private fun subtitleOf(item: MediaItem): String = when (item) {
+    is Album -> item.albumArtist ?: item.artistNames.ifBlank { "Album" }
+    is Artist -> "Artist"
+    is Playlist -> "Playlist"
+    is Track -> item.artistNames.ifBlank { "" }
+    is Genre -> ""
 }
 
 /** One track row: index/title left, artist, duration right. */
 @Composable
 fun TrackRow(
     index: Int,
-    track: JellyfinItem,
+    track: Track,
     isCurrent: Boolean,
     onClick: () -> Unit,
     atmos: Boolean = false,
@@ -400,15 +406,15 @@ fun TrackRow(
 @Composable
 fun ItemShelf(
     title: String,
-    items: List<JellyfinItem>?,
+    items: List<MediaItem>?,
     serverUrl: String,
     focusKeeper: FocusKeeper,
     onFocused: (String) -> Unit,
-    onOpen: (JellyfinItem, Int) -> Unit,
+    onOpen: (MediaItem, Int) -> Unit,
     size: Dp = AuraSizes.shelfCardWidth,
     showLoading: Boolean = true,
-    badgeFor: ((JellyfinItem) -> String?)? = null,
-    onLongPress: ((JellyfinItem) -> Unit)? = null,
+    badgeFor: ((MediaItem) -> String?)? = null,
+    onLongPress: ((MediaItem) -> Unit)? = null,
     // True while this row is in the lazy list's motion window. Inside, the
     // horizontal scroll offset narrows it to the covers actually in view:
     // a 20-card row must not request 20 slots.
@@ -416,9 +422,8 @@ fun ItemShelf(
     // Applied to the scrolling row.
     modifier: Modifier = Modifier
 ) {
-    // "Only Atmos" (Settings) filters shelves without a second request: artists
-    // pass through, albums/tracks must be in the Atmos catalog.
-    val shown = items?.let { list -> list.filter { com.hans.aura.data.AtmosFilter.keep(it) } }
+    // "Only Atmos" (Settings) filters shelves without a second request.
+    val shown = items?.filter { com.hans.aura.data.AtmosFilter.keep(it) }
     val listState = rememberLazyListState()
     when {
         items == null -> {
@@ -464,7 +469,7 @@ fun ItemShelf(
                 itemsIndexed(
                     items = shown,
                     key = { _, item -> item.id },
-                    contentType = { _, item -> item.type }
+                    contentType = { _, item -> item::class }
                 ) { idx, item ->
                     ArtworkCard(
                         item = item,
@@ -473,7 +478,7 @@ fun ItemShelf(
                         badge = badgeFor?.invoke(item),
                         focusKeeper = focusKeeper,
                         onFocused = onFocused,
-                        animate = item.type == "MusicAlbum" && idx in animatableRange,
+                        animate = item is Album && idx in animatableRange,
                         // Earlier cards outrank later ones, so the budget keeps
                         // the left edge of the visible row moving.
                         motionPriority = -idx,

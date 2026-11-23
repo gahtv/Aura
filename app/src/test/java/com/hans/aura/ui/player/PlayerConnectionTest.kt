@@ -1,7 +1,8 @@
 package com.hans.aura.ui.player
 
 import com.hans.aura.data.Fixtures
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.toDomainItem
+import com.hans.aura.model.Track
 import com.hans.aura.data.MediaSource
 import com.hans.aura.data.MediaStream
 import org.junit.Assert.assertEquals
@@ -12,8 +13,8 @@ import org.junit.Test
 /** Atmos detection (E-AC-3 JOC only) and smart-shuffle ordering. */
 class PlayerConnectionTest {
 
-    private fun withStream(codec: String, profile: String?): JellyfinItem =
-        Fixtures.item("x", codec = codec, profile = profile)
+    private fun withStream(codec: String, profile: String?): Track =
+        Fixtures.item("x", codec = codec, profile = profile).toDomainItem() as Track
 
     // ---- isAtmos -----------------------------------------------------------
 
@@ -58,19 +59,14 @@ class PlayerConnectionTest {
                     )
                 )
             )
-        )
+        ).toDomainItem() as Track
         assertTrue(PlayerConnection.isAtmos(item))
     }
 
     @Test
     fun `null and stream-less items are not Atmos`() {
         assertFalse(PlayerConnection.isAtmos(null))
-        assertFalse(PlayerConnection.isAtmos(Fixtures.item("empty").copy(mediaSources = null)))
-        assertFalse(
-            PlayerConnection.isAtmos(
-                Fixtures.item("empty").copy(mediaSources = listOf(MediaSource(id = "s", mediaStreams = null)))
-            )
-        )
+        assertFalse(PlayerConnection.isAtmos(Track(id = "empty", name = "empty")))
     }
 
     // ---- smartOrder --------------------------------------------------------
@@ -147,5 +143,5 @@ class PlayerConnectionTest {
     }
 
     private fun track(id: String, playCount: Int, lastPlayed: String? = null) =
-        Fixtures.item("$id", name = id, playCount = playCount, lastPlayedDate = lastPlayed)
+        Fixtures.item(id, name = id, type = "Audio", playCount = playCount, lastPlayedDate = lastPlayed).toDomainItem() as Track
 }

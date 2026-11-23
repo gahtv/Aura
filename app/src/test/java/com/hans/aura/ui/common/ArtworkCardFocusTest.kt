@@ -47,7 +47,7 @@ class ArtworkCardFocusTest {
         compose.mainClock.autoAdvance = false
         val state = LazyGridState()
         val focusKeeper = FocusKeeper()
-        val albums = List(30) { Fixtures.album("Album $it") }
+        val albums = List(30) { Fixtures.domainAlbum("Album $it") }
         compose.setContent {
             AuraTheme {
                 LazyVerticalGrid(

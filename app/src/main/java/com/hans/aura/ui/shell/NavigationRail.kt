@@ -56,7 +56,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.hans.aura.R
-import com.hans.aura.ui.common.resolveArtwork
+import com.hans.aura.ui.common.url
 import com.hans.aura.ui.nav.NavSpec
 import com.hans.aura.ui.nav.Screen
 import com.hans.aura.ui.player.PlayerConnection
@@ -108,7 +108,7 @@ internal fun rememberRailPlayback(player: PlayerConnection, serverUrl: String?):
             RailPlayback(
                 title = track.name,
                 artist = track.artistNames,
-                artworkUrl = serverUrl?.let { track.resolveArtwork()?.url(it, maxWidth = 96) },
+                artworkUrl = serverUrl?.let { track.artwork?.url(it, maxWidth = 96) },
                 isPlaying = isPlaying
             )
         }

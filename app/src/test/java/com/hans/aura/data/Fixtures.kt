@@ -36,6 +36,10 @@ object Fixtures {
     fun album(id: String) = item(id, name = id, type = "MusicAlbum")
     fun artist(id: String) = item(id, name = id, type = "MusicArtist")
 
+    fun domainTrack(id: String) = item(id).toDomainItem() as com.hans.aura.model.Track
+    fun domainAlbum(id: String) = album(id).toDomainItem() as com.hans.aura.model.Album
+    fun domainArtist(id: String) = artist(id).toDomainItem() as com.hans.aura.model.Artist
+
     val musicLib = LibraryRef(id = "lib-music", name = "Music", collectionType = "music")
     val atmosLib = LibraryRef(id = "lib-atmos", name = "Atmos Content", collectionType = "music")
     val moviesLib = LibraryRef(id = "lib-movies", name = "Movies", collectionType = "movies")

@@ -46,16 +46,16 @@ class Phase3LayoutTest {
 
     @Test
     fun homeQuickAccessDeduplicatesAndCapsAtEight() {
-        val shared = Fixtures.album("shared-1")
+        val shared = Fixtures.domainAlbum("shared-1")
         val state = HomeUiState(
-            recentAlbums = listOf(shared, Fixtures.album("rec-2"), Fixtures.album("rec-3"), Fixtures.album("rec-4")),
+            recentAlbums = listOf(shared, Fixtures.domainAlbum("rec-2"), Fixtures.domainAlbum("rec-3"), Fixtures.domainAlbum("rec-4")),
             playlists = listOf(
-                JellyfinItem(id = "pl-1", name = "pl-1", type = "Playlist"),
-                JellyfinItem(id = "pl-2", name = "pl-2", type = "Playlist")
+                com.hans.aura.model.Playlist(id = "pl-1", name = "pl-1"),
+                com.hans.aura.model.Playlist(id = "pl-2", name = "pl-2")
             ),
-            atmosAlbums = listOf(shared, Fixtures.album("atm-1"), Fixtures.album("atm-2")),
-            recentlyPlayed = listOf(Fixtures.track("trk-1"), Fixtures.track("trk-2")),
-            artists = listOf(Fixtures.artist("art-1"))
+            atmosAlbums = listOf(shared, Fixtures.domainAlbum("atm-1"), Fixtures.domainAlbum("atm-2")),
+            recentlyPlayed = listOf(Fixtures.domainTrack("trk-1"), Fixtures.domainTrack("trk-2")),
+            artists = listOf(Fixtures.domainArtist("art-1"))
         )
         val qa = state.quickAccess
         assertEquals(8, qa.size)
@@ -90,8 +90,8 @@ class Phase3LayoutTest {
         // Saveable-state keys & mirror routes remain backward-compatible.
         assertEquals("tracks", NavSpec.key(Screen.Tracks))
         assertEquals("albums", NavSpec.key(Screen.Albums))
-        assertEquals("col:a1", NavSpec.key(Screen.Collection(Fixtures.album("a1"))))
-        assertEquals("artist:ar1", NavSpec.key(Screen.Artist(Fixtures.artist("ar1"))))
+        assertEquals("col:a1", NavSpec.key(Screen.Collection(Fixtures.domainAlbum("a1"))))
+        assertEquals("artist:ar1", NavSpec.key(Screen.Artist(Fixtures.domainArtist("ar1"))))
     }
 
     @Test

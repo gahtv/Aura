@@ -9,6 +9,7 @@ import com.hans.aura.ui.MirrorLink
 import com.hans.aura.ui.nav.NavSpec
 import com.hans.aura.ui.nav.NavState
 import com.hans.aura.ui.player.PlayerConnection
+import com.hans.aura.data.SourceQueries
 
 /**
  * Mirror link wiring (ui/MirrorLink.kt): the remote never sees a keystroke — it
@@ -49,8 +50,7 @@ internal fun MirrorWiring(
         MirrorLink.nav.collect { route ->
             val itemId = route.itemId
             if (NavSpec.routeNeedsItem(route.screen) && itemId != null) {
-                val userId = app.jellyfin.auth.session?.userId ?: return@collect
-                runCatching { app.jellyfin.api.getItem(itemId = itemId, userId = userId) }
+                runCatching { SourceQueries.item(itemId) }
                     .onSuccess { item ->
                         NavSpec.fromMirrorRoute(route.screen, itemId, item)?.let {
                             nav.jumpTo(it, bumpFocus = true)

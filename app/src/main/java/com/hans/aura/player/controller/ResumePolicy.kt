@@ -1,6 +1,6 @@
 package com.hans.aura.player.controller
 
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 
 /**
  * Resume-where-you-left-off policy, kept separate from the player plumbing so the
@@ -28,11 +28,10 @@ class ResumePolicy {
     ): Boolean = playWhenReady && (resume ?: (startIndex > 0 || size == 1))
 
     /** Resume position for [item], or null when starting at zero is right. */
-    fun positionMs(item: JellyfinItem?): Long? {
+    fun positionMs(item: Track?): Long? {
         if (item == null) return null
         val local = com.hans.aura.data.ResumePoints.position(item.id)
-        val ticks = item.userData?.playbackPositionTicks
-        val pos = local ?: (ticks?.let { it / 10_000L } ?: return null)
+        val pos = local ?: item.resumePositionMs ?: return null
         // Shorter than 15s in is "just started"; inside the last 10s is "finished".
         if (pos <= RESUME_MIN_MS) return null
         val dur = item.durationMs

@@ -87,6 +87,10 @@ android {
     }
 }
 
+composeCompiler {
+    stabilityConfigurationFiles.add(layout.projectDirectory.file("compose-stability.conf"))
+}
+
 baselineProfile {
     saveInSrc = true
     automaticGenerationDuringBuild = false

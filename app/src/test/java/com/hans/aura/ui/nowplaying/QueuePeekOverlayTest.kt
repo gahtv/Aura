@@ -44,7 +44,7 @@ class QueuePeekOverlayTest {
     @Test
     fun rightFromFirstRowDoesNotFocusUnderlyingPause() {
         var collapses = 0
-        val tracks = (0..2).map { Fixtures.track("Track $it") }
+        val tracks = (0..2).map { Fixtures.domainTrack("Track $it") }
         compose.setContent {
             AuraTheme {
                 Box(Modifier.fillMaxSize()) {
@@ -70,7 +70,7 @@ class QueuePeekOverlayTest {
         var size by mutableStateOf(3)
         var jumped = -1
         var collapses = 0
-        val tracks = (0..4).map { Fixtures.track("Track $it") }
+        val tracks = (0..4).map { Fixtures.domainTrack("Track $it") }
         compose.setContent {
             AuraTheme {
                 QueuePeekOverlay(tracks.take(size), tracks.size, 1, 0L,

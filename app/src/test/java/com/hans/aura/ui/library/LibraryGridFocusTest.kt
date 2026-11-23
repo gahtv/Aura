@@ -53,7 +53,7 @@ class LibraryGridFocusTest {
         compose.runOnIdle {
             state.value = state.value.copy(
                 loading = false, cacheKey = if (emptyResult) "old" else "other",
-                items = listOf(JellyfinItem(id = "album", name = "Album"))
+                items = listOf(com.hans.aura.model.Album(id = "album", name = "Album"))
             )
         }
         frames()

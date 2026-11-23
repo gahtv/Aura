@@ -54,7 +54,11 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hans.aura.AuraApp
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Playlist
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.AuraTextField
 import com.hans.aura.ui.common.ErrorPane
 import com.hans.aura.ui.common.FocusKeeper
@@ -80,8 +84,8 @@ fun SearchScreen(
     app: AuraApp,
     player: PlayerConnection,
     onBack: () -> Unit,
-    onOpenCollection: (JellyfinItem) -> Unit,
-    onOpenArtist: (JellyfinItem) -> Unit,
+    onOpenCollection: (CollectionItem) -> Unit,
+    onOpenArtist: (Artist) -> Unit,
     /** A catalog import finished: re-read the libraries (AppRoot's refresh key). */
     onLibraryChanged: () -> Unit = {},
     viewModel: SearchViewModel = viewModel(
@@ -97,7 +101,7 @@ fun SearchScreen(
     var focusFieldTick by remember { mutableIntStateOf(0) }
     var voiceMessage by remember { mutableStateOf<String?>(null) }
     val current by player.current.collectAsState()
-    val atmosAlbumIds = rememberAtmosAlbumIds(app.jellyfin.api, session.userId)
+    val atmosAlbumIds = rememberAtmosAlbumIds(session.userId)
     val focusKeeper = remember { FocusKeeper() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -307,7 +311,7 @@ fun SearchScreen(
                 serverUrl = session.serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { },
-                onOpen = { item, _ -> onOpenArtist(item) }
+                onOpen = { item, _ -> (item as? Artist)?.let(onOpenArtist) }
             )
 
             ItemShelf(
@@ -316,9 +320,9 @@ fun SearchScreen(
                 serverUrl = session.serverUrl,
                 focusKeeper = focusKeeper,
                 onFocused = { },
-                badgeFor = { if (it.type == "MusicAlbum" && it.id in atmosAlbumIds) "ATMOS" else null },
+                badgeFor = { if (it is Album && it.id in atmosAlbumIds) "ATMOS" else null },
                 onLongPress = { item ->
-                    if (item.type == "MusicAlbum" || item.type == "Playlist") {
+                    if (item is Album || item is Playlist) {
                         com.hans.aura.ui.common.ContextMenuHost.open(
                             com.hans.aura.ui.common.ContextMenus.forAlbum(
                                 app, player, scope, item, onOpenArtist = onOpenArtist
@@ -326,7 +330,7 @@ fun SearchScreen(
                         )
                     }
                 },
-                onOpen = { item, _ -> onOpenCollection(item) }
+                onOpen = { item, _ -> (item as? CollectionItem)?.let(onOpenCollection) }
             )
 
             ItemShelf(
@@ -337,15 +341,17 @@ fun SearchScreen(
                 onFocused = { },
                 showLoading = false,
                 badgeFor = { track ->
-                    if (track.albumId != null && track.albumId in atmosAlbumIds) "ATMOS" else null
+                    if ((track as? Track)?.albumId?.let { it in atmosAlbumIds } == true) "ATMOS" else null
                 },
                 onLongPress = { item ->
-                    com.hans.aura.ui.common.ContextMenuHost.open(
-                        com.hans.aura.ui.common.ContextMenus.forTrack(
-                            app, player, scope, item,
-                            onOpenArtist = onOpenArtist, onOpenCollection = onOpenCollection
+                    (item as? Track)?.let { track ->
+                        com.hans.aura.ui.common.ContextMenuHost.open(
+                            com.hans.aura.ui.common.ContextMenus.forTrack(
+                                app, player, scope, track,
+                                onOpenArtist = onOpenArtist, onOpenCollection = onOpenCollection
+                            )
                         )
-                    )
+                    }
                 },
                 onOpen = { _, idx ->
                     // Play the clicked track with the rest of the track results queued behind it.

@@ -53,7 +53,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.tv.material3.MaterialTheme
 import com.hans.aura.AuraApp
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.ArtworkCard
 import com.hans.aura.ui.common.AuraLoadingIndicator
 import com.hans.aura.ui.common.ErrorPane
@@ -83,8 +85,8 @@ internal fun LibraryScreen(
     player: PlayerConnection,
     refreshKey: Int = 0,
     focusTick: Int = 0,
-    onOpenCollection: (JellyfinItem) -> Unit,
-    onOpenArtist: (JellyfinItem) -> Unit,
+    onOpenCollection: (CollectionItem) -> Unit,
+    onOpenArtist: (Artist) -> Unit,
     onSwitchCategory: (Screen) -> Unit = {},
     likedOnly: Boolean = false,
     viewModel: LibraryViewModel = viewModel(
@@ -98,13 +100,14 @@ internal fun LibraryScreen(
     val session = app.jellyfin.auth.session ?: return
     val state by viewModel.state.collectAsState()
     val items = state.items
+    val tracks = items.filterIsInstance<Track>()
     val current by player.current.collectAsState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     LaunchedEffect(refreshKey) { viewModel.onRefreshKey(refreshKey) }
     LaunchedEffect(viewModel) { viewModel.refreshLikedIfEvicted() }
 
-    fun trackMenu(track: JellyfinItem, onRemove: (() -> Unit)? = null) =
+    fun trackMenu(track: Track, onRemove: (() -> Unit)? = null) =
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forTrack(
                 app, player, scope, track,
@@ -113,7 +116,7 @@ internal fun LibraryScreen(
             )
         )
 
-    fun albumMenu(item: JellyfinItem) =
+    fun albumMenu(item: CollectionItem) =
         com.hans.aura.ui.common.ContextMenuHost.open(
             com.hans.aura.ui.common.ContextMenus.forAlbum(
                 app, player, scope, item, onOpenArtist = onOpenArtist
@@ -333,7 +336,7 @@ internal fun LibraryScreen(
                         .focusRestorer()
                 ) {
                     itemsIndexed(
-                        items = items,
+                        items = tracks,
                         key = { _, track -> track.id },
                         contentType = { _, _ -> "track" }
                     ) { i, track ->
@@ -342,16 +345,14 @@ internal fun LibraryScreen(
                             track = track,
                             isCurrent = track.id == current?.id,
                             atmos = track.albumId?.let { it in state.atmosAlbumIds } == true,
-                            onClick = { player.playQueue(items, i, resume = true) },
+                            onClick = { player.playQueue(tracks, i, resume = true) },
                             focusKeeper = focusKeeper,
                             onFocused = { focusedId = it },
                             onLongPress = { trackMenu(track) },
                             favorite = com.hans.aura.data.Favorites.isFavorite(track),
                             onToggleFavorite = {
                                 scope.launch {
-                                    com.hans.aura.data.Favorites.toggle(
-                                        app.jellyfin.api, session.userId, track
-                                    )
+                                    app.container.media.toggleFavorite(track)
                                 }
                             }
                         )
@@ -402,7 +403,7 @@ internal fun LibraryScreen(
                             animate = kind == "Albums" && index in motionWindow,
                             motionPriority = -index,
                             onLongPress = if (kind != "Artists") {
-                                { albumMenu(item) }
+                                (item as? CollectionItem)?.let { collection -> { albumMenu(collection) } }
                             } else null,
                             favorite = if (kind == "Albums") {
                                 com.hans.aura.data.Favorites.isFavorite(item)
@@ -410,16 +411,14 @@ internal fun LibraryScreen(
                             onToggleFavorite = if (kind == "Albums") {
                                 {
                                     scope.launch {
-                                        com.hans.aura.data.Favorites.toggle(
-                                            app.jellyfin.api, session.userId, item
-                                        )
+                                        app.container.media.toggleFavorite(item)
                                     }
                                 }
                             } else null
                         ) {
                             when (kind) {
-                                "Artists" -> onOpenArtist(item)
-                                else -> onOpenCollection(item)
+                                "Artists" -> (item as? Artist)?.let(onOpenArtist)
+                                else -> (item as? CollectionItem)?.let(onOpenCollection)
                             }
                         }
                     }

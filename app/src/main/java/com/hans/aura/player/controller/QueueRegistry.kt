@@ -3,7 +3,7 @@ package com.hans.aura.player.controller
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import com.hans.aura.data.AuthStore
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
 import kotlin.math.roundToInt
@@ -12,7 +12,7 @@ import kotlin.math.roundToInt
  * The in-process knowledge of WHAT is queued.
  *
  * Media3 1.6 MediaItems carry only mediaId + URI (no extras payload), so the
- * full [JellyfinItem] for every queued mediaId is kept here: UI metadata, Atmos
+ * full [Track] for every queued mediaId is kept here: UI metadata, Atmos
  * badges, lyrics and playback reports all resolve through [get].
  *
  * Also owns the queue ID snapshot the "re-tap the playing row opens Now Playing
@@ -27,7 +27,7 @@ import kotlin.math.roundToInt
 class QueueRegistry {
 
     private val lock = Any()
-    private val items = LinkedHashMap<String, JellyfinItem>()
+    private val items = LinkedHashMap<String, Track>()
 
     /**
      * The queue's mediaIds in playback order, as Aura built it.
@@ -43,15 +43,15 @@ class QueueRegistry {
     /** Upcoming order before the smart-shuffle reorder, so it can be undone. */
     var normalOrderIds: List<String>? = null
 
-    fun put(item: JellyfinItem) {
+    fun put(item: Track) {
         synchronized(lock) { items[item.id] = item }
     }
 
-    fun putAll(list: List<JellyfinItem>) {
+    fun putAll(list: List<Track>) {
         synchronized(lock) { list.forEach { items[it.id] = it } }
     }
 
-    fun get(id: String): JellyfinItem? = synchronized(lock) { items[id] }
+    fun get(id: String): Track? = synchronized(lock) { items[id] }
 
     /** Drops every entry; returns how many were held (for the AURA_AUTH log). */
     fun clear(): Int = synchronized(lock) {
@@ -110,7 +110,7 @@ class QueueRegistry {
      * Now Playing. Duplicate ids (a playlist can hold the same track twice) are
      * preserved by sorting the two lists rather than deduping into a Set.
      */
-    fun sameQueue(player: androidx.media3.common.Player, list: List<JellyfinItem>): Boolean {
+    fun sameQueue(player: androidx.media3.common.Player, list: List<Track>): Boolean {
         val live = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
         if (live.sorted() != list.map { it.id }.sorted()) return false
         val snapshot = queueSnapshot
@@ -125,11 +125,11 @@ class QueueRegistry {
          * so it is unit-testable and its result can be undone by restoring the
          * list the caller kept.
          */
-        fun smartOrder(items: List<JellyfinItem>): List<JellyfinItem> {
+        fun smartOrder(items: List<Track>): List<Track> {
             if (items.size < 3) return items
             val ranked = items.sortedWith(
-                compareBy<JellyfinItem> { it.userData?.playCount ?: 0 }
-                    .thenBy { lastPlayedEpochMs(it.userData?.lastPlayedDate) }
+                compareBy<Track> { it.playCount }
+                    .thenBy { (it.lastPlayedAtMs ?: 0L) }
                     .thenBy { it.id }
             )
             val lovedCount = (ranked.size * 0.2f).roundToInt()
@@ -140,7 +140,7 @@ class QueueRegistry {
             // Deterministic interleave: one loved track after every `step`
             // fresh ones, so favourites arrive steadily instead of in a block.
             val step = maxOf(1, fresh.size / loved.size)
-            val out = ArrayList<JellyfinItem>(ranked.size)
+            val out = ArrayList<Track>(ranked.size)
             var li = 0
             fresh.forEachIndexed { i, item ->
                 out.add(item)
@@ -180,11 +180,11 @@ class QueueRegistry {
  * before [MusicSources] is installed (JVM tests).
  */
 fun toMediaItem(
-    item: JellyfinItem,
+    item: Track,
     serverUrl: String,
     source: MusicSource? = MusicSources.current
 ): MediaItem {
-    val container = item.mediaSources?.firstOrNull()?.container
+    val container = item.container
     val uri = source?.streamUri(item.id, container, serverUrl)
         ?: AuthStore.audioStreamUrl(serverUrl, item.id, container)
     return MediaItem.Builder()

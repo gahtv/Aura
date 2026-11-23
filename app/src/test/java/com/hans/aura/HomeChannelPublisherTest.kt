@@ -43,24 +43,24 @@ class HomeChannelPublisherTest {
     @Test
     fun firstPublishCreatesChannelThenRequestsBrowsableOnce() {
         Prefs.tvChannelId = -1L
-        HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test")
+        HomeChannelPublisher.publish(app, listOf(Fixtures.domainAlbum("first")), "http://example.test")
         assertEquals(7L, Prefs.tvChannelId)
         assertEquals(listOf(7L), BrowsableRequests.ids)
     }
 
     @Test
     fun cachedChannelRequestsOnceAndDoesNotOverrideLaterUserChoice() {
-        HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test")
+        HomeChannelPublisher.publish(app, listOf(Fixtures.domainAlbum("first")), "http://example.test")
         assertEquals(listOf(7L), BrowsableRequests.ids)
         Prefs.init(app)
-        HomeChannelPublisher.publish(app, listOf(Fixtures.album("second")), "http://example.test")
+        HomeChannelPublisher.publish(app, listOf(Fixtures.domainAlbum("second")), "http://example.test")
         assertEquals(listOf(7L), BrowsableRequests.ids)
     }
 
     @Test
     fun platformRejectionIsNotRetriedOnRefresh() {
         BrowsableRequests.onRequest = { throw IllegalArgumentException("Not a default channel") }
-        repeat(2) { HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test") }
+        repeat(2) { HomeChannelPublisher.publish(app, listOf(Fixtures.domainAlbum("first")), "http://example.test") }
         assertEquals(listOf(7L), BrowsableRequests.ids)
         assertEquals(2, provider.inserted.size)
     }
@@ -68,14 +68,14 @@ class HomeChannelPublisherTest {
     @Test
     fun unsuccessfulPublishDoesNotRequestBrowsable() {
         provider.failQuery = true
-        HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test")
+        HomeChannelPublisher.publish(app, listOf(Fixtures.domainAlbum("first")), "http://example.test")
         assertTrue(BrowsableRequests.ids.isEmpty())
     }
 
     @Test
     fun nullInsertDoesNotRequestBrowsable() {
         provider.failInsert = true
-        HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test")
+        HomeChannelPublisher.publish(app, listOf(Fixtures.domainAlbum("first")), "http://example.test")
         assertTrue(BrowsableRequests.ids.isEmpty())
     }
 
@@ -96,7 +96,7 @@ class HomeChannelPublisherTest {
 
     @Test
     fun publishReplacesOnlyThisChannelsProgramsAndDoesNotDuplicate() {
-        val albums = listOf(Fixtures.album("first"), Fixtures.album("second"))
+        val albums = listOf(Fixtures.domainAlbum("first"), Fixtures.domainAlbum("second"))
         HomeChannelPublisher.publish(app, albums + albums.first(), "http://example.test")
 
         assertEquals(listOf(TvContract.buildPreviewProgramUri(10), TvContract.buildPreviewProgramUri(11)), provider.deletes)
@@ -121,14 +121,14 @@ class HomeChannelPublisherTest {
         provider.programs.clear()
         HomeChannelPublisher.clear(app)
         assertTrue(provider.deletes.isEmpty())
-        HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test")
+        HomeChannelPublisher.publish(app, listOf(Fixtures.domainAlbum("first")), "http://example.test")
         assertEquals(1, provider.inserted.size)
     }
 
     @Test
     fun failedQueryDoesNotInsertDuplicatesAndClearDoesNotThrow() {
         provider.failQuery = true
-        HomeChannelPublisher.publish(app, listOf(Fixtures.album("first")), "http://example.test")
+        HomeChannelPublisher.publish(app, listOf(Fixtures.domainAlbum("first")), "http://example.test")
         HomeChannelPublisher.clear(app)
         assertTrue(provider.inserted.isEmpty())
         assertTrue(provider.deletes.isEmpty())

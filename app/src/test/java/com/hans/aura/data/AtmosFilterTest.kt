@@ -32,10 +32,10 @@ class AtmosFilterTest {
 
     @Test
     fun `everything passes through when the filter is off`() {
-        assertTrue(AtmosFilter.keep(atmosAlbum))
-        assertTrue(AtmosFilter.keep(flacAlbum))
-        assertTrue(AtmosFilter.keep(atmosTrack))
-        assertTrue(AtmosFilter.keep(flacTrack))
+        assertTrue(AtmosFilter.keep(atmosAlbum.toDomainItem()!!))
+        assertTrue(AtmosFilter.keep(flacAlbum.toDomainItem()!!))
+        assertTrue(AtmosFilter.keep(atmosTrack.toDomainItem()!!))
+        assertTrue(AtmosFilter.keep(flacTrack.toDomainItem()!!))
         assertEqualsLists(
             listOf(atmosTrack, flacTrack),
             AtmosFilter.tracks(listOf(atmosTrack, flacTrack))
@@ -45,22 +45,22 @@ class AtmosFilterTest {
     @Test
     fun `albums outside the Atmos catalog are dropped`() {
         AtmosFilter.setEnabled(true)
-        assertTrue(AtmosFilter.keep(atmosAlbum))
-        assertFalse(AtmosFilter.keep(flacAlbum))
+        assertTrue(AtmosFilter.keep(atmosAlbum.toDomainItem()!!))
+        assertFalse(AtmosFilter.keep(flacAlbum.toDomainItem()!!))
     }
 
     @Test
     fun `tracks outside the Atmos track set are dropped`() {
         AtmosFilter.setEnabled(true)
-        assertTrue(AtmosFilter.keep(atmosTrack))
-        assertFalse(AtmosFilter.keep(flacTrack))
+        assertTrue(AtmosFilter.keep(atmosTrack.toDomainItem()!!))
+        assertFalse(AtmosFilter.keep(flacTrack.toDomainItem()!!))
     }
 
     @Test
     fun `artists and playlists are never filtered`() {
         AtmosFilter.setEnabled(true)
-        assertTrue("an artist with both copies must stay reachable", AtmosFilter.keep(artist))
-        assertTrue("filtering a playlist would hide its contents", AtmosFilter.keep(playlist))
+        assertTrue("an artist with both copies must stay reachable", AtmosFilter.keep(artist.toDomainItem()!!))
+        assertTrue("filtering a playlist would hide its contents", AtmosFilter.keep(playlist.toDomainItem()!!))
     }
 
     @Test
@@ -77,9 +77,9 @@ class AtmosFilterTest {
     fun `an empty catalog hides every album and track while on`() {
         AtmosFilter.adopt(AtmosCatalog.Catalog())
         AtmosFilter.setEnabled(true)
-        assertFalse(AtmosFilter.keep(atmosAlbum))
-        assertFalse(AtmosFilter.keep(atmosTrack))
-        assertTrue(AtmosFilter.keep(artist))
+        assertFalse(AtmosFilter.keep(atmosAlbum.toDomainItem()!!))
+        assertFalse(AtmosFilter.keep(atmosTrack.toDomainItem()!!))
+        assertTrue(AtmosFilter.keep(artist.toDomainItem()!!))
     }
 
     private fun assertEqualsLists(expected: List<JellyfinItem>, actual: List<JellyfinItem>) {

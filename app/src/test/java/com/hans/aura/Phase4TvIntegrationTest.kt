@@ -79,9 +79,9 @@ class Phase4TvIntegrationTest {
 
     @Test
     fun homeChannelBuildsPreviewProgramValues() {
-        val album = Fixtures.album("alb42").copy(
+        val album = Fixtures.domainAlbum("alb42").copy(
             albumArtist = "boygenius",
-            imageTags = mapOf("Primary" to "tag42")
+            artwork = com.hans.aura.model.Artwork(itemId = "alb42", tag = "tag42")
         )
         val values = HomeChannelPublisher.buildProgramValues(
             channelId = 7L,

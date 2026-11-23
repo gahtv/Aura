@@ -26,7 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.ContextMenuHost
 import com.hans.aura.ui.player.PlayerConnection.Companion.isAtmos
 import com.hans.aura.ui.theme.AuraColors
@@ -49,8 +49,8 @@ import com.hans.aura.ui.theme.TextSecondary
 internal fun NowPlayingTopRow(
     visible: Boolean,
     lyricsMode: Boolean,
-    item: JellyfinItem?,
-    queue: List<JellyfinItem>,
+    item: Track?,
+    queue: List<Track>,
     onBack: () -> Unit,
     onOpenQueue: () -> Unit,
     onFindLyrics: (() -> Unit)?,

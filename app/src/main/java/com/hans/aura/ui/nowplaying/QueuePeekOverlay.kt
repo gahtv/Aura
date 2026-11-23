@@ -38,7 +38,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.tv.material3.MaterialTheme
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 import com.hans.aura.ui.common.InitialFocusOnPush
 import com.hans.aura.ui.common.OverlayVisibility
 import com.hans.aura.ui.common.formatDuration
@@ -73,7 +73,7 @@ import com.hans.aura.ui.theme.TextSecondary
  */
 @Composable
 internal fun QueuePeekOverlay(
-    upcoming: List<JellyfinItem>,
+    upcoming: List<Track>,
     total: Int,
     focusToken: Int,
     graceUntil: Long,
@@ -189,7 +189,7 @@ internal fun QueuePeekOverlay(
  */
 @Composable
 private fun PeekRow(
-    track: JellyfinItem,
+    track: Track,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {

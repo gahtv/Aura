@@ -105,7 +105,7 @@ class SourceQueriesTest {
         LibraryCache.clear()
         Dispatchers.setMain(Dispatchers.Unconfined)
         try {
-            val vm = com.hans.aura.ui.collection.CollectionViewModel(app, "playlist", "Playlist")
+            val vm = com.hans.aura.ui.collection.CollectionViewModel(app, com.hans.aura.model.Playlist(id = "playlist", name = "playlist"))
             withTimeout(10_000) { vm.state.first { it.tracks != null } }
             val original = vm.state.value.tracks
             requests.clear()
@@ -163,7 +163,7 @@ class SourceQueriesTest {
 
         val state = loadHome(cachedRecent = tracks)
 
-        assertEquals(tracks, state.recentlyPlayed)
+        assertEquals(tracks.toDomainItems(), state.recentlyPlayed)
         assertEquals(listOf("c", "b"), state.recentArtists!!.map { it.id })
         assertEquals("100", requests.single { it.queryParameter("SortBy") == "DatePlayed" }
             .queryParameter("Limit"))
@@ -193,8 +193,8 @@ class SourceQueriesTest {
             override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
                 queries.add(query)
                 return ItemsResponse(items = when (query.includeItemTypes) {
-                    "Audio" -> listOf(JellyfinItem(id = "track"))
-                    "MusicArtist" -> listOf(JellyfinItem(id = "artist"))
+                    "Audio" -> listOf(JellyfinItem(id = "track", type = "Audio"))
+                    "MusicArtist" -> listOf(JellyfinItem(id = "artist", type = "MusicArtist"))
                     else -> emptyList()
                 })
             }
@@ -221,7 +221,7 @@ class SourceQueriesTest {
     }
 
     private fun historyTrack(id: String, vararg artists: String) =
-        JellyfinItem(id = id, artistItems = artists.map { NameId(id = it) })
+        JellyfinItem(id = id, type = "Audio", artistItems = artists.map { NameId(id = it) })
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
@@ -249,7 +249,17 @@ class SourceQueriesTest {
             val recovered = Fixtures.track("recovered").copy(
                 albumId = "recovered", artistItems = listOf(NameId(id = "recovered"))
             )
-            body = Json.encodeToString(ItemsResponse(items = listOf(recovered)))
+            respond = { url ->
+                val type = when {
+                    url.queryParameter("Ids") != null -> "MusicArtist"
+                    url.encodedPath == "/Artists/AlbumArtists" -> "MusicArtist"
+                    url.queryParameter("IncludeItemTypes") == "Audio" -> "Audio"
+                    url.queryParameter("IncludeItemTypes") == "MusicArtist" -> "MusicArtist"
+                    url.queryParameter("IncludeItemTypes") == "Playlist" -> "Playlist"
+                    else -> "MusicAlbum"
+                }
+                200 to Json.encodeToString(ItemsResponse(items = listOf(recovered.copy(type = type))))
+            }
             viewModel.retry()
             withTimeout(10_000) { viewModel.viewModelScope.coroutineContext[Job]!!.children.toList().joinAll() }
 
@@ -369,7 +379,7 @@ class SourceQueriesTest {
             override suspend fun recentArtists(limit: Int) = super<MusicSource>.recentArtists(limit)
             override suspend fun browse(query: LibraryFilter.ItemsQuery, cachePrefix: String?): ItemsResponse {
                 queries.add(query)
-                return ItemsResponse(items = listOf(JellyfinItem(id = "album")))
+                return ItemsResponse(items = listOf(JellyfinItem(id = "album", type = "MusicAlbum")))
             }
         }
         MusicSources.install(source)
@@ -465,7 +475,7 @@ class SourceQueriesTest {
 
     @Test
     fun `item details use the item path and preserve user data`() = runTest {
-        body = """{"Id":"track","UserData":{"IsFavorite":true,"PlaybackPositionTicks":100}}"""
+        body = """{"Id":"track","Type":"Audio","UserData":{"IsFavorite":true,"PlaybackPositionTicks":100}}"""
 
         val item = SourceQueries.item("track")
 
@@ -473,8 +483,8 @@ class SourceQueriesTest {
         assertEquals("/Items/track", request.encodedPath)
         assertEquals("u", request.queryParameter("userId"))
         assertEquals("track", item?.id)
-        assertEquals(true, item?.userData?.isFavorite)
-        assertEquals(100L, item?.userData?.playbackPositionTicks)
+        assertEquals(true, (item as? com.hans.aura.model.Track)?.isFavorite)
+        assertEquals(0L, (item as? com.hans.aura.model.Track)?.resumePositionMs)
     }
 
     @Test
@@ -736,6 +746,52 @@ class SourceQueriesTest {
         status = 500
         assertNull(MusicSources.current!!.lyricsTimed("failed"))
         assertNull(MusicSources.current!!.albumBio("failed"))
+    }
+
+
+    @Test
+    fun `genre scan moved behind source keeps its pages artwork and cache`() = runTest {
+        LibraryCache.clear()
+        val first = JellyfinItem(
+            id = "track-rock", type = "Audio", genres = listOf("Rock"),
+            albumId = "album-rock", albumPrimaryImageTag = "rock-tag"
+        )
+        val filler = (0 until 499).map { JellyfinItem(id = "filler-$it", type = "Audio") }
+        val last = JellyfinItem(
+            id = "track-jazz", type = "Audio", genres = listOf("Pop", "Jazz"),
+            albumId = "album-jazz", albumPrimaryImageTag = "jazz-tag"
+        )
+        respond = { url ->
+            if (url.queryParameter("IncludeItemTypes") == "Audio" && url.queryParameter("Fields") == "Genres") {
+                val start = url.queryParameter("StartIndex")?.toInt() ?: 0
+                val items = if (start == 0) listOf(first) + filler else listOf(last)
+                200 to Json.encodeToString(ItemsResponse(
+                    items = items, totalRecordCount = 501, startIndex = start
+                ))
+            } else {
+                200 to """{"Items":[],"TotalRecordCount":0}"""
+            }
+        }
+
+        val scanned = SourceQueries.genres()
+
+        assertEquals(listOf("Jazz", "Pop", "Rock"), scanned.map { it.name })
+        assertEquals("album-jazz", scanned[0].artwork?.itemId)
+        assertEquals("jazz-tag", scanned[0].artwork?.tag)
+        assertEquals("album-jazz", scanned[1].artwork?.itemId)
+        assertEquals("album-rock", scanned[2].artwork?.itemId)
+        assertEquals("rock-tag", scanned[2].artwork?.tag)
+        val scanUrls = requests.toList().filter { it.queryParameter("Fields") == "Genres" }
+        assertEquals(listOf("0", "500"), scanUrls.map { it.queryParameter("StartIndex") })
+        assertTrue(scanUrls.all { it.queryParameter("Limit") == "500" })
+        assertTrue(scanUrls.all { it.queryParameter("IncludeItemTypes") == "Audio" })
+        assertTrue(scanUrls.all { it.queryParameter("SortBy") == "SortName" })
+        assertTrue(scanUrls.all { it.queryParameter("SortOrder") == "Ascending" })
+        assertTrue(scanUrls.all { it.queryParameter("Recursive") == "true" })
+
+        requests.clear()
+        assertEquals(scanned, SourceQueries.genres())
+        assertTrue(requests.isEmpty())
     }
 
     @Test

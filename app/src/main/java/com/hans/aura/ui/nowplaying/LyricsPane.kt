@@ -70,7 +70,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.hans.aura.AuraApp
-import com.hans.aura.data.JellyfinItem
+import com.hans.aura.model.Track
 import com.hans.aura.data.KaraokeFill
 import com.hans.aura.data.Lrclib
 import com.hans.aura.data.LyricBreak
@@ -89,7 +89,7 @@ import com.hans.aura.data.toLyricLine
 import com.hans.aura.data.toTimedLyricLine
 import com.hans.aura.ui.common.AutoFitMarqueeText
 import com.hans.aura.ui.common.AuraLoadingIndicator
-import com.hans.aura.ui.common.resolveArtwork
+import com.hans.aura.ui.common.url
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.player.rememberPlaybackPosition
 import com.hans.aura.ui.theme.AuraColors
@@ -190,7 +190,7 @@ fun LyricsPane(
             android.util.Log.i("AURA_LYRICS", "timed item=${cur.id} lines=${timed.size}")
             return@LaunchedEffect
         }
-        val local = LyricsStore.fetchPreferred(app.jellyfin.api, cur.id)
+        val local = app.container.media.preferredLyrics(cur.id)
         if (local.isNotEmpty()) {
             lines = local
             if (local.any { it.words.isNotEmpty() }) {
@@ -479,7 +479,7 @@ internal fun LyricCreditsFooter(credits: LyricCredits) {
 @Composable
 private fun NoLyricsState(
     app: AuraApp,
-    item: JellyfinItem?,
+    item: Track?,
     webChecked: Boolean,
     webFound: Boolean,
     webEnabled: Boolean,
@@ -520,10 +520,10 @@ private fun NoLyricsState(
 
 /** Album art + title/artist/album card for the no-lyrics state (not focusable). */
 @Composable
-private fun LyricsTrackCard(app: AuraApp, item: JellyfinItem) {
+private fun LyricsTrackCard(app: AuraApp, item: Track) {
     val colors = MaterialTheme.colorScheme
     val artworkUrl = app.jellyfin.auth.session?.let {
-        item.resolveArtwork()?.url(it.serverUrl, maxWidth = 240)
+        item.artwork?.url(it.serverUrl, maxWidth = 240)
     }
     val shape = AuraShapes.card
     Row(

@@ -62,6 +62,10 @@ import com.hans.aura.ui.shell.endSession
 import com.hans.aura.ui.shell.rememberRailPlayback
 import com.hans.aura.ui.shell.switchSession
 import com.hans.aura.ui.theme.Canvas
+import com.hans.aura.data.SourceQueries
+import com.hans.aura.model.Artist
+import com.hans.aura.model.CollectionItem
+import com.hans.aura.model.Track
 import com.hans.aura.ui.theme.AuraMotion
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -110,13 +114,15 @@ fun AppRoot() {
                         nav.resetToHome()
                         return@collect
                     }
-                    val uid = app.jellyfin.auth.session?.userId ?: return@collect
-                    runCatching { app.jellyfin.api.getItem(itemId = req.itemId, userId = uid) }
+                    runCatching { SourceQueries.item(req.itemId) }
                         .onSuccess { item ->
-                            when (item.type) {
-                                "MusicArtist" -> nav.jumpTo(Screen.Artist(item), bumpFocus = true)
-                                "Audio" -> player.playQueue(listOf(item), 0, resume = false)
-                                else -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                            when (item) {
+                                is Artist -> nav.jumpTo(Screen.Artist(item), bumpFocus = true)
+                                is Track -> player.playQueue(listOf(item), 0, resume = false)
+                                is com.hans.aura.model.Album -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                                is com.hans.aura.model.Playlist -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                                is com.hans.aura.model.Genre -> nav.jumpTo(Screen.Collection(item), bumpFocus = true)
+                                null -> Unit
                             }
                         }
                         .onFailure { android.util.Log.w("AURA_NAV", "intent open failed: ${it.message}") }
@@ -170,7 +176,7 @@ fun AppRoot() {
         if (com.hans.aura.data.LibraryFilter.hidden().isNotEmpty()) {
             val session = app.jellyfin.auth.session ?: return@LaunchedEffect
             runCatching {
-                com.hans.aura.data.LibraryFilter.refreshLibraryList(app.jellyfin.api, session.userId)
+                app.container.media.refreshLibraryList()
             }.onFailure { android.util.Log.w("AURA_LIBS", "library list refresh failed: ${it.message}") }
         }
     }

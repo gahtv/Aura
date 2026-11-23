@@ -71,7 +71,9 @@ class SharedArtworkTest {
                     .components { add(Interceptor { error("offline fixture") }) }
                     .build().also { it.memoryCache!![MemoryCache.Key(url)] = MemoryCache.Value(bitmap) }
             }
-            val header = artworkRequest(url)
+            val header = artworkRequest("https://fixture/album?maxWidth=800", placeholderKey = url)
+            assertEquals("https://fixture/album?maxWidth=800", header.data)
+            assertEquals(header.data, header.memoryCacheKey?.key)
             androidx.compose.runtime.LaunchedEffect(Unit) {
                 loader.enqueue(ImageRequest.Builder(context).data(url).size(216)
                     .target(onStart = { assertEquals(null, it) })

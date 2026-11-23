@@ -9,6 +9,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.collection.ArtistScreen
 import com.hans.aura.ui.collection.CollectionScreen
@@ -54,6 +56,7 @@ import com.hans.aura.ui.settings.SettingsScreen
 import com.hans.aura.ui.shell.DebugWiring
 import com.hans.aura.ui.shell.MirrorWiring
 import com.hans.aura.ui.shell.NavigationRailLayout
+import com.hans.aura.ui.shell.collapsedRailWidth
 import com.hans.aura.ui.shell.RailDestination
 import com.hans.aura.ui.shell.endSession
 import com.hans.aura.ui.shell.rememberRailPlayback
@@ -184,6 +187,7 @@ fun AppRoot() {
         val showRail = nav.top != Screen.NowPlaying && !OverlayVisibility.dialogOpen
         NavigationRailLayout(
             showRail = showRail,
+            insetContent = false,
             selected = RailDestination.forStack(nav.stack),
             playback = if (showRail) rememberRailPlayback(player, app.jellyfin.auth.session?.serverUrl) else null,
             onSelect = { destination ->
@@ -197,6 +201,7 @@ fun AppRoot() {
             SharedTransitionLayout {
                 val artworkCorners = remember { mutableMapOf<String, ArtworkCorners>() }
                 AnimatedContent(
+                    modifier = Modifier.fillMaxSize(),
                     targetState = nav.stack.lastIndex to nav.top,
                     contentKey = { (index, screen) -> "$index:${NavSpec.key(screen)}" },
                     transitionSpec = {
@@ -221,19 +226,21 @@ fun AppRoot() {
                             LocalArtworkSource provides artworkSource,
                             LocalArtworkCorners provides artworkCorners
                         ) {
-                            DestinationFocusGate(active) {
-                                DestinationHost(
-                                    app = app,
-                                    player = player,
-                                    nav = nav,
-                                    top = screen,
-                                    focusTick = entryFocusTick,
-                                    pendingFocus = entryPendingFocus,
-                                    endSession = exitSession,
-                                    onSwitchProfile = onSwitchProfile,
-                                    refreshKey = refreshKey,
-                                    onRefreshKey = { refreshKey++ }
-                                )
+                            Box(Modifier.fillMaxSize().padding(start = if (screen == Screen.NowPlaying) 0.dp else collapsedRailWidth)) {
+                                DestinationFocusGate(active) {
+                                    DestinationHost(
+                                        app = app,
+                                        player = player,
+                                        nav = nav,
+                                        top = screen,
+                                        focusTick = entryFocusTick,
+                                        pendingFocus = entryPendingFocus,
+                                        endSession = exitSession,
+                                        onSwitchProfile = onSwitchProfile,
+                                        refreshKey = refreshKey,
+                                        onRefreshKey = { refreshKey++ }
+                                    )
+                                }
                             }
                         }
                     }

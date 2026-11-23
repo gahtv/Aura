@@ -4,12 +4,15 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import org.junit.Assert.assertEquals
@@ -21,6 +24,38 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class DestinationViewportTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun outgoingAlbumRetainsItsScreenPositionWhenRailDisappears() =
+        assertInactivePositionRetained(initialRail = true)
+
+    @Test
+    fun outgoingNowPlayingRetainsItsScreenPositionWhenRailReturns() =
+        assertInactivePositionRetained(initialRail = false)
+
+    private fun assertInactivePositionRetained(initialRail: Boolean) {
+        val active = mutableStateOf(true)
+        var x = 0f
+        compose.setContent {
+            val showRail = if (active.value) initialRail else !initialRail
+            Box(Modifier.width(380.dp).height(200.dp)) {
+                Box(Modifier.padding(start = if (showRail) 80.dp else 0.dp)) {
+                    DestinationFocusGate(active.value) {
+                        Box(Modifier.width(50.dp).height(50.dp).onGloballyPositioned {
+                            x = it.positionInRoot().x
+                        })
+                    }
+                }
+            }
+        }
+        var original = 0f
+        compose.runOnIdle {
+            original = x
+            active.value = false
+        }
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals(original, x, 0.01f) }
+    }
 
     @Test
     fun inactiveDestinationRetainsEndOfShelfOffsetsWhenRailDisappears() {

@@ -47,12 +47,12 @@ internal class ArtworkCorners {
 }
 
 @Composable
-internal fun artworkRequest(url: String?): ImageRequest {
+internal fun artworkRequest(url: String?, placeholderKey: String? = url): ImageRequest {
     val context = LocalContext.current
-    return remember(context, url) {
+    return remember(context, url, placeholderKey) {
         ImageRequest.Builder(context).data(url)
             .memoryCacheKey(url)
-            .placeholderMemoryCacheKey(url)
+            .placeholderMemoryCacheKey(placeholderKey)
             .build()
     }
 }
@@ -68,7 +68,7 @@ internal fun DestinationFocusGate(active: Boolean, content: @Composable () -> Un
                 } else viewport.lastActive!!
                 val child = measurable.measure(entryConstraints)
                 layout(constraints.constrainWidth(child.width), constraints.constrainHeight(child.height)) {
-                    child.placeRelative(0, 0)
+                    child.placeRelative(constraints.maxWidth - child.width, 0)
                 }
             }
             .onPreviewKeyEvent { !active }

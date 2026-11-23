@@ -305,7 +305,10 @@ private fun NowPlayingContent(
                         // Elsewhere this is exactly the still cover it always was.
                         MotionArtwork(
                             itemId = artwork.itemId,
-                            posterModel = artworkRequest(artwork.url(session.serverUrl, maxWidth = 480)),
+                            posterModel = artworkRequest(
+                                artwork.url(session.serverUrl, maxWidth = 800),
+                                placeholderKey = artwork.url(session.serverUrl, maxWidth = 480)
+                            ),
                             contentDescription = currentItem?.name,
                             playing = isPlaying,
                             modifier = Modifier

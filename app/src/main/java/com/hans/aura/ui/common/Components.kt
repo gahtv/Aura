@@ -32,7 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.currentCompositeKeyHash
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -92,10 +92,10 @@ fun ArtworkCard(
 ) {
     val colors = MaterialTheme.colorScheme
     val artworkSource = LocalArtworkSource.current
-    val artworkToken = rememberSaveable { java.util.UUID.randomUUID().toString() }
+    val artworkToken = currentCompositeKeyHash
     val sharedArtwork = if (artworkSource?.value == artworkToken) {
         Modifier.sharedArtwork(item.id, if (circular) CircleShape else AuraShapes.card)
-    } else Modifier
+    } else Modifier.clip(if (circular) CircleShape else AuraShapes.card)
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) AuraMotion.artworkFocusedScale else 1f,
@@ -135,12 +135,11 @@ fun ArtworkCard(
             animationSpec = AuraMotion.scheme.fastEffectsSpec(),
             label = "card"
         )
-        val outerShape = if (circular) CircleShape else AuraShapes.card
         val innerShape = if (circular) CircleShape else CardFocusedShape
         Box(
             modifier = Modifier
                 .aspectRatio(1f)
-                .clip(outerShape)
+                .then(sharedArtwork)
                 .background(bg)
                 .padding(if (focused) AuraSizes.focusBorder else 0.dp)
                 .then(
@@ -155,7 +154,7 @@ fun ArtworkCard(
             val artwork = item.resolveArtwork()
             if (artwork != null) {
                 Box {
-                    val still = artwork.url(serverUrl, maxWidth = 480)
+                    val still = artworkRequest(artwork.url(serverUrl, maxWidth = 480))
                     if (animate) {
                         // Same still image, with the motion loop over it when the
                         // budget grants a slot. Losing the slot changes nothing
@@ -166,14 +165,14 @@ fun ArtworkCard(
                             contentDescription = item.name,
                             budgeted = true,
                             motionPriority = motionPriority,
-                            modifier = Modifier.fillMaxSize().then(sharedArtwork)
+                            modifier = Modifier.fillMaxSize()
                         )
                     } else {
                         AsyncImage(
                             model = still,
                             contentDescription = item.name,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().then(sharedArtwork)
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                     badge?.let { label ->

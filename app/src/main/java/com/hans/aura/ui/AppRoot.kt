@@ -2,7 +2,6 @@ package com.hans.aura.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,7 +24,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.collection.ArtistScreen
 import com.hans.aura.ui.collection.CollectionScreen
@@ -37,7 +35,6 @@ import com.hans.aura.ui.common.LocalArtworkTransition
 import com.hans.aura.ui.common.LocalArtworkVisibility
 import com.hans.aura.ui.common.LocalDestinationActive
 import com.hans.aura.ui.common.LocalArtworkSource
-import com.hans.aura.ui.common.LocalArtworkRadius
 import com.hans.aura.ui.common.DestinationFocusGate
 import com.hans.aura.ui.genres.GenreScreen
 import com.hans.aura.ui.genres.GenresScreen
@@ -196,11 +193,6 @@ fun AppRoot() {
             }
         ) {
             SharedTransitionLayout {
-                val artworkRadius by animateDpAsState(
-                    if (nav.top is Screen.Collection) 20.dp else 12.dp,
-                    AuraMotion.scheme.defaultSpatialSpec(),
-                    label = "artworkCorners"
-                )
                 AnimatedContent(
                     targetState = nav.stack.lastIndex to nav.top,
                     contentKey = { (index, screen) -> "$index:${NavSpec.key(screen)}" },
@@ -218,13 +210,12 @@ fun AppRoot() {
                         entryPendingFocus = nav.pendingFocus
                     }
                     stateHolder.SaveableStateProvider(key = "$index:${NavSpec.key(screen)}") {
-                        val artworkSource = rememberSaveable { mutableStateOf<String?>(null) }
+                        val artworkSource = rememberSaveable { mutableStateOf<Int?>(null) }
                         CompositionLocalProvider(
                             LocalArtworkTransition provides this@SharedTransitionLayout,
                             LocalArtworkVisibility provides this@AnimatedContent,
                             LocalDestinationActive provides active,
-                            LocalArtworkSource provides artworkSource,
-                            LocalArtworkRadius provides artworkRadius
+                            LocalArtworkSource provides artworkSource
                         ) {
                             DestinationFocusGate(active) {
                                 DestinationHost(

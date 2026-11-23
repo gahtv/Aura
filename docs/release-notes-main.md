@@ -1,8 +1,19 @@
-# Current main (after the 0.5.0 refactor)
+# Aura 0.7.0-alpha.1 and development notes
 
-The source still declares **0.5.0-alpha.1**, version code **7**. These changes are on
-`main`, not a separately versioned APK release. The earlier release notes remain a
-record of their original releases, including the checks reported at the time.
+The rewrite source declares **0.7.0-alpha.1**, version code **9**. This is a prerelease
+source version, not an APK publication announcement. The earlier release notes remain
+a record of their original releases, including the checks reported at the time.
+
+## Material 3 Expressive rewrite
+
+- A side navigation rail replaces the top bar. It expands on D-pad focus and puts Home,
+  Library, Genres, Liked, Search, Settings and Now Playing within reach.
+- Album and artist artwork seeds dark Material 3 colour schemes in HCT (hue, chroma,
+  tone), giving artwork-led screens coordinated surfaces, text and accents.
+- Room persists cached library lists and Atmos catalog results across app restarts.
+  Browse lists have a 24-hour lifetime and can be cleared with **Refresh library now**.
+- Screens and playback state use immutable domain models such as `Track`, `Album` and
+  `Artist` instead of Jellyfin's network DTOs.
 
 ## Library and data
 

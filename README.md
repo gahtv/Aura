@@ -7,11 +7,11 @@ streamer. Spotify-style UI (Compose TV + Media3) that **direct-plays Dolby Atmos
 Companion phone remote: **[Aura Remote](https://github.com/gahtv/aura-remote)**.
 Where the project is going: **[Roadmap](docs/ROADMAP.md)**.
 
-Current source version: **0.5.0-alpha.1** (version code 7), with subsequent library,
-lyrics and UI improvements on `main`. This is still a prerelease; Atmos passthrough
+Current source version: **0.7.0-alpha.1** (version code 9), incorporating the
+Material 3 Expressive rewrite. This is still a prerelease; Atmos passthrough
 requires compatible TV/HDMI/receiver hardware, not just an emulator.
-See [current main notes](docs/release-notes-main.md) and the
-[0.5.0 release notes](docs/release-notes-0.5.0-alpha.1.md).
+See the [rewrite notes](docs/release-notes-main.md) and the
+[0.6.0-alpha.1 release notes](docs/release-notes-0.6.0-alpha.1.md).
 
 ![Platform](https://img.shields.io/badge/platform-Android%20TV%20(API%2026%2B)-green)
 ![Kotlin](https://img.shields.io/badge/kotlin-2.x-blue)
@@ -20,11 +20,13 @@ See [current main notes](docs/release-notes-main.md) and the
 
 - **Atmos direct play** — E-AC-3 JOC passes through untouched (no transcode) to a
   Dolby Atmos-capable AVR
+- **Side navigation rail** — expands on focus and links to Home, Library, Genres,
+  Liked, Search, Settings and Now Playing.
 - Spotify-like browse UI: Home shelves, library tabs (Artists / Albums / Tracks /
   Playlists) with 60-item paging, search across tracks/albums/artists
 - **Liked songs** — a heart on liked album covers and on tracks, a Liked view, and
   favourites kept in sync with the server
-- **Genres, radio and similar artists** — browse by genre from the Albums tab, start a
+- **Genres, radio and similar artists** — browse by genre from the rail, start a
   mix from any track/album/artist/genre, and jump to a letter on big grids
 - **Synced LRC lyrics** with a D-pad timing nudge remembered per track, a real "no lyrics"
   state, and optional online lookup (LRCLIB) for tracks Jellyfin has none for
@@ -51,19 +53,21 @@ See [current main notes](docs/release-notes-main.md) and the
   [Aura Remote](https://github.com/gahtv/aura-remote) and the
   [roadmap](docs/ROADMAP.md)
 - Artist/album bios from Jellyfin item overviews, full-screen reader for long text
-- Dynamic album-art theming on detail screens (96px palette decode, process-cached)
+- **Artwork-based colour schemes** — a seed from the artwork generates a dark Material 3
+  scheme using HCT (hue, chroma, tone) on collection and artist details, Now Playing,
+  and the featured Home album card.
 - ATMOS badges on album covers, artist albums, genre pages and track rows, and an
   **Atmos filter**: an icon on the Albums, Tracks and artist pages, plus
   Settings > Only show Atmos content for when one library holds both versions
-- Focus restoration: BACK returns to the exact focused item at the same scroll
-  position on every browse screen
-- 24h TTL library cache with manual refresh; debug-signed release build optimized
-  with R8 for low-power TV hardware
+- Focus restoration: BACK restores saved browse state and returns focus to the previous
+  item when it is available.
+- **Room-backed library cache** — cached browse lists and Atmos results can be reused
+  after restart; library entries expire after 24 hours and can be refreshed manually.
 
 ## Building
 
-Requirements: JDK 17 (Temurin), Android SDK (platform 35 + build-tools). The Gradle
-wrapper is 8.11.1 — don't substitute a system Gradle 9.x (incompatible with AGP 8.7.3).
+Requirements: JDK 17 and the Android SDK (platform 37.1 + build tools). Use the
+Gradle 9.3.1 wrapper with Android Gradle Plugin 9.1.0.
 
 ```bash
 export JAVA_HOME=/path/to/jdk-17
@@ -73,7 +77,7 @@ export ANDROID_HOME=/path/to/android-sdk
 ./gradlew :app:assembleRelease  # release build (deployed artifact; debug-signed)
 ```
 
-The app supports Android TV API 26+ and compiles/targets API 35. To install and launch
+The app supports Android TV API 26+ and targets API 35. To install and launch
 on a connected emulator or TV (substitute `app-release.apk` for a release build):
 
 ```bash
@@ -113,19 +117,20 @@ Never commit `.env` or hardcode keys in source.
 
 ```
 app/src/main/java/com/hans/aura/
-  di/          AppContainer — builds the stores in a fixed order (Prefs, LibraryCache,
-               AtmosFilter, MirrorServer, JellyfinClient, MediaRepository)
-  data/        JellyfinClient (Retrofit + kotlinx.serialization), models, AuthStore,
+  di/          AppContainer — wires Room, preferences, caches, Jellyfin and the source
+  data/        JellyfinClient (Retrofit + kotlinx.serialization), DTOs, AuthStore,
                Prefs (settings + resume points), LibraryFilter (library selection),
-               LibraryCache (24h TTL), Favorites, Mixes, LyricsStore, Lrclib, AtmosCatalog,
-               MediaRepository, MusicSource + JellyfinSource, SourceQueries (browse entry point),
+               CacheDatabase (Room), LibraryCache (24h TTL), Favorites, Mixes, LyricsStore,
+               Lrclib, AtmosCatalog, MediaRepository, MusicSource + JellyfinSource,
+               SourceQueries (browse entry point),
                timed LRC/TTML parsing and lyric voice metadata
+  model/       Immutable media models consumed by the UI; data/ maps Jellyfin DTOs to them
   playback/    PlaybackService (Media3 session, Atmos routing, playback reports),
                PlaybackRemote (cast + remote-control websocket)
   player/      controller/ — PlaybackController, QueueRegistry, ResumePolicy,
                AutoplayPolicy, SleepTimer; ui/player/PlayerConnection is the facade
   remote/      MirrorServer (LAN mirror link on :8099) and the pairing prompt
-  ui/          nav/ (destinations + back stack), shell/ (top bar, mirror/debug wiring),
+  ui/          nav/ (destinations + back stack), shell/ (side rail, mirror/debug wiring),
                screens (home, library, genres, search, artist/album, now playing + lyrics,
                queue, playlists, settings, login), common/, theme/ (palette + design tokens)
   util/        AuraLog (log-tag contract)
@@ -154,12 +159,11 @@ persistence, source routing, timed lyrics, motion scheduling and UI helpers.
 
 ## Notes
 
-- Release is signed with the debug key on purpose, so R8-optimized builds install
-  over debug builds with `adb install -r`.
-- `androidx.tv:tv-material` has no `TextField`/`CircularProgressIndicator` in 1.0.x —
-  inputs come from `androidx.compose.material3`.
-- Coil decodes artwork as RGB_565 with a 20% memory cache; palette extraction uses a
-  96px bitmap. TV hardware is CPU-starved — bench on release builds, not debug.
+- Release is signed with the debug key on purpose, so builds with R8 minification
+  and resource shrinking install over debug builds with `adb install -r`.
+- Text fields come from `androidx.compose.material3`.
+- Coil decodes artwork as RGB_565 with a 20% memory cache; colour seed extraction uses a
+  96px image. TV hardware is CPU-starved — bench on release builds, not debug.
 
 ## AI usage
 

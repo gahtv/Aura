@@ -1,12 +1,13 @@
 plugins {
     alias(libs.plugins.android.test)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.androidx.baselineprofile)
 }
 
 android {
     namespace = "com.hans.aura.baselineprofile"
-    compileSdk = 35
+    compileSdk {
+        version = release(37) { minorApiLevel = 1 }
+    }
     targetProjectPath = ":app"
     experimentalProperties["android.experimental.self-instrumenting"] = true
 
@@ -17,9 +18,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
     }
 }
 

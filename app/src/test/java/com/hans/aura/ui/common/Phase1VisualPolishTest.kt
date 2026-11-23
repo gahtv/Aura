@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsFocused
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.ComposeUiTestConfig
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
@@ -25,7 +27,9 @@ import org.robolectric.annotation.Config
 @Config(qualifiers = "w960dp-h540dp-land")
 class Phase1VisualPolishTest {
     @get:Rule
-    val compose = createAndroidComposeRule<ComponentActivity>()
+    val compose = createAndroidComposeRule<ComponentActivity>(
+        ComposeUiTestConfig(inputMode = InputMode.Keyboard)
+    )
 
     @Test
     fun circularArtistCardAcceptsFocus() {

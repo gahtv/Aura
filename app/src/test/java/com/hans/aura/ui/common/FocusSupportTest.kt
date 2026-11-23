@@ -85,6 +85,57 @@ class FocusSupportTest {
     @Test
     fun backFallsBackToContainerWhenKeeperItemIsMissing() = restoreBack(false)
 
+    @Test
+    fun entryWaitsForChildOfAttachedGroupAfterDelayedLoad() = delayedEntry(true)
+
+    @Test
+    fun entryWaitsForGridAttachedAfterDelayedLoad() = delayedEntry(false)
+
+    private fun delayedEntry(groupAttached: Boolean) {
+        compose.mainClock.autoAdvance = false
+        val content = FocusRequester()
+        val outside = FocusRequester()
+        val ready = mutableStateOf(false)
+        compose.setContent {
+            Column {
+                Box(Modifier.size(40.dp).testTag("outside").focusRequester(outside).focusable())
+                if (groupAttached || ready.value) {
+                    Column(Modifier.focusRequester(content)) {
+                        if (ready.value) Box(Modifier.size(40.dp).testTag("loaded").focusable())
+                    }
+                }
+            }
+            LaunchedEffect(Unit) { outside.requestFocus() }
+            InitialFocusOnPush(true, content)
+        }
+        repeat(20) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.runOnIdle { ready.value = true }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("loaded").assertIsFocused()
+    }
+
+    @Test
+    fun refreshDoesNotReclaimEntryFocusAfterUserMovesAway() {
+        compose.mainClock.autoAdvance = false
+        val content = FocusRequester()
+        val outside = FocusRequester()
+        val ready = mutableStateOf(true)
+        compose.setContent {
+            Column {
+                Box(Modifier.size(40.dp).testTag("outside").focusRequester(outside).focusable())
+                if (ready.value) Box(Modifier.size(40.dp).testTag("loaded").focusRequester(content).focusable())
+            }
+            InitialFocusOnPush(ready.value, content)
+        }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("loaded").assertIsFocused()
+        compose.runOnIdle { outside.requestFocus(); ready.value = false }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.runOnIdle { ready.value = true }
+        repeat(4) { compose.mainClock.advanceTimeByFrame(); compose.waitForIdle() }
+        compose.onNodeWithTag("outside").assertIsFocused()
+    }
+
     private fun restoreBack(hasKeeperItem: Boolean) {
         compose.mainClock.autoAdvance = false
         val container = FocusRequester()

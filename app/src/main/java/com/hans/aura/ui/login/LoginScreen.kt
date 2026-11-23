@@ -33,10 +33,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hans.aura.AuraApp
@@ -305,9 +303,9 @@ fun LoginScreen(
                 value = password,
                 onValueChange = { password = it },
                 placeholder = "Password",
-                visualTransformation = PasswordVisualTransformation(),
+                secure = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { submitPassword() }),
+                onKeyboardAction = { submitPassword() },
                 modifier = Modifier.width(AuraSizes.loginFormWidth)
             )
             Spacer(Modifier.height(AuraSpacing.lg))
@@ -363,7 +361,7 @@ fun LoginScreen(
                         )
                         // Trap the cursor inside the panel; DOWN must not fall
                         // back into the login form behind the scrim.
-                        .focusProperties { exit = { FocusRequester.Cancel } }
+                        .focusProperties { onExit = { cancelFocusChange() } }
                         .padding(AuraSpacing.xl),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {

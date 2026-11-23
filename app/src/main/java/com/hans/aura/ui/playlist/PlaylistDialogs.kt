@@ -161,7 +161,7 @@ fun PlaylistPickerDialog(
                 .fillMaxWidth()
                 .clip(AuraShapes.dialog)
                 .background(Surface)
-                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusProperties { onExit = { cancelFocusChange() } }
                 .focusGroup()
                 .padding(AuraSpacing.xl)
         ) {

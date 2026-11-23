@@ -178,7 +178,7 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
                 .widthIn(max = AuraSizes.contextMenuWidth)
                 .clip(AuraShapes.sheet)
                 .background(Surface)
-                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusProperties { onExit = { cancelFocusChange() } }
                 .padding(AuraSpacing.lg)
         ) {
             androidx.tv.material3.Text(spec.title, fontSize = AuraTypography.title, color = TextPrimary,

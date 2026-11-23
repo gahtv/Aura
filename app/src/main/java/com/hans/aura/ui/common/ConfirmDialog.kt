@@ -89,7 +89,7 @@ fun ConfirmDialog(
                 .border(AuraSizes.hairline, Border, AuraShapes.dialog)
                 // Trap the cursor: without this DOWN escapes to the content
                 // behind the scrim and the user ends up in the settings list.
-                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusProperties { onExit = { cancelFocusChange() } }
                 .padding(AuraSpacing.xl)
         ) {
             androidx.tv.material3.Text(title, fontSize = AuraTypography.title, color = TextPrimary)

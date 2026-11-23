@@ -140,7 +140,7 @@ internal fun QueuePeekOverlay(
                 .background(AuraColors.PeekScrim)
                 .border(AuraSizes.hairline, Border, AuraShapes.sheet)
                 // Focus can never leave the panel while it is up.
-                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusProperties { onExit = { cancelFocusChange() } }
                 .padding(vertical = AuraSpacing.xs)
         ) {
             Row(

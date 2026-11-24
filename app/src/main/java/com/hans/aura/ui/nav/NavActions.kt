@@ -197,8 +197,9 @@ internal class NavState(
 
 /**
  * Session back stack, restored across process death by `rememberNavBackStack`.
- * Call this inside AppRoot's `key(sessionGeneration)` so a profile switch
- * starts a fresh stack instead of restoring the previous profile's screens.
+ * Call this inside AppRoot's recreation-stable session key
+ * (`SessionKey(serverUrl, userId)`), never a counter that resets on recreation:
+ * the same profile restores its stack, while a profile switch starts fresh.
  */
 @Composable
 internal fun rememberNavState(): NavState {

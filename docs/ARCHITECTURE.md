@@ -227,8 +227,9 @@ Consequences that are easy to break:
   `StackEntry` key. Item screens persist only **id + name + kind** (the full
   `CollectionItem`/`Artist` is `@Transient`), because a deep stack of full items risks
   `TransactionTooLargeException`; the destination ViewModel re-hydrates the rest. Call
-  `rememberNavState` inside `key(sessionGeneration)` so a profile switch starts fresh
-  instead of restoring the previous profile's screens.
+  `rememberNavState` inside AppRoot's recreation-stable session key
+  (`SessionKey(serverUrl, userId)`), not an in-memory counter: the active profile restores
+  its stack after process death, while a switch to another profile starts fresh.
 
 `ui/AppRoot.kt` is the shell: auth gate, the destination host, the side navigation rail
 and the overlay hosts. `NavigationRail.kt` replaces the top bar: it expands when focused,

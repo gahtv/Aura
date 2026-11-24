@@ -56,7 +56,11 @@ class CollectionViewModel(
     fun refresh() = load(force = true)
 
     fun removeFromPlaylist(trackId: String, occurrence: Int) {
-        viewModelScope.launch {
+        // Session scope, not viewModelScope: popping this playlist's NavEntry
+        // clears the ViewModelStore and cancelling the write (or the cache
+        // eviction after the server already applied it) leaves a stale list.
+        // The state updates are harmless once cleared; load() is a no-op then.
+        app.container.mutations.scope.launch {
             runCatching { SourceQueries.removeFromPlaylist(itemId, trackId, occurrence) }
                 .onSuccess { load(force = true) }
                 .onFailure {

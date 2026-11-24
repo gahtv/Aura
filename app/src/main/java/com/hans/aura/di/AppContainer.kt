@@ -14,6 +14,42 @@ import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
 import com.hans.aura.remote.MirrorServer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+
+/**
+ * Scope for mutations a screen starts but must not own.
+ *
+ * Playlist edits are launched here instead of a destination's `viewModelScope`:
+ * Navigation 3 clears a popped entry's ViewModelStore after its exit
+ * transition, and cancelling [MediaRepository.removeFromPlaylist] mid-flight
+ * loses the write (cancelled during the pre-read), or — worse — loses the
+ * cache eviction after the server already applied the edit, so the next open
+ * still shows the removed track.
+ *
+ * One scope per signed-in session: [reset] cancels everything still in flight
+ * and starts a fresh scope, so a mutation started for the old profile can
+ * never land after a profile switch or sign-out.
+ */
+class SessionMutations {
+    private val lock = Any()
+    private var supervisor = SupervisorJob()
+    private var current = CoroutineScope(supervisor + Dispatchers.Default)
+
+    /** Scope owned by the current session; cancelled by [reset]. */
+    val scope: CoroutineScope get() = synchronized(lock) { current }
+
+    /** Cancels in-flight mutations and starts a fresh session scope. */
+    fun reset() {
+        synchronized(lock) {
+            supervisor.cancel()
+            supervisor = SupervisorJob()
+            current = CoroutineScope(supervisor + Dispatchers.Default)
+        }
+    }
+}
 
 /**
  * Manual dependency container — the single place the app's long-lived stores are
@@ -43,6 +79,12 @@ class AppContainer(context: Context) {
 
     /** Browse/query facade ViewModels and screens should prefer. */
     val media: MediaRepository
+
+    /**
+     * Session-owned scope for mutations that must outlive the screen that
+     * started them (playlist edits). See [SessionMutations].
+     */
+    val mutations = SessionMutations()
 
     /**
      * The library backend this build browses and streams from.

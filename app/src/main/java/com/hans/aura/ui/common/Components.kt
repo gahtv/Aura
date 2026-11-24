@@ -273,7 +273,10 @@ fun TrackRow(
     // Liked state (null = draw no heart). Kept after every existing parameter
     // so no call site's trailing lambda can bind to it by accident.
     favorite: Boolean? = null,
-    onToggleFavorite: (() -> Unit)? = null
+    onToggleFavorite: (() -> Unit)? = null,
+    // Focus identity for the keeper, BACK-restore and menu return. Defaults to
+    // the track id; lists that can repeat a track pass a per-entry id.
+    focusId: String = track.id
 ) {
     val colors = MaterialTheme.colorScheme
     // Either focus slot highlights the row as a whole.
@@ -305,13 +308,13 @@ fun TrackRow(
                 .weight(1f)
                 .then(
                     if (focusKeeper != null) {
-                        Modifier.focusRequester(focusKeeper.requesterFor(track.id))
+                        Modifier.focusRequester(focusKeeper.requesterFor(focusId))
                     } else Modifier
                 )
-                .contextMenuKeys(onLongPress, focusKeeper?.requesterFor(track.id))
+                .contextMenuKeys(onLongPress, focusKeeper?.requesterFor(focusId))
                 .onFocusChanged {
                     contentFocused = it.isFocused
-                    if (it.isFocused) onFocused?.invoke(track.id)
+                    if (it.isFocused) onFocused?.invoke(focusId)
                 }
                 .clickable { onClick() },
             verticalAlignment = Alignment.CenterVertically
@@ -372,7 +375,7 @@ fun TrackRow(
                     actionsFocused = it.hasFocus
                     // Pills share the row's focus identity so BACK restores to
                     // THIS track — the content slot is the restore target.
-                    if (it.hasFocus) onFocused?.invoke(track.id)
+                    if (it.hasFocus) onFocused?.invoke(focusId)
                 }
                 .padding(start = AuraSpacing.xs),
             verticalAlignment = Alignment.CenterVertically,

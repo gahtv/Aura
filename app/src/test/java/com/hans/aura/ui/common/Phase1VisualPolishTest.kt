@@ -101,17 +101,10 @@ class Phase1VisualPolishTest {
         compose.onNodeWithContentDescription("Add to favorites").performKeyInput { pressKey(Key.DirectionRight) }
         compose.onNodeWithText("\u2022\u2022\u2022").assertIsFocused()
 
-        // Opening the menu from the pill registers it as the invoker, so menu
-        // dismissal hands focus back to it.
+        // OK on the pill opens the menu (focus return through the real overlay
+        // is covered by ContextMenuFocusReturnTest).
         compose.onNodeWithText("\u2022\u2022\u2022").performKeyInput { pressKey(Key.DirectionCenter) }
         compose.runOnIdle { assertEquals(1, menuOpens) }
-        compose.onNodeWithText("Other").performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.runOnIdle {
-            val invoker = requireNotNull(ContextMenuHost.lastInvoker)
-            ContextMenuHost.lastInvoker = null
-            invoker.requestFocus()
-        }
-        compose.onNodeWithText("\u2022\u2022\u2022").assertIsFocused()
 
         // Leaving the row keeps both affordances on screen.
         compose.onNodeWithText("Other").performSemanticsAction(SemanticsActions.RequestFocus)

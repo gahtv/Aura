@@ -360,8 +360,11 @@ private fun CollectionContent(
                                 return@itemsIndexed
                             }
                             val (i, number, track) = row as TracklistRow.Track
+                            // A playlist can repeat a song: each entry gets its
+                            // own focus id so focus returns to the exact entry.
+                            val occurrence = shownTracks.take(i).count { it.id == track.id }
                             val removeFromPlaylist: (() -> Unit)? = if (collection is Playlist) {
-                                { viewModel.removeFromPlaylist(track.id, shownTracks.take(i).count { it.id == track.id }) }
+                                { viewModel.removeFromPlaylist(track.id, occurrence) }
                             } else null
                             TrackRow(
                                 index = number,
@@ -371,6 +374,7 @@ private fun CollectionContent(
                                 onClick = { player.playQueue(shownTracks, i, resume = true) },
                                 focusKeeper = focusKeeper,
                                 onFocused = { focusedTrackId = it },
+                                focusId = trackRowFocusId(track.id, occurrence),
                                 onRemove = removeFromPlaylist,
                                 onLongPress = {
                                     com.hans.aura.ui.common.ContextMenuHost.open(
@@ -438,6 +442,10 @@ private fun DiscHeader(number: Int, first: Boolean) {
         )
     }
 }
+
+/** First entry keeps the plain track id; later repeats of it get their own. */
+internal fun trackRowFocusId(trackId: String, occurrence: Int): String =
+    if (occurrence == 0) trackId else "$trackId#$occurrence"
 
 internal fun subtitle(collection: CollectionItem, tracks: List<Track>?): String {
     val noun = if (collection is Playlist) "track" else "song"

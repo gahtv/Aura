@@ -32,6 +32,9 @@ internal fun endSession(
     val oldUrl = app.jellyfin.auth.session?.serverUrl ?: app.jellyfin.auth.lastServerUrl
     val oldHost = AuthStore.host(oldUrl)
     val playerItems = player.teardown()
+    // Nothing this session started may finish into the next one: cancel
+    // in-flight mutations before any library store or credential is cleared.
+    app.container.mutations.reset()
     val library = LibraryCache.size
     val paged = PagedLibrary.size
     val atmos = AtmosCatalog.size
@@ -66,7 +69,10 @@ internal fun switchSession(
     target: Session,
     onSwitched: () -> Unit
 ) {
+    // The old profile's in-flight writes must not land in the new profile's
+    // library; cancel them before the session changes.
     player.teardown()
+    app.container.mutations.reset()
     LibraryCache.clear()
     Favorites.clear()
     PagedLibrary.clear()

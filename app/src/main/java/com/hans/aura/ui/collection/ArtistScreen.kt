@@ -104,7 +104,6 @@ fun ArtistScreen(
     onOpenCollection: (CollectionItem) -> Unit,
     onOpenArtist: (Artist) -> Unit = {},
     viewModel: ArtistViewModel = viewModel(
-        key = "artist:${artist.id}:${app.jellyfin.auth.session?.userId ?: "anon"}",
         factory = viewModelFactory { initializer { ArtistViewModel(app, artist.id) } }
     )
 ) {

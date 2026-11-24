@@ -149,6 +149,25 @@ internal object NavSpec {
 
     fun isRootRoute(screen: Screen): Boolean = screen.meta in rootRoutes
 
+    /**
+     * Tab roots whose ViewModels and scroll/focus state stay scoped to the
+     * signed-in session so switching rail tabs does not reload or lose place.
+     * Pushed destinations (Collection, Artist, Genre, Queue, NowPlaying) are
+     * scoped per NavDisplay entry and cleared on pop.
+     */
+    fun isSessionScopedTabRoot(screen: Screen): Boolean = when (screen) {
+        Screen.Home,
+        Screen.Artists,
+        Screen.Albums,
+        Screen.Tracks,
+        Screen.Liked,
+        Screen.Playlists,
+        Screen.Genres,
+        Screen.Search,
+        Screen.Settings -> true
+        else -> false
+    }
+
     /** True when a remote route needs an item fetched before it can be shown. */
     fun routeNeedsItem(route: String?): Boolean =
         route != null && ScreenMeta.entries.any { it.routeName == route && it.takesItem }

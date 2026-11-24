@@ -86,7 +86,6 @@ fun CollectionScreen(
     initialFocus: Boolean = false,
     onOpenArtist: (Artist) -> Unit = {},
     viewModel: CollectionViewModel = viewModel(
-        key = "collection:${collection.id}:${app.jellyfin.auth.session?.userId ?: "anon"}",
         factory = viewModelFactory {
             initializer { CollectionViewModel(app, collection) }
         }
@@ -309,13 +308,33 @@ private fun CollectionContent(
                     .weight(0.64f)
                     .fillMaxHeight()
             ) {
-                if (state.error != null && tracks != null) {
-                    androidx.tv.material3.Text(
-                        state.error.orEmpty(),
-                        color = colors.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(bottom = AuraSpacing.xs)
-                    )
+                // Edit failures outlive a successful reload (state.error), so
+                // prefer them until the next edit asks for user attention.
+                val inlineError = state.editError ?: state.error
+                if (inlineError != null && shownTracks != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = AuraSpacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
+                    ) {
+                        androidx.tv.material3.Text(
+                            inlineError,
+                            color = colors.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        // Only a refresh that is still owed gets a Retry:
+                        // after UNKNOWN (or a failed reconciliation) removal
+                        // stays disabled until a load proves the new order.
+                        // Ordinary load errors keep their ErrorPane retry.
+                        if (state.editInFlight) {
+                            androidx.tv.material3.Button(onClick = { viewModel.retry() }) {
+                                androidx.tv.material3.Text("Retry")
+                            }
+                        }
+                    }
                 }
 
                 when {
@@ -360,9 +379,18 @@ private fun CollectionContent(
                                 return@itemsIndexed
                             }
                             val (i, number, track) = row as TracklistRow.Track
-                            val removeFromPlaylist: (() -> Unit)? = if (collection is Playlist) {
-                                { viewModel.removeFromPlaylist(track.id, shownTracks.take(i).count { it.id == track.id }) }
-                            } else null
+                            // A removal in flight owns the list until its
+                            // refresh lands: no further occurrence may be
+                            // resolved against the pre-edit order.
+                            val removeFromPlaylist: (() -> Unit)? =
+                                if (collection is Playlist && !state.editInFlight) {
+                                    {
+                                        viewModel.removeFromPlaylist(
+                                            trackId = track.id,
+                                            occurrence = shownTracks.take(i).count { it.id == track.id }
+                                        )
+                                    }
+                                } else null
                             TrackRow(
                                 index = number,
                                 track = track,
@@ -379,7 +407,12 @@ private fun CollectionContent(
                                             onOpenArtist = onOpenArtist,
                                             onOpenCollection = null,
                                             onRemoveFromPlaylist = removeFromPlaylist,
-                                            playlistMove = if (collection is Playlist) {
+                                            // A move resolves a visible row
+                                            // against the server list; while an
+                                            // edit is in flight that list is
+                                            // already changing, so offer no
+                                            // moves until the refresh lands.
+                                            playlistMove = if (collection is Playlist && !state.editInFlight) {
                                                 com.hans.aura.ui.common.ContextMenus.PlaylistMove(
                                                     playlistId = collection.id,
                                                     itemId = track.id,

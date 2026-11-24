@@ -21,12 +21,6 @@ object SourceQueries {
         checkNotNull(source()) { "No music source available" }.removeFromPlaylist(playlistId, itemId, occurrence)
     }
 
-    suspend fun playlistMoveIndex(playlistId: String, visibleIndex: Int): Int? {
-        val entries = source()?.cached("col:$playlistId") ?: source()?.playlistItems(playlistId).orEmpty()
-        val visibleRows = entries.withIndex().filter { it.value.type == "Audio" }
-        return visibleRows.getOrNull(visibleIndex)?.index
-    }
-
     private suspend fun cache(key: String?, items: List<JellyfinItem>) {
         if (key != null) source()?.cache(key, items)
     }

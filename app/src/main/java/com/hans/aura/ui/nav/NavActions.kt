@@ -3,11 +3,25 @@ package com.hans.aura.ui.nav
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.hans.aura.model.Artist as MediaArtist
 import com.hans.aura.model.CollectionItem
+
+/**
+ * One entry in [NavState]'s Navigation 3 back stack. The monotonic [id] keeps
+ * duplicate pushes (e.g. Album A -> Artist X -> Album A) distinct in
+ * `NavDisplay`, `SaveableStateHolderNavEntryDecorator` and
+ * `ViewModelStoreNavEntryDecorator`.
+ */
+internal data class StackEntry(
+    val id: Long,
+    val screen: Screen
+)
 
 /**
  * The navigation surface screens get. Implemented over a back stack today
@@ -35,10 +49,15 @@ internal interface NavActions {
  */
 @Stable
 internal class NavState {
-    var stack by mutableStateOf(listOf<Screen>(Screen.Home))
-        private set
+    private var nextEntryId = 1L
 
-    val top: Screen get() = stack.last()
+    val entries: SnapshotStateList<StackEntry> = mutableStateListOf(StackEntry(0L, Screen.Home))
+
+    val stack: List<Screen> get() = entries.map { it.screen }
+
+    val topEntry: StackEntry get() = entries.last()
+
+    val top: Screen get() = topEntry.screen
 
     var pendingFocus by mutableStateOf(false)
         private set
@@ -49,21 +68,31 @@ internal class NavState {
     var lastLibraryTab: Screen = Screen.Albums
         private set
 
+    private fun newEntry(screen: Screen) = StackEntry(nextEntryId++, screen)
+
+    private fun replaceStack(vararg screens: Screen) {
+        require(screens.isNotEmpty())
+        Snapshot.withMutableSnapshot {
+            entries.clear()
+            screens.forEach { entries.add(newEntry(it)) }
+        }
+    }
+
     fun push(screen: Screen) {
         pendingFocus = true
-        stack = stack + screen
+        entries.add(newEntry(screen))
     }
 
     fun pop() {
-        if (stack.size > 1) {
-            stack = stack.dropLast(1)
+        if (entries.size > 1) {
+            entries.removeAt(entries.lastIndex)
             focusTick++
             pendingFocus = false
         }
     }
 
     fun back() {
-        if (stack.size > 1) pop() else if (top != Screen.Home) resetToHome()
+        if (entries.size > 1) pop() else if (top != Screen.Home) resetToHome()
     }
 
     /** Tab switch resets the stack to that tab. */
@@ -71,7 +100,7 @@ internal class NavState {
         val target = if (tab == Screen.Albums) lastLibraryTab else tab
         if (target::class != top::class) {
             pendingFocus = false
-            stack = listOf(target)
+            replaceStack(target)
         }
     }
 
@@ -81,7 +110,7 @@ internal class NavState {
             lastLibraryTab = target
             if (target::class != top::class) {
                 pendingFocus = false
-                stack = listOf(target)
+                replaceStack(target)
             }
         }
     }
@@ -89,14 +118,14 @@ internal class NavState {
     fun openSearch() {
         if (top != Screen.Search) {
             pendingFocus = true
-            stack = listOf(Screen.Search)
+            replaceStack(Screen.Search)
         }
     }
 
     fun openNowPlaying() {
         if (top != Screen.NowPlaying) {
             pendingFocus = true
-            stack = stack + Screen.NowPlaying
+            entries.add(newEntry(Screen.NowPlaying))
         }
     }
 
@@ -107,14 +136,15 @@ internal class NavState {
      */
     fun jumpTo(screen: Screen, bumpFocus: Boolean = false) {
         pendingFocus = true
-        stack = if (screen == Screen.Home) listOf(screen) else listOf(Screen.Home, screen)
+        if (screen == Screen.Home) replaceStack(screen) else replaceStack(Screen.Home, screen)
         if (bumpFocus) focusTick++
     }
 
     /** BACK on a root tab other than Home: go Home instead of exiting. */
     fun resetToHome() {
         pendingFocus = false
-        stack = listOf(Screen.Home)
+        if (entries.size == 1 && top == Screen.Home) return
+        replaceStack(Screen.Home)
     }
 
     val actions: NavActions = object : NavActions {

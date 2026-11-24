@@ -177,7 +177,7 @@ class ContextMenuFocusReturnTest {
         compose.onNodeWithText("Remove from playlist").performSemanticsAction(SemanticsActions.OnClick)
 
         compose.waitUntil(5_000) { removals.isNotEmpty() }
-        assertEquals(listOf("A" to 1), removals.toList())
+        assertEquals(listOf(Triple("p", "A", 1)), removals.toList())
     }
 
     @Test
@@ -186,9 +186,9 @@ class ContextMenuFocusReturnTest {
         assertEquals(listOf(0, 0, 1, 0, 2, 1), entryOccurrences(tracks).toList())
     }
 
-    /** Installs a source serving [ids] as playlist "p"; returns recorded removals. */
-    private fun installPlaylist(ids: List<String>): MutableList<Pair<String, Int>> {
-        val removals = CopyOnWriteArrayList<Pair<String, Int>>()
+    /** Installs a source serving [ids] as playlist "p"; returns recorded (playlist, track, occurrence) removals. */
+    private fun installPlaylist(ids: List<String>): MutableList<Triple<String, String, Int>> {
+        val removals = CopyOnWriteArrayList<Triple<String, String, Int>>()
         val base = requireNotNull(MusicSources.current)
         MusicSources.install(object : MusicSource by base {
             override val id = "repeated-entry-focus-test"
@@ -201,7 +201,7 @@ class ContextMenuFocusReturnTest {
                 JellyfinItem(id = it, name = "Song $it", type = "Audio", playlistItemId = it)
             }
             override suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) {
-                removals.add(itemId to occurrence)
+                removals.add(Triple(playlistId, itemId, occurrence))
             }
         })
         return removals

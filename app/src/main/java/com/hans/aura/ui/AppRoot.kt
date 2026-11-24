@@ -91,6 +91,10 @@ fun AppRoot() {
     val app = LocalContext.current.applicationContext as AuraApp
     val sessionViewModels = viewModel { SessionViewModels() }
     var signedIn by remember { mutableStateOf(app.jellyfin.auth.isSignedIn) }
+    // Bumped when a profile switch lands so this composable recomposes and the
+    // session key below re-reads the now-active session. It is deliberately NOT
+    // part of key(...): a counter restarts at 0 after process death / Activity
+    // recreation, so the same profile's saved back stack would not be found.
     var sessionGeneration by remember { mutableIntStateOf(0) }
 
     if (!signedIn) {
@@ -98,7 +102,21 @@ fun AppRoot() {
         return
     }
 
-    key(sessionGeneration) {
+    // Composition key of the signed-in subtree. The session identity (server +
+    // user) is recreation-stable, so after process death / Activity recreation
+    // with the same profile rememberNavBackStack finds this profile's saved
+    // stack again. A switch to another profile changes the key and disposes the
+    // old subtree (nav stack + saveable state): the new profile starts on Home,
+    // and signing out drops the old stack so it cannot come back on sign-in.
+    val session = app.jellyfin.auth.session
+    val sessionKey = remember(sessionGeneration, session) {
+        SessionKey(
+            serverUrl = session?.serverUrl.orEmpty(),
+            userId = session?.userId.orEmpty()
+        )
+    }
+
+    key(sessionKey) {
     val sessionOwner = sessionViewModels.owner
     val player = remember { PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session } }
     val nav = rememberNavState()
@@ -307,6 +325,17 @@ fun AppRoot() {
     }
     }
 }
+
+/**
+ * Recreation-stable identity of the signed-in session, used as the composition
+ * key for the whole signed-in subtree. Both fields survive process death, so
+ * the same profile rebuilds the same key (and restores its back stack), while
+ * a different profile gets a different key (and a fresh stack on Home).
+ */
+private data class SessionKey(
+    val serverUrl: String,
+    val userId: String
+)
 
 private class SessionViewModels : ViewModel() {
     var owner = newOwner()

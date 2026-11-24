@@ -134,12 +134,24 @@ internal fun lyricVoiceStyle(
  * When the server has no lyrics the pane shows the track's metadata plus a
  * real message instead of blank space; with Settings > "Look up lyrics online"
  * on, LRCLIB is asked first and the result fed through the same LRC parser.
+ *
+ * In [ambient] mode (the Now Playing HUD hidden) all of those states collapse
+ * to nothing: the pane only ever draws actual lyric lines.
  */
 @Composable
 fun LyricsPane(
     app: AuraApp,
     player: PlayerConnection,
-    onUserInteraction: () -> Unit = {}
+    onUserInteraction: () -> Unit = {},
+    // Ambient variant (right-hand pane while the Now Playing HUD is hidden):
+    // renders nothing at all until real lyrics exist — no loading spinner, no
+    // empty-state card — so lyric-less tracks keep that side of the screen
+    // clear instead of duplicating the info under the cover.
+    ambient: Boolean = false,
+    // Companion signal for the ambient pane: whether the current track's lyrics
+    // resolved to anything. Never called while loading — the host keeps its
+    // previous layout until it knows for sure.
+    onAvailability: ((Boolean) -> Unit)? = null
 ) {
     val colors = MaterialTheme.colorScheme
     val item by player.current.collectAsState()
@@ -212,6 +224,14 @@ fun LyricsPane(
         if (remote.any { it.words.isNotEmpty() }) {
             timedLines = remote.map { it.toTimedLyricLine() }
         }
+    }
+
+    // Tell the ambient host whether this track really has lyrics. Loading
+    // (lines == null) stays silent so the layout does not flip back and forth
+    // while a fetch is in flight.
+    LaunchedEffect(lines) {
+        val loaded = lines ?: return@LaunchedEffect
+        onAvailability?.invoke(loaded.isNotEmpty())
     }
 
     // +offset = the highlighted line is one step EARLIER than the audio clock.
@@ -311,22 +331,30 @@ fun LyricsPane(
         val loadedLines = lines
         val multipleVoices = loadedLines.orEmpty().mapNotNull { it.voice?.id }.distinct().size >= 2
         when {
-            loadedLines == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                AuraLoadingIndicator("Loading lyrics")
+            loadedLines == null -> if (!ambient) {
+                Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    AuraLoadingIndicator("Loading lyrics")
+                }
             }
-            loadedLines.isEmpty() -> NoLyricsState(
-                app = app,
-                item = item,
-                webChecked = webChecked,
-                webFound = webFound,
-                webEnabled = Prefs.lyricsWebFallback,
-                instrumental = instrumental
-            )
+            loadedLines.isEmpty() -> if (!ambient) {
+                NoLyricsState(
+                    app = app,
+                    item = item,
+                    webChecked = webChecked,
+                    webFound = webFound,
+                    webEnabled = Prefs.lyricsWebFallback,
+                    instrumental = instrumental
+                )
+            }
             else -> LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .focusable(),
+                    // Ambient is a view-only display: any key wakes the HUD at
+                    // the screen root before it can reach this pane, and a
+                    // non-focusable list keeps a fade-out window from trapping
+                    // focus on a node that is about to disappear.
+                    .focusable(enabled = !ambient),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Small head spacer so the first line never glues to the top
@@ -371,7 +399,10 @@ fun LyricsPane(
                             .then(if (multipleVoices && isCurrent) {
                                 Modifier.background(colors.secondaryContainer)
                             } else Modifier)
-                            .clickable(enabled = line.isSynced) {
+                            // Ambient is view-only: a line must not be a
+                            // focus/click target there, or a wake fade leaves a
+                            // trap on a node that is about to decompose.
+                            .clickable(enabled = line.isSynced && !ambient) {
                                 player.seekTo(line.startMs)
                                 followPaused = false
                                 onUserInteraction()

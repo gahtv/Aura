@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -42,10 +41,9 @@ import com.hans.aura.ui.theme.TextSecondary
  *
  * Mandatory for anything that can strand the user (change server / sign in
  * again): a broken login is unrecoverable on a TV without adb. Rendered at the
- * SCREEN ROOT by the caller and it sets [OverlayVisibility.dialogOpen] while
- * composed so the top bar / now-playing pill cannot draw over it or steal
- * focus. Focus starts on Cancel and is trapped inside the panel — a dialog that
- * opens with nothing focused is dead on a remote (OK does nothing).
+ * SCREEN ROOT by the caller. Focus starts on Cancel and is trapped inside the
+ * panel — a dialog that opens with nothing focused is dead on a remote (OK
+ * does nothing).
  */
 @Composable
 fun ConfirmDialog(
@@ -58,12 +56,6 @@ fun ConfirmDialog(
 ) {
     // BACK dismisses the dialog instead of popping the screen underneath.
     androidx.activity.compose.BackHandler { onDismiss() }
-
-    // The now-playing bar and top bar gate their render on this flag.
-    DisposableEffect(Unit) {
-        OverlayVisibility.dialogOpen = true
-        onDispose { OverlayVisibility.dialogOpen = false }
-    }
 
     val cancelFocus = remember { FocusRequester() }
     // A dialog with no focused element is dead on arrival: the cursor request

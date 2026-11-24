@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,7 +39,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.tv.material3.MaterialTheme
 import com.hans.aura.model.Track
 import com.hans.aura.ui.common.InitialFocusOnPush
-import com.hans.aura.ui.common.OverlayVisibility
 import com.hans.aura.ui.common.formatDuration
 import com.hans.aura.ui.theme.AuraColors
 import com.hans.aura.ui.theme.AuraShapes
@@ -82,10 +80,6 @@ internal fun QueuePeekOverlay(
     onJump: (Int) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    // The app-level now-playing bar must not draw over the peek while it is up.
-    OverlayVisibility.dialogOpen = true
-    DisposableEffect(Unit) { onDispose { OverlayVisibility.dialogOpen = false } }
-
     val firstFocus = remember { FocusRequester() }
     var focusedRow by remember { mutableStateOf(0) }
     var pendingRow by remember { mutableStateOf<Int?>(null) }

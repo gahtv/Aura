@@ -1,6 +1,7 @@
 package com.hans.aura.data
 
 import androidx.test.core.app.ApplicationProvider
+import android.net.Uri
 import com.hans.aura.model.Track
 import com.hans.aura.player.controller.ResumePolicy
 import org.junit.Assert.assertEquals
@@ -11,8 +12,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.shadows.ShadowSystemClock
-import java.time.Duration
 
 /** Prefs (lyrics offset, recent searches) and the locally stored resume points. */
 @RunWith(RobolectricTestRunner::class)
@@ -65,11 +64,20 @@ class PrefsTest {
 
     @Test
     fun `pruning bookmarks leaves another profile's bookmarks intact`() {
+        // Seed alex's OLD bookmark straight into the prefs file. Separating
+        // save() calls with wall-clock time is a millisecond race: 401 saves
+        // can land in the same ms, tie their epochs and flip the eviction to
+        // insertion order. A seeded epoch is strictly older than every
+        // real-time save that follows, deterministically.
+        val oldEpoch = System.currentTimeMillis() - 60_000L
+        val seededKey = Uri.encode(alex.serverUrl.trimEnd('/')) + "/" +
+            Uri.encode(alex.userId) + "/" + Uri.encode("track-0")
+        Prefs.file()!!.edit()
+            .putString("resume_points_by_profile", "$seededKey:61000:$oldEpoch")
+            .apply()
+
         val sam = alex.copy(userId = "sam")
         ResumePoints.save(sam, "track-0", 42_000L)
-        ShadowSystemClock.advanceBy(Duration.ofSeconds(1))
-        ResumePoints.save(alex, "track-0", 61_000L)
-        ShadowSystemClock.advanceBy(Duration.ofSeconds(1))
         for (i in 1..400) ResumePoints.save(alex, "track-$i", 61_000L)
 
         assertEquals(42_000L, ResumePoints.position(sam, "track-0"))

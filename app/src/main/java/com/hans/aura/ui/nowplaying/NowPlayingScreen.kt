@@ -3,6 +3,7 @@
 package com.hans.aura.ui.nowplaying
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -29,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -42,6 +46,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import com.hans.aura.AuraApp
@@ -148,6 +153,11 @@ private fun NowPlayingContent(
     val ambientEnabled = remember { Prefs.ambientNowPlaying }
     var hudInteractionTick by remember { mutableIntStateOf(0) }
     var ambientHidden by remember { mutableStateOf(false) }
+    // Per-track ambient lyrics verdict. null = still loading/unknown (keep the
+    // standard cover-left layout), true = lyrics show on the right, false =
+    // confirmed lyric-less (the cover slides to screen centre). Survives
+    // ambient cycles for the same track; resets on track change.
+    var ambientHasLyrics by remember(currentItem?.id) { mutableStateOf<Boolean?>(null) }
 
     // BACK on the lyrics view returns to the regular now-playing view; only
     // BACK on the track view continues up the stack (pop via onBack).
@@ -224,6 +234,9 @@ private fun NowPlayingContent(
         animationSpec = AuraMotion.scheme.defaultEffectsSpec(),
         label = "npAmbientHudAlpha"
     )
+    // Composition gate for the ambient extras: derived, so the enclosing scope
+    // recomposes only when the boolean flips, not on every fade frame.
+    val ambientExtrasVisible by remember { derivedStateOf { hudAlpha < 0.99f } }
     val wakeKeys = remember { mutableSetOf<Key>() }
 
     val colors = MaterialTheme.colorScheme
@@ -272,7 +285,11 @@ private fun NowPlayingContent(
             }
             if (!showLyrics) controlsVisible = true
 
-            Box(Modifier.graphicsLayer { alpha = if (showLyrics) 1f else hudAlpha }) {
+            // Column, not Box: the top row emits its pills AND the spacer below
+            // them. A Box stacks children — the spacer overlapped the pill row
+            // and never took vertical space, so the bar sat on the album cover
+            // with a zero gap no matter how large the spacer was.
+            Column(Modifier.graphicsLayer { alpha = if (showLyrics) 1f else hudAlpha }) {
                 NowPlayingTopRow(
                     visible = controlsVisible || !showLyrics,
                     lyricsMode = showLyrics,
@@ -301,102 +318,174 @@ private fun NowPlayingContent(
                     NowPlayingChip(currentItem, artwork?.url(session.serverUrl, maxWidth = 200))
                 }
             } else {
-                Row(Modifier.fillMaxSize()) {
-                    if (artwork != null) {
-                        // Motion artwork for the playing album when the source provides it.
-                        // Elsewhere this is exactly the still cover it always was.
-                        MotionArtwork(
-                            itemId = artwork.itemId,
-                            posterModel = artworkRequest(
-                                artwork.url(session.serverUrl, maxWidth = 800),
-                                placeholderKey = artwork.url(session.serverUrl, maxWidth = 480)
-                            ),
-                            contentDescription = currentItem?.name,
-                            playing = isPlaying,
-                            modifier = Modifier
-                                .width(AuraSizes.artworkLarge)
-                                .height(AuraSizes.artworkLarge)
-                                .then(
-                                    if (LocalArtworkTransition.current != null && artwork.itemId == currentItem?.albumId) {
-                                        Modifier.sharedArtwork(artwork.itemId, AuraShapes.cardRadius)
-                                    } else Modifier.clip(AuraShapes.card)
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    // Ambient with the lyrics CONFIRMED absent: slide the whole
+                    // cover block (art plus the info under it) to the horizontal
+                    // centre of the screen instead of leaving the right half
+                    // empty. An offset, not a re-layout — the HUD column behind
+                    // keeps its exact size, so waking the HUD never reflows the
+                    // title or the transport.
+                    val ambientSlide by animateDpAsState(
+                        targetValue = if (ambientExtrasVisible && ambientHasLyrics == false) {
+                            ((maxWidth - AuraSizes.artworkLarge) / 2).coerceAtLeast(0.dp)
+                        } else 0.dp,
+                        animationSpec = AuraMotion.scheme.defaultSpatialSpec(),
+                        label = "npAmbientCoverSlide"
+                    )
+                    Row(Modifier.fillMaxSize()) {
+                        // Cover column: the artwork plus the ambient info block
+                        // that fades in UNDER it while the HUD fades out. This
+                        // replaces the old bottom-left chip, whose mini cover made
+                        // ambient mode show the same album art twice.
+                        Column(Modifier.offset(x = ambientSlide)) {
+                            if (artwork != null) {
+                                // Motion artwork for the playing album when the source provides it.
+                                // Elsewhere this is exactly the still cover it always was.
+                                MotionArtwork(
+                                    itemId = artwork.itemId,
+                                    posterModel = artworkRequest(
+                                        artwork.url(session.serverUrl, maxWidth = 800),
+                                        placeholderKey = artwork.url(session.serverUrl, maxWidth = 480)
+                                    ),
+                                    contentDescription = currentItem?.name,
+                                    playing = isPlaying,
+                                    modifier = Modifier
+                                        .width(AuraSizes.artworkLarge)
+                                        .height(AuraSizes.artworkLarge)
+                                        .then(
+                                            if (LocalArtworkTransition.current != null && artwork.itemId == currentItem?.albumId) {
+                                                Modifier.sharedArtwork(artwork.itemId, AuraShapes.cardRadius)
+                                            } else Modifier.clip(AuraShapes.card)
+                                        )
+                                        .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
                                 )
-                                .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
-                        )
-                    }
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .padding(start = AuraSpacing.xxl, top = AuraSpacing.npTitleTop)
-                            .graphicsLayer { alpha = hudAlpha }
-                    ) {
-                        // Big title: shrink to fit, then marquee. Available width
-                        // comes from the row's weight(1f) column.
-                        BoxWithConstraints(Modifier.fillMaxWidth()) {
-                            AutoFitMarqueeText(
-                                text = currentItem?.name ?: "Nothing playing",
-                                widthCap = maxWidth,
-                                sizes = AuraTypography.npTitleFit,
-                                color = colors.onSurface
+                            }
+                            // Ambient info, always under the cover slot — a track
+                            // with no artwork still shows its title/artist here
+                            // (the old chip never depended on art either).
+                            if (ambientExtrasVisible) {
+                                Column(
+                                    Modifier
+                                        .width(AuraSizes.artworkLarge)
+                                        .graphicsLayer { alpha = 1f - hudAlpha }
+                                        .padding(top = AuraSpacing.md)
+                                ) {
+                                    // Same shrink-then-marquee treatment as the
+                                    // full Now Playing title.
+                                    AutoFitMarqueeText(
+                                        text = currentItem?.name ?: "",
+                                        widthCap = AuraSizes.artworkLarge,
+                                        sizes = AuraTypography.chipTitleFit,
+                                        color = colors.onSurface
+                                    )
+                                    Spacer(Modifier.height(AuraSpacing.xxs))
+                                    androidx.tv.material3.Text(
+                                        currentItem?.artistNames ?: "",
+                                        color = colors.onSurfaceVariant,
+                                        fontSize = AuraTypography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .padding(start = AuraSpacing.xxl, top = AuraSpacing.npTitleTop)
+                                .graphicsLayer { alpha = hudAlpha }
+                        ) {
+                            // Big title: shrink to fit, then marquee. Available width
+                            // comes from the row's weight(1f) column.
+                            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                AutoFitMarqueeText(
+                                    text = currentItem?.name ?: "Nothing playing",
+                                    widthCap = maxWidth,
+                                    sizes = AuraTypography.npTitleFit,
+                                    color = colors.onSurface
+                                )
+                            }
+                            // Album / artist lines open their detail screens.
+                            albumItem?.let { ab ->
+                                JumpText(tag = "album", text = ab.name.ifBlank { "Album" }) {
+                                    onOpenAlbum(ab)
+                                }
+                            }
+                            artistItem?.let { ar ->
+                                JumpText(tag = "artist", text = ar.name.ifBlank { "Artist" }) {
+                                    onOpenArtist(ar)
+                                }
+                            }
+                            Spacer(Modifier.height(AuraSpacing.xl))
+                            LiveTransportBar(
+                                player = player,
+                                isPlaying = isPlaying,
+                                playPauseFocus = playPauseFocus,
+                                favorite = currentItem?.let { Favorites.isFavorite(it) } == true,
+                                onToggleFavorite = currentItem?.let { cur ->
+                                    {
+                                        npScope.launch {
+                                            app.container.media.toggleFavorite(cur)
+                                        }
+                                    }
+                                },
+                                onOpenPeek = ::openPeek,
+                                // Track radio: re-seed an Instant Mix from the
+                                // CURRENT track through the shared Mixes entry
+                                // point (the request itself is not reimplemented).
+                                onRadio = currentItem?.let { seed ->
+                                    {
+                                        npScope.launch {
+                                            Mixes.playMix(
+                                                media = app.container.media,
+                                                player = player,
+                                                kind = Mixes.Kind.TRACK,
+                                                seed = seed
+                                            )
+                                        }
+                                    }
+                                },
+                                dimMode = dimMode,
+                                onToggleDimMode = {
+                                    dimMode = !dimMode
+                                    Prefs.nowPlayingDimMode = dimMode
+                                }
                             )
                         }
-                        // Album / artist lines open their detail screens.
-                        albumItem?.let { ab ->
-                            JumpText(tag = "album", text = ab.name.ifBlank { "Album" }) {
-                                onOpenAlbum(ab)
-                            }
-                        }
-                        artistItem?.let { ar ->
-                            JumpText(tag = "artist", text = ar.name.ifBlank { "Artist" }) {
-                                onOpenArtist(ar)
-                            }
-                        }
-                        Spacer(Modifier.height(AuraSpacing.xl))
-                        LiveTransportBar(
-                            player = player,
-                            isPlaying = isPlaying,
-                            playPauseFocus = playPauseFocus,
-                            favorite = currentItem?.let { Favorites.isFavorite(it) } == true,
-                            onToggleFavorite = currentItem?.let { cur ->
-                                {
-                                    npScope.launch {
-                                        app.container.media.toggleFavorite(cur)
-                                    }
-                                }
-                            },
-                            onOpenPeek = ::openPeek,
-                            // Track radio: re-seed an Instant Mix from the
-                            // CURRENT track through the shared Mixes entry
-                            // point (the request itself is not reimplemented).
-                            onRadio = currentItem?.let { seed ->
-                                {
-                                    npScope.launch {
-                                        Mixes.playMix(
-                                            media = app.container.media,
-                                            player = player,
-                                            kind = Mixes.Kind.TRACK,
-                                            seed = seed
-                                        )
-                                    }
-                                }
-                            },
-                            dimMode = dimMode,
-                            onToggleDimMode = {
-                                dimMode = !dimMode
-                                Prefs.nowPlayingDimMode = dimMode
-                            }
-                        )
                     }
                 }
             }
         }
-        if (!showLyrics && hudAlpha < 0.99f) {
+        // Ambient extras (track view only): the HUD's own info column fades to
+        // nothing, so the cover column carries the track info under the art
+        // and this right-hand pane carries the LYRICS when any exist. When the
+        // pane confirms there are none, the cover instead slides to the screen
+        // centre (ambientSlide above) — no empty right half.
+        if (!showLyrics && ambientExtrasVisible) {
             Box(
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer { alpha = 1f - hudAlpha }
             ) {
-                NowPlayingChip(currentItem, artwork?.url(session.serverUrl, maxWidth = 200))
+                Box(
+                    Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .fillMaxWidth(0.46f)
+                        .padding(end = AuraSpacing.npHorizontal)
+                ) {
+                    key(lyricsRevision) {
+                        // onAvailability: "no lyrics" confirms the centre slide;
+                        // "has lyrics" keeps the cover left with this pane as
+                        // the right half of the ambient view.
+                        LyricsPane(
+                            app,
+                            player,
+                            ambient = true,
+                            onAvailability = { ambientHasLyrics = it }
+                        )
+                    }
+                }
             }
         }
         // Queue peek (B14): the LAST child of the screen-root Box, so it draws

@@ -216,7 +216,8 @@ Consequences that are easy to break:
 `ui/AppRoot.kt` is the shell: auth gate, the destination host, the side navigation rail
 and the overlay hosts. `NavigationRail.kt` replaces the top bar: it expands when focused,
 offers root destinations, Search and Now Playing, and shows the current track when one
-is available. It is hidden on Now Playing and while a full-screen overlay is open.
+is available. It is hidden on Now Playing only; it stays pinned while overlays are up
+(their focus traps keep D-pad focus inside the overlay).
 The non-screen wiring sits beside it in
 `ui/shell/`: `MirrorWiring` (publish state, honour remote navigation), `DebugWiring` (the
 debug extras) and `SessionActions.endSession` (session teardown).
@@ -233,10 +234,11 @@ focused id via `onFocused`, and `RestoreFocusOnBack` waits until the active dest
 has focusable content. It requests the saved item on a frame, falling back to the container
 when the target is unavailable.
 
-`OverlayVisibility.dialogOpen` is set while a full-screen overlay is composed; it suppresses
-the navigation rail so it cannot draw over (and take focus from) a dialog. Overlays are the
-last child of a screen-root `Box`, trap focus with `FocusRequester.Cancel`, and request focus
-shortly after composition.
+Overlays are the last child of a screen-root `Box`, trap focus with
+`FocusRequester.Cancel`, and request focus shortly after composition. The
+navigation rail stays drawn while overlays are up — the focus trap, not rail
+visibility, keeps D-pad focus inside the dialog (user decision: the rail only
+comes off on Now Playing).
 
 ## Motion and transitions
 

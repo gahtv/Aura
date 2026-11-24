@@ -42,15 +42,17 @@ import com.hans.aura.data.SourceQueries
  * Small heart (filled accent = liked, hollow grey = not).
  *
  * Two modes on purpose:
- *  - `interactive = false` on cards and rows: a pure INDICATOR. A focusable
- *    child inside a focusable card is unreachable with a D-pad (focus search
- *    does not descend into a clickable parent), so a heart you could only hit
- *    with a finger is a trap on a TV. Favouriting is done from the context
- *    menu (hold OK) or from the Now Playing transport row.
- *  - `interactive = true` where it sits in a normal button row (Now Playing):
- *    then it carries the app cursor language, and `.onFocusChanged {}` must
- *    come BEFORE `.clickable {}` (after it the flag never flips and the ring
- *    silently never renders).
+ *  - `interactive = false` where the heart sits INSIDE a clickable (cards,
+ *    indicator rows): a pure INDICATOR. A focusable child inside a focusable
+ *    card is unreachable with a D-pad (focus search does not descend into a
+ *    clickable parent), so a heart you could only hit with a finger is a trap
+ *    on a TV. Favouriting is done from the context menu (hold OK) or from the
+ *    Now Playing transport row.
+ *  - `interactive = true` where it is a SIBLING of the clickable it answers
+ *    to (Now Playing transport, track-row action pills): then it carries the
+ *    app cursor language, and `.onFocusChanged {}` must come BEFORE
+ *    `.clickable {}` (after it the flag never flips and the ring silently
+ *    never renders).
  */
 @Composable
 fun HeartToggle(
@@ -94,7 +96,10 @@ fun HeartToggle(
                 if (favorite) R.drawable.ic_favorite_fill1
                 else R.drawable.ic_favorite
             ),
-            contentDescription = null,
+            // Announce the interactive variant; the indicator stays decorative.
+            contentDescription = if (interactive) {
+                if (favorite) "Remove from favorites" else "Add to favorites"
+            } else null,
             tint = if (focused) colors.onSecondaryContainer else if (favorite) colors.primary else TextSecondary,
             modifier = Modifier.size(iconSize)
         )

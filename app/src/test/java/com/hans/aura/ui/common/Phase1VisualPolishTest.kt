@@ -2,7 +2,6 @@ package com.hans.aura.ui.common
 
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -52,10 +51,9 @@ class Phase1VisualPolishTest {
     }
 
     @Test
-    fun trackRowRevealsInlineActionHintsOnlyWhenFocused() {
+    fun trackRowActionsAreAlwaysVisibleAndFocusable() {
         val track = Fixtures.domainTrack("Atmos Track")
         val keeper = FocusKeeper()
-        val otherFocus = FocusRequester()
         compose.setContent {
             AuraTheme {
                 Column {
@@ -66,6 +64,7 @@ class Phase1VisualPolishTest {
                         onClick = {},
                         focusKeeper = keeper,
                         favorite = false,
+                        onToggleFavorite = {},
                         onLongPress = {}
                     )
                     androidx.tv.material3.Button(
@@ -78,16 +77,29 @@ class Phase1VisualPolishTest {
             }
         }
 
-        compose.onNodeWithText("\u2022\u2022\u2022").assertDoesNotExist()
-        compose.onNodeWithText("\u2665").assertDoesNotExist()
-
-        compose.runOnIdle { keeper.requesterFor(track.id).requestFocus() }
+        // The like and overflow pills live after the duration and are always
+        // composed: no focus-reveal, so nothing shifts when the row gains or
+        // loses focus (the old hint block slid the duration sideways).
         compose.onNodeWithText("\u2022\u2022\u2022").assertExists()
-        compose.onNodeWithText("\u2665").assertExists()
+        compose.onNodeWithContentDescription("Add to favorites").assertExists()
 
+        // Row content stays the primary D-pad target; the keeper still
+        // restores focus to it.
+        compose.runOnIdle { keeper.requesterFor(track.id).requestFocus() }
+        compose.onNodeWithText("Atmos Track").assertIsFocused()
+
+        // And the pills are REAL targets — the previous design kept them
+        // unreachable inside the clickable row.
+        compose.onNodeWithContentDescription("Add to favorites")
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onNodeWithContentDescription("Add to favorites").assertIsFocused()
+        compose.onNodeWithText("\u2022\u2022\u2022").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onNodeWithText("\u2022\u2022\u2022").assertIsFocused()
+
+        // Leaving the row keeps both affordances on screen.
         compose.onNodeWithText("Other").performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.mainClock.advanceTimeBy(400)
-        compose.onNodeWithText("\u2022\u2022\u2022").assertDoesNotExist()
+        compose.onNodeWithText("\u2022\u2022\u2022").assertExists()
+        compose.onNodeWithContentDescription("Add to favorites").assertExists()
     }
 
     @Test

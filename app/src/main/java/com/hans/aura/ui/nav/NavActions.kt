@@ -46,7 +46,8 @@ internal interface NavActions {
 /**
  * Back stack + focus bookkeeping for the whole app.
  *
- *  - [pendingFocus] is set when a screen is PUSHED so it claims focus on entry
+ *  - [pendingFocus] is set when a screen is PUSHED, or when a restored stack
+ *    deeper than Home comes back, so the top entry claims focus on entry
  *    (TV has no automatic initial focus for new content).
  *  - [focusTick] is bumped on BACK so the revealed screen pulls focus back into
  *    its content.
@@ -89,6 +90,19 @@ internal class NavState(
 
     var lastLibraryTab: Screen = Screen.Albums
         private set
+
+    init {
+        // Resume the Library category the restored stack was on: Home ->
+        // Library on a Tracks/Artists/Playlists stack must not fall back to
+        // Albums. The first init block has already normalized the stack.
+        lastLibraryTab = backing.asReversed()
+            .map { (it as StackEntry).screen }
+            .firstOrNull(NavSpec::isLibraryScreen) ?: Screen.Albums
+        // A restored stack deeper than Home was a pushed screen, so its top
+        // entry claims content focus like a fresh push would. A single-entry
+        // Home stack keeps cold-start behavior.
+        pendingFocus = backing.size > 1
+    }
 
     private fun newEntry(screen: Screen) = StackEntry(nextEntryId++, screen)
 

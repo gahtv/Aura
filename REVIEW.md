@@ -14,7 +14,8 @@ Report correctness bugs before style issues.
 
 - The required checks are `scripts/check.sh`, or these commands on non-macOS machines
   (`scripts/common.sh` hardcodes macOS paths):
-  `./gradlew :app:compileDebugKotlin --rerun-tasks`, `:app:lintDebug`, `:app:testDebugUnitTest`.
+  `./gradlew :app:compileDebugKotlin --rerun-tasks`, `./gradlew :app:lintDebug`, then
+  `./gradlew :app:testDebugUnitTest`.
   Without `--rerun-tasks`, a compile can report UP-TO-DATE without building the edit.
 - JVM tests live in `app/src/test/` and run on Robolectric, with no device needed.
   A behaviour change should come with a test next to the existing ones for that area.
@@ -55,11 +56,12 @@ Report correctness bugs before style issues.
   on main and keep `QueueRegistry` in sync.
 
 ### Sign-in, session and secrets (`data/AuthStore.kt`, `ui/shell/SessionActions.kt`)
-- Every sign-out, server change or profile switch goes through
-  `SessionActions.endSession`, in this order: stop playback, release the controller,
-  clear registries and caches (`LibraryCache`, `PagedLibrary`, `AtmosCatalog`,
-  `ArtworkSeedCache`), and only then drop credentials. A new session-scoped cache must
-  be cleared in that function.
+- Sign-out and server changes go through `SessionActions.endSession`, and profile
+  switches go through `SessionActions.switchSession`. Both follow the same order: stop
+  playback, release the controller, cancel pending mutations, clear registries and caches
+  (`LibraryCache`, `Favorites`, `PagedLibrary`, `AtmosCatalog`, `ArtworkSeedCache`), and
+  only then change credentials. A new session-scoped cache must be cleared in **both**
+  functions.
 - `JellyfinClient.api` is a getter keyed by base URL. Flag code that caches a Retrofit
   instance across a server change. Pre-session flows such as Quick Connect must use
   `apiForServer(url)`.
@@ -80,9 +82,11 @@ Report correctness bugs before style issues.
   [aura-remote](https://github.com/gahtv/aura-remote) consumes it.
 
 ### Jellyfin API and serialization (`data/`)
-- Every request goes through the shared `JellyfinClient` `Json`, which sets
+- Retrofit/kotlinx serialization uses the shared `JellyfinClient` `Json`, which sets
   `encodeDefaults = true`. A second `Json` instance, or one that drops that setting,
-  silently omits defaulted fields. That is how remote seek broke before.
+  silently omits defaulted fields. That is how remote seek broke before. The hand-built
+  capabilities body in `PlaybackRemote.postCapabilities` is a deliberate exception,
+  because the Retrofit path didn't register capabilities reliably.
 - Retrofit `Response<T>` doesn't throw on 4xx/5xx. A mutation needs an `isSuccessful`
   check before it's treated as done.
 - Server mutations (playlists, favourites) must evict the affected `LibraryCache` keys.
@@ -93,10 +97,14 @@ Report correctness bugs before style issues.
 - Screens and ViewModels browse only through `SourceQueries` and get immutable
   `model/` types (`Track`, `Album`, ...). Flag UI code that calls `MediaRepository`,
   `LibraryFilter`, `JellyfinApi`, or reads `JellyfinItem` fields directly.
-- Every cache key includes `LibraryFilter.cacheSuffix()`. Browse queries for music item
-  types must respect hidden libraries. Direct id lookups are exempt.
-- "Only Atmos" is a filter, never a dedupe. The FLAC and Atmos copies of an album both
-  stay. Queues, Now Playing and playlist contents are never filtered.
+- Library browse cache keys (`LibraryCache`, `PagedLibrary`) include
+  `LibraryFilter.cacheSuffix()`. Browse queries for music item types must respect hidden
+  libraries. Direct id lookups, and caches keyed only by an artwork URL such as
+  `ArtworkSeedCache`, are exempt.
+- "Only Atmos" is a filter, never a dedupe. The FLAC and Atmos copies of an album stay
+  separate items. With the filter off both are shown, and with it on, `AtmosFilter.keep`
+  hides albums and tracks that aren't in the Atmos catalog. Artists, playlists, genres,
+  queues, Now Playing and playlist contents are never filtered.
 - Room (`CacheDatabase`, `app/schemas/`): bumping the schema version needs an exported
   schema JSON and a migration, or a deliberate and documented destructive fallback.
 
@@ -119,8 +127,11 @@ Report correctness bugs before style issues.
   `TextField`s in dialogs need an explicit `onPreviewKeyEvent` for DOWN.
 - Overlays are the last child of the screen-root `Box`, trap focus, and set
   `OverlayVisibility.dialogOpen`.
-- A `MutableStateFlow` used as an event counter or trigger needs `.drop(1)`, or it
-  fires on cold start.
+- A `MutableStateFlow` counter used as an event trigger needs `.drop(1)`, or its
+  initial value fires on cold start. That is how a 0-valued "open Now Playing" counter
+  pushed the screen on every launch. Nullable request flows that are consumed and reset
+  to `null`, such as `AppIntents.request`, must **not** drop, or the launch request is
+  lost.
 
 ### Lyrics (`data/LyricsStore.kt`, `TtmlLyrics.kt`, `LyricBreaks.kt`, `ui/nowplaying/LyricsPane.kt`)
 - Changes must keep the rules in [docs/LYRICS.md](docs/LYRICS.md). Translation pairing

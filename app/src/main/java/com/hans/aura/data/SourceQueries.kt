@@ -17,19 +17,8 @@ object SourceQueries {
 
     private fun source(): MusicSource? = MusicSources.current
 
-    suspend fun removeFromPlaylist(
-        playlistId: String,
-        itemId: String,
-        occurrence: Int,
-        entryId: String? = null
-    ) {
-        val source = checkNotNull(source()) { "No music source available" }
-        val exactEntry = entryId?.takeIf { it.isNotBlank() }
-        if (exactEntry != null && source.supportsPlaylistEntryRemoval) {
-            source.removePlaylistEntry(playlistId, exactEntry)
-        } else {
-            source.removeFromPlaylist(playlistId, itemId, occurrence)
-        }
+    suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) {
+        checkNotNull(source()) { "No music source available" }.removeFromPlaylist(playlistId, itemId, occurrence)
     }
 
     suspend fun playlistMoveIndex(playlistId: String, visibleIndex: Int): Int? {

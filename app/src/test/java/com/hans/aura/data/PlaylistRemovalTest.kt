@@ -39,8 +39,14 @@ class PlaylistRemovalTest {
         server.shutdown()
     }
 
+    /**
+     * Jellyfin 10.11 fills `PlaylistItemId` from the linked child's `ItemId`,
+     * so two copies of track A both report "A". DELETE ?entryIds=A removes
+     * every child whose ItemId matches (PlaylistManager), which is exactly why
+     * duplicates must go through the full-list update path.
+     */
     private fun playlist(vararg ids: String) {
-        val items = ids.joinToString(",") { """{"Id":"$it","PlaylistItemId":"entry-$it"}""" }
+        val items = ids.joinToString(",") { """{"Id":"$it","PlaylistItemId":"$it"}""" }
         server.enqueue(MockResponse().setBody("""{"Items":[$items]}"""))
     }
 
@@ -69,24 +75,28 @@ class PlaylistRemovalTest {
         assertRefetch()
         val request = server.takeRequest()
         assertEquals("DELETE", request.method)
-        assertEquals("entry-A", request.requestUrl!!.queryParameter("entryIds"))
+        assertEquals("A", request.requestUrl!!.queryParameter("entryIds"))
         assertNull(request.requestUrl!!.queryParameter("Ids"))
     }
 
     @Test
-    fun `second A is removed from fresh interleaved duplicates`() = runBlocking {
-        playlist("A", "B", "A", "B")
-        allEntries("A", "B", "A", "B")
+    fun `middle A among duplicates is removed by rewriting the list, never by entry id`() = runBlocking {
+        // Every duplicate A row reports PlaylistItemId "A"; a DELETE by that
+        // entry id would remove all three As (the reported Devin bug). Only
+        // the update path can drop the one copy the ordinal names.
+        playlist("A", "B", "A", "C", "A")
+        allEntries("A", "B", "A", "C", "A")
         server.enqueue(MockResponse().setResponseCode(204))
         SourceQueries.removeFromPlaylist("p", "A", 1)
         assertRefetch()
         assertUnfilteredRead()
         val request = server.takeRequest()
+        assertEquals("no DELETE-by-entry may be sent for duplicate rows", 3, server.requestCount)
         assertEquals("POST", request.method)
         assertEquals("/Playlists/p", request.path)
         val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
         assertEquals(setOf("Ids"), body.keys)
-        assertEquals(listOf("A", "B", "B"), body.getValue("Ids").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(listOf("A", "B", "C", "A"), body.getValue("Ids").jsonArray.map { it.jsonPrimitive.content })
     }
 
     @Test

@@ -23,6 +23,13 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 /**
+ * Published once the last overlapping edit of [playlistId] finishes.
+ * [success] lets observers skip the refetch after a failed write: the server
+ * list did not change, so a reload would only mask the error.
+ */
+data class PlaylistEditCompleted(val playlistId: String, val success: Boolean)
+
+/**
  * Scope for mutations a screen starts but must not own.
  *
  * Playlist edits are launched here instead of a destination's `viewModelScope`:
@@ -59,7 +66,7 @@ class SessionMutations {
     /** In-flight edit count per playlist id. */
     private val pending = mutableMapOf<String, Int>()
 
-    private val _playlistChanges = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    private val _playlistChanges = MutableSharedFlow<PlaylistEditCompleted>(extraBufferCapacity = 16)
 
     /** Scope owned by the current session; cancelled by [reset]. */
     val scope: CoroutineScope get() = synchronized(lock) { current }
@@ -74,11 +81,11 @@ class SessionMutations {
     }
 
     /**
-     * Ends the edit started with [token]. The playlist change event is
-     * published once the last overlapping edit completes; a token from an
+     * Ends the edit started with [token], publishing whether the write
+     * [success]ed once the last overlapping edit completes. A token from an
      * earlier session (or an unknown/cleared entry) is ignored.
      */
-    fun finishPlaylistEdit(playlistId: String, token: Long) {
+    fun finishPlaylistEdit(playlistId: String, token: Long, success: Boolean) {
         var completed = false
         synchronized(lock) {
             val remaining = pending[playlistId]
@@ -91,7 +98,7 @@ class SessionMutations {
                 }
             }
         }
-        if (completed) _playlistChanges.tryEmit(playlistId)
+        if (completed) _playlistChanges.tryEmit(PlaylistEditCompleted(playlistId, success))
     }
 
     /** True while an edit of [playlistId] is still in flight in this session. */
@@ -99,8 +106,8 @@ class SessionMutations {
         (pending[playlistId] ?: 0) > 0
     }
 
-    /** Playlist ids whose last in-flight edit completed (no replay, no stale sessions). */
-    fun observePlaylistChanges(): Flow<String> = _playlistChanges.asSharedFlow()
+    /** Completions of each playlist's last in-flight edit (no replay, no stale sessions). */
+    fun observePlaylistChanges(): Flow<PlaylistEditCompleted> = _playlistChanges.asSharedFlow()
 
     /** Cancels in-flight mutations and starts a fresh session scope. */
     fun reset() {

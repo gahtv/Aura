@@ -178,27 +178,6 @@ interface MusicSource {
     suspend fun playlistItems(playlistId: String): List<JellyfinItem> =
         browse(LibraryFilter.ItemsQuery(parentId = playlistId, includeItemTypes = "Audio", limit = 500)).items
 
-    /**
-     * True when this backend can delete one exact playlist entry by its
-     * server-side entry identity ([removePlaylistEntry]).
-     *
-     * Defaults to false so a backend without per-entry identity keeps the
-     * occurrence-based [removeFromPlaylist] fallback untouched.
-     */
-    val supportsPlaylistEntryRemoval: Boolean get() = false
-
-    /**
-     * Removes the single playlist entry [entryId], never "the nth copy of an
-     * item id". Callers prefer this whenever the row carries an entry id:
-     * a stale screen then fails harmlessly (the entry is already gone) instead
-     * of resolving an out-of-date ordinal against a different server list.
-     *
-     * Defaults to unsupported; sources with per-entry identity override this.
-     */
-    suspend fun removePlaylistEntry(playlistId: String, entryId: String) {
-        throw UnsupportedOperationException("Playlist entry removal is not supported")
-    }
-
     /** Remove the zero-based occurrence of an item among same-id rows; failures propagate. */
     suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) {
         throw UnsupportedOperationException("Playlist removal is not supported")

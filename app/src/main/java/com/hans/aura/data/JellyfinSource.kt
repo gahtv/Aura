@@ -121,11 +121,6 @@ class JellyfinSource(
     override suspend fun playlistItems(playlistId: String): List<JellyfinItem> =
         media.rawPlaylistItems(playlistId)
 
-    override val supportsPlaylistEntryRemoval: Boolean = true
-
-    override suspend fun removePlaylistEntry(playlistId: String, entryId: String) =
-        media.removePlaylistEntry(playlistId, entryId)
-
     override suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) =
         media.removeFromPlaylist(playlistId, itemId, occurrence)
 

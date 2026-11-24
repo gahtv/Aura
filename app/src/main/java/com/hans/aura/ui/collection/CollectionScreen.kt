@@ -308,9 +308,12 @@ private fun CollectionContent(
                     .weight(0.64f)
                     .fillMaxHeight()
             ) {
-                if (state.error != null && tracks != null) {
+                // Edit failures outlive a successful reload (state.error), so
+                // prefer them until the next edit asks for user attention.
+                val inlineError = state.editError ?: state.error
+                if (inlineError != null && shownTracks != null) {
                     androidx.tv.material3.Text(
-                        state.error.orEmpty(),
+                        inlineError,
                         color = colors.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = AuraSpacing.xs)
@@ -359,15 +362,18 @@ private fun CollectionContent(
                                 return@itemsIndexed
                             }
                             val (i, number, track) = row as TracklistRow.Track
-                            val removeFromPlaylist: (() -> Unit)? = if (collection is Playlist) {
-                                {
-                                    viewModel.removeFromPlaylist(
-                                        trackId = track.id,
-                                        occurrence = shownTracks.take(i).count { it.id == track.id },
-                                        playlistItemId = track.playlistItemId
-                                    )
-                                }
-                            } else null
+                            // A removal in flight owns the list until its
+                            // refresh lands: no further occurrence may be
+                            // resolved against the pre-edit order.
+                            val removeFromPlaylist: (() -> Unit)? =
+                                if (collection is Playlist && !state.editInFlight) {
+                                    {
+                                        viewModel.removeFromPlaylist(
+                                            trackId = track.id,
+                                            occurrence = shownTracks.take(i).count { it.id == track.id }
+                                        )
+                                    }
+                                } else null
                             TrackRow(
                                 index = number,
                                 track = track,

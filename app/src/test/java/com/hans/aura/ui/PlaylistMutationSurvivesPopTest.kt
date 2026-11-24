@@ -178,12 +178,12 @@ class PlaylistMutationSurvivesPopTest {
 
         // A stale token from the old session must not touch the new one.
         val newToken = mutations.beginPlaylistEdit("playlist")
-        mutations.finishPlaylistEdit("playlist", token)
+        mutations.finishPlaylistEdit("playlist", token, success = false)
         assertTrue(
             "an old-session finish must not clear the new session's pending edit",
             mutations.playlistEditPending("playlist")
         )
-        mutations.finishPlaylistEdit("playlist", newToken)
+        mutations.finishPlaylistEdit("playlist", newToken, success = true)
         assertFalse(mutations.playlistEditPending("playlist"))
 
         // The replacement scope is not just alive, it runs work.

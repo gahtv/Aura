@@ -21,7 +21,8 @@ class JellyfinSource(
     private val client: JellyfinClient,
     private val media: MediaRepository,
     private val fetchLyrics: suspend (String) -> List<LyricLine>? = { LyricsStore.fetchCacheable(client.api, it) },
-    private val lookupLyrics: suspend (JellyfinItem) -> List<LyricLine> = { Lrclib.lookup(it) }
+    private val lookupLyrics: suspend (JellyfinItem) -> List<LyricLine> = { Lrclib.lookup(it) },
+    private val cachedWebLyrics: (String) -> List<LyricLine>? = { Lrclib.cached(it)?.lines }
 ) : MusicSource {
 
     override val id: String = "jellyfin"
@@ -77,8 +78,9 @@ class JellyfinSource(
         webLyricsFound.remove(itemId)
         val local = jellyfinLyrics(itemId)
         val lines = if (local.isNotEmpty() || !Prefs.lyricsWebFallback) local else {
-            val track = item(itemId) ?: return null
-            lookupLyrics(track).also { webLyricsFound[itemId] = it.isNotEmpty() }
+            // A cached web result needs no track metadata: skip the item fetch.
+            val web = cachedWebLyrics(itemId) ?: lookupLyrics(item(itemId) ?: return null)
+            web.also { webLyricsFound[itemId] = it.isNotEmpty() }
         }
         return lines.filter { it.isSynced }.map { it.toTimedLyricLine() }
             .takeIf { it.isNotEmpty() }

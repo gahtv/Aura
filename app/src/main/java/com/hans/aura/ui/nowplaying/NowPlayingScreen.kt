@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -337,7 +338,18 @@ private fun NowPlayingContent(
                         // that fades in UNDER it while the HUD fades out. This
                         // replaces the old bottom-left chip, whose mini cover made
                         // ambient mode show the same album art twice.
-                        Column(Modifier.offset(x = ambientSlide)) {
+                        // Without artwork the column takes no row width, so
+                        // the ambient info composing in or out never resizes
+                        // the weighted HUD beside it; the info draws past it.
+                        Column(
+                            Modifier
+                                .offset(x = ambientSlide)
+                                .then(
+                                    if (artwork == null) {
+                                        Modifier.width(0.dp).wrapContentWidth(Alignment.Start, unbounded = true)
+                                    } else Modifier
+                                )
+                        ) {
                             if (artwork != null) {
                                 // Motion artwork for the playing album when the source provides it.
                                 // Elsewhere this is exactly the still cover it always was.

@@ -80,16 +80,20 @@ object ContextMenuHost {
     // cleared focus used to fall to the nav rail, which expands on focus
     // (user-reported now that the rail stays pinned while overlays are up).
     var lastInvoker: FocusRequester? = null
+    // The menu's invoker, carried over when an action replaces the menu with
+    // the playlist picker: closing the picker hands focus back to it too.
+    var pickerInvoker: FocusRequester? = null
 
     fun open(spec: ContextMenuSpec) {
         android.util.Log.d("AURA_MENU", "host.open \"${spec.title}\" actions=${spec.actions.map { it.label }}")
         current = spec
     }
-    fun openPicker(tracks: List<Track>) {
+    fun openPicker(tracks: List<Track>, invoker: FocusRequester? = null) {
         android.util.Log.d("AURA_MENU", "picker open for ${tracks.size} track(s): ${tracks.map { it.name }}")
+        pickerInvoker = invoker
         pickerTracks = tracks
     }
-    fun close() { current = null; pickerTracks = null; lastInvoker = null }
+    fun close() { current = null; pickerTracks = null; lastInvoker = null; pickerInvoker = null }
 }
 
 /**
@@ -229,9 +233,7 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
 @Composable
 fun ContextMenuHosts(app: AuraApp) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    fun restoreInvoker() {
-        val invoker = ContextMenuHost.lastInvoker
-        ContextMenuHost.lastInvoker = null
+    fun restoreInvoker(invoker: FocusRequester?) {
         if (invoker == null) return
         // Claim the invoker BEFORE the overlay leaves composition. A direct
         // grant bypasses the menu's exit trap, so the disposal focus search
@@ -242,7 +244,9 @@ fun ContextMenuHosts(app: AuraApp) {
     }
     ContextMenuHost.current?.let { spec ->
         ContextMenuOverlay(spec) {
-            restoreInvoker()
+            val invoker = ContextMenuHost.lastInvoker
+            ContextMenuHost.lastInvoker = null
+            restoreInvoker(invoker)
             ContextMenuHost.current = null
         }
     }
@@ -251,7 +255,9 @@ fun ContextMenuHosts(app: AuraApp) {
             app = app,
             tracksToAdd = tracks,
             onDismiss = {
-                restoreInvoker()
+                val invoker = ContextMenuHost.pickerInvoker
+                ContextMenuHost.pickerInvoker = null
+                restoreInvoker(invoker)
                 ContextMenuHost.pickerTracks = null
             }
         )

@@ -86,12 +86,15 @@ object ContextMenus {
         onRemoveFromPlaylist: (() -> Unit)? = null,
         playlistMove: PlaylistMove? = null
     ): ContextMenuSpec {
+        // Captured while the menu is built: dismissing the menu clears it
+        // before an action runs.
+        val invoker = ContextMenuHost.lastInvoker
         val actions = mutableListOf(
             ContextAction("Add to playlist", R.drawable.ic_playlist_add) {
                 // The picker replaces the menu: close it first or it keeps
                 // stealing key focus from the picker.
                 ContextMenuHost.current = null
-                ContextMenuHost.openPicker(listOf(track))
+                ContextMenuHost.openPicker(listOf(track), invoker)
             },
             ContextAction("Play next", R.drawable.ic_queue_play_next) { player.playNext(listOf(track)) },
             ContextAction("Add to queue", R.drawable.ic_queue_music) { player.addToQueue(listOf(track)) },
@@ -169,6 +172,7 @@ object ContextMenus {
         album: CollectionItem,
         onOpenArtist: ((Artist) -> Unit)?
     ): ContextMenuSpec {
+        val invoker = ContextMenuHost.lastInvoker
         val actions = mutableListOf(
             ContextAction("Play next", R.drawable.ic_queue_play_next) {
                 scope.launch { albumTracks(app, album)?.let { player.playNext(it) } }
@@ -183,7 +187,7 @@ object ContextMenus {
                     if (tracks == null) {
                         Log.w(TAG, "add album ${album.id} to playlist skipped: no tracks")
                     } else {
-                        ContextMenuHost.openPicker(tracks)
+                        ContextMenuHost.openPicker(tracks, invoker)
                     }
                 }
             }

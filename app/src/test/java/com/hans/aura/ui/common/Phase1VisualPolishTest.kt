@@ -10,12 +10,16 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.unit.dp
 import com.hans.aura.data.Fixtures
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.shell.PlayingEqualizerIndicator
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,9 +55,11 @@ class Phase1VisualPolishTest {
     }
 
     @Test
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
     fun trackRowActionsAreAlwaysVisibleAndFocusable() {
         val track = Fixtures.domainTrack("Atmos Track")
         val keeper = FocusKeeper()
+        var menuOpens = 0
         compose.setContent {
             AuraTheme {
                 Column {
@@ -65,7 +71,7 @@ class Phase1VisualPolishTest {
                         focusKeeper = keeper,
                         favorite = false,
                         onToggleFavorite = {},
-                        onLongPress = {}
+                        onLongPress = { menuOpens++ }
                     )
                     androidx.tv.material3.Button(
                         onClick = {},
@@ -88,12 +94,23 @@ class Phase1VisualPolishTest {
         compose.runOnIdle { keeper.requesterFor(track.id).requestFocus() }
         compose.onNodeWithText("Atmos Track").assertIsFocused()
 
-        // And the pills are REAL targets — the previous design kept them
-        // unreachable inside the clickable row.
-        compose.onNodeWithContentDescription("Add to favorites")
-            .performSemanticsAction(SemanticsActions.RequestFocus)
+        // And the pills are REAL D-pad targets — the previous design kept them
+        // unreachable inside the clickable row. Right walks row -> like -> more.
+        compose.onNodeWithText("Atmos Track").performKeyInput { pressKey(Key.DirectionRight) }
         compose.onNodeWithContentDescription("Add to favorites").assertIsFocused()
-        compose.onNodeWithText("\u2022\u2022\u2022").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onNodeWithContentDescription("Add to favorites").performKeyInput { pressKey(Key.DirectionRight) }
+        compose.onNodeWithText("\u2022\u2022\u2022").assertIsFocused()
+
+        // Opening the menu from the pill registers it as the invoker, so menu
+        // dismissal hands focus back to it.
+        compose.onNodeWithText("\u2022\u2022\u2022").performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.runOnIdle { assertEquals(1, menuOpens) }
+        compose.onNodeWithText("Other").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.runOnIdle {
+            val invoker = requireNotNull(ContextMenuHost.lastInvoker)
+            ContextMenuHost.lastInvoker = null
+            invoker.requestFocus()
+        }
         compose.onNodeWithText("\u2022\u2022\u2022").assertIsFocused()
 
         // Leaving the row keeps both affordances on screen.

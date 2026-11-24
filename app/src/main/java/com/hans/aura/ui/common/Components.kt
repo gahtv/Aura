@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -405,8 +406,11 @@ fun TrackRow(
 private fun TrackRowOverflowButton(onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
+    // Registered as the menu invoker so closing the menu returns focus here.
+    val self = remember { FocusRequester() }
     Box(
         Modifier
+            .focusRequester(self)
             .clip(AuraShapes.badge)
             .background(if (focused) colors.secondaryContainer else AuraColors.FocusedFillSubtle)
             .border(
@@ -416,7 +420,10 @@ private fun TrackRowOverflowButton(onClick: () -> Unit) {
             )
             // House rule: the focus flag BEFORE the click target.
             .onFocusChanged { focused = it.isFocused }
-            .clickable(onClickLabel = "More actions") { onClick() }
+            .clickable(onClickLabel = "More actions") {
+                ContextMenuHost.lastInvoker = self
+                onClick()
+            }
             .padding(horizontal = AuraSpacing.sm, vertical = AuraSpacing.xxs)
     ) {
         androidx.tv.material3.Text(

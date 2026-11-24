@@ -13,6 +13,7 @@ import com.hans.aura.data.Session
 import com.hans.aura.data.SourceQueries
 import com.hans.aura.model.Playlist
 import com.hans.aura.ui.collection.CollectionViewModel
+import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -25,6 +26,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,6 +38,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import retrofit2.HttpException
+import retrofit2.Response
 
 /**
  * Playlist edits must never resolve an occurrence against a list the server
@@ -175,6 +180,136 @@ class PlaylistEntryRefreshTest {
     }
 
     @Test
+    fun `lost removal response stays disabled until the refreshed order lands`() = runBlocking {
+        val fake = PlaylistFakeSource(originalSource, PLAYLIST, listOf("A", "A", "B"))
+        MusicSources.install(fake)
+
+        val store = ViewModelStore()
+        val viewModel = newViewModel(store)
+        withTimeout(5_000) { viewModel.state.first { it.tracks != null } }
+        assertNotNull("precondition: the load seeded col:<playlistId>", fake.cached("col:$PLAYLIST"))
+        val readsBefore = fake.playlistReads.get()
+
+        // The server applies the edit, then the response is lost. Hold the
+        // reconciling read open so the in-between UI state is observable.
+        val reloadGate = CountDownLatch(1)
+        fake.readGate = reloadGate
+        fake.removalUnknown = true
+        viewModel.removeFromPlaylist("A", 0)
+
+        assertTrue("the write must commit", fake.removalCompleted.await(5, TimeUnit.SECONDS))
+        awaitUntil { fake.playlistReads.get() == readsBefore + 1 }
+        assertTrue(
+            "removal must stay disabled until the new order is confirmed",
+            viewModel.state.value.editInFlight
+        )
+        assertNotNull("an unknown outcome must surface an edit message", viewModel.state.value.editError)
+        assertNull("unknown outcome must evict the stale list", fake.cached("col:$PLAYLIST"))
+
+        reloadGate.countDown()
+        awaitUntil {
+            viewModel.state.value.tracks?.map { it.id } == listOf("A", "B") &&
+                !viewModel.state.value.editInFlight
+        }
+        assertNotNull(
+            "the edit message survives the successful reconciliation",
+            viewModel.state.value.editError
+        )
+        store.clear()
+    }
+
+    @Test
+    fun `a playlist reopened before the unknown-outcome refresh lands fetches instead of seeding`() =
+        runBlocking {
+            val fake = PlaylistFakeSource(originalSource, PLAYLIST, listOf("A", "A", "B"))
+            MusicSources.install(fake)
+
+            val firstStore = ViewModelStore()
+            val first = newViewModel(firstStore)
+            withTimeout(5_000) { first.state.first { it.tracks != null } }
+
+            // Hold the reconciliation open so the cache stays evicted at the
+            // moment the second screen is built.
+            val reloadGate = CountDownLatch(1)
+            fake.readGate = reloadGate
+            fake.removalUnknown = true
+            first.removeFromPlaylist("A", 0)
+            assertTrue("the write must commit", fake.removalCompleted.await(5, TimeUnit.SECONDS))
+            awaitUntil { fake.playlistReads.get() >= 2 }
+            assertNull("the unknown outcome must evict the stale list", fake.cached("col:$PLAYLIST"))
+
+            // Pop, then reopen: the cache read is null, so init has to fetch.
+            firstStore.clear()
+            val secondStore = ViewModelStore()
+            val second = newViewModel(secondStore)
+            assertNull("a reopened screen must not seed an evicted list", second.state.value.tracks)
+            assertFalse(second.state.value.editInFlight)
+
+            reloadGate.countDown()
+            withTimeout(5_000) { second.state.first { it.tracks != null } }
+            assertEquals(listOf("A", "B"), second.state.value.tracks!!.map { it.id })
+            assertTrue(
+                "the reopened screen must read the server, not seed a stale list",
+                second.state.value.tracks!!.all { it.name.startsWith("server:") }
+            )
+            secondStore.clear()
+        }
+
+    @Test
+    fun `a failed reconciliation keeps removal disabled until retry succeeds`() = runBlocking {
+        val fake = PlaylistFakeSource(originalSource, PLAYLIST, listOf("A", "A", "B"))
+        MusicSources.install(fake)
+
+        val store = ViewModelStore()
+        val viewModel = newViewModel(store)
+        withTimeout(5_000) { viewModel.state.first { it.tracks != null } }
+
+        fake.removalUnknown = true
+        fake.readFailure = IllegalStateException("offline")
+        viewModel.removeFromPlaylist("A", 0)
+        awaitUntil {
+            viewModel.state.value.editError != null &&
+                fake.playlistReads.get() >= 2 &&
+                viewModel.state.value.tracks?.map { it.id } != listOf("A", "B")
+        }
+
+        assertTrue("the owed refresh did not land: removal stays disabled", viewModel.state.value.editInFlight)
+        assertNull("a refresh failure with rows on screen is not a load error", viewModel.state.value.error)
+
+        // The banner's Retry is the recovery path.
+        fake.readFailure = null
+        viewModel.retry()
+        awaitUntil {
+            viewModel.state.value.tracks?.map { it.id } == listOf("A", "B") &&
+                !viewModel.state.value.editInFlight
+        }
+        store.clear()
+    }
+
+    @Test
+    fun `a rejected removal keeps the old list and does not reload`() = runBlocking {
+        val fake = PlaylistFakeSource(originalSource, PLAYLIST, listOf("A", "B"))
+        MusicSources.install(fake)
+
+        val store = ViewModelStore()
+        val viewModel = newViewModel(store)
+        withTimeout(5_000) { viewModel.state.first { it.tracks != null } }
+        val readsBefore = fake.playlistReads.get()
+
+        fake.removalFailure = HttpException(
+            Response.error<Unit>(403, "Forbidden".toResponseBody("text/plain".toMediaType()))
+        )
+        viewModel.removeFromPlaylist("A", 0)
+
+        // A definite rejection commits nothing: no reload, old rows stay.
+        withTimeout(5_000) { viewModel.state.first { it.editError != null && !it.editInFlight } }
+        assertEquals(readsBefore, fake.playlistReads.get())
+        assertEquals(listOf("A", "B"), viewModel.state.value.tracks!!.map { it.id })
+        assertNotNull("the rejection stays visible as an edit error", viewModel.state.value.editError)
+        store.clear()
+    }
+
+    @Test
     fun `removal is refused without a write while another edit is pending`() = runBlocking {
         val fake = PlaylistFakeSource(originalSource, PLAYLIST, listOf("A", "B"))
         MusicSources.install(fake)
@@ -273,8 +408,18 @@ class PlaylistEntryRefreshTest {
         /** When set, [removeFromPlaylist] suspends until it is released. */
         @Volatile var removalGate: CountDownLatch? = null
 
+        /** When set, [playlistItems] fails after counting the read. */
+        @Volatile var readFailure: Throwable? = null
+
         /** When set, [removeFromPlaylist] fails after [removalGate] releases. */
         @Volatile var removalFailure: Throwable? = null
+
+        /**
+         * When true, [removeFromPlaylist] applies the edit, evicts the cache,
+         * then throws [IOException] — a committed write whose response was
+         * lost, exactly what MediaRepository's eviction-before-rethrow covers.
+         */
+        @Volatile var removalUnknown: Boolean = false
 
         fun serverTrackIds(): List<String> = synchronized(lock) { entries.toList() }
 
@@ -298,6 +443,7 @@ class PlaylistEntryRefreshTest {
         override suspend fun playlistItems(playlistId: String): List<JellyfinItem> {
             playlistReads.incrementAndGet()
             readGate?.await(10, TimeUnit.SECONDS)
+            readFailure?.let { throw it }
             return synchronized(lock) {
                 entries.map {
                     // 10.11: PlaylistItemId is the linked child's ItemId.
@@ -316,16 +462,18 @@ class PlaylistEntryRefreshTest {
             removalStarted.countDown()
             removalGate?.await(10, TimeUnit.SECONDS)
             removalFailure?.let { throw it }
-            synchronized(lock) {
+            val lostResponse = synchronized(lock) {
                 val matches = entries.indices.filter { entries[it] == itemId }
                 val index = matches.getOrNull(occurrence)
                     ?: throw IllegalStateException("Playlist entry no longer exists")
                 entries.removeAt(index)
-                // Mirrors MediaRepository: the cache is evicted only after the
-                // server applied the edit.
+                // Mirrors MediaRepository: the cache is evicted once the
+                // server applied the edit (and also when the response is lost).
                 cachedSnapshot = null
+                removalUnknown
             }
             removalCompleted.countDown()
+            if (lostResponse) throw IOException("Response lost after the server applied the edit")
         }
     }
 

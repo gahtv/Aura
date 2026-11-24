@@ -10,6 +10,7 @@ import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Session
+import com.hans.aura.di.PlaylistEditOutcome
 import com.hans.aura.model.Playlist
 import com.hans.aura.ui.collection.CollectionViewModel
 import java.util.concurrent.CountDownLatch
@@ -178,12 +179,12 @@ class PlaylistMutationSurvivesPopTest {
 
         // A stale token from the old session must not touch the new one.
         val newToken = mutations.beginPlaylistEdit("playlist")
-        mutations.finishPlaylistEdit("playlist", token, success = false)
+        mutations.finishPlaylistEdit("playlist", token, PlaylistEditOutcome.FAILED)
         assertTrue(
             "an old-session finish must not clear the new session's pending edit",
             mutations.playlistEditPending("playlist")
         )
-        mutations.finishPlaylistEdit("playlist", newToken, success = true)
+        mutations.finishPlaylistEdit("playlist", newToken, PlaylistEditOutcome.SUCCESS)
         assertFalse(mutations.playlistEditPending("playlist"))
 
         // The replacement scope is not just alive, it runs work.

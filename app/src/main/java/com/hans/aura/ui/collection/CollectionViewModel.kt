@@ -6,10 +6,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
 import com.hans.aura.data.SourceQueries
+import com.hans.aura.di.PlaylistEditOutcome
 import com.hans.aura.model.Album
 import com.hans.aura.model.CollectionItem
 import com.hans.aura.model.Playlist
 import com.hans.aura.model.Track
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,8 +22,12 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
 
 private const val TAG = "AURA_COL"
+
+/** Shown when a removal's response was lost and the list must be re-read. */
+private const val UNKNOWN_EDIT_MESSAGE = "Removal may not have completed — refreshing playlist"
 
 @Immutable
 data class CollectionUiState(
@@ -91,42 +97,85 @@ class CollectionViewModel(
         // eviction after the server already applied it) leaves a stale list.
         // The state updates are harmless once cleared; load() is a no-op then.
         mutations.scope.launch {
-            var success = false
+            // A cancellation still leaves the outcome UNKNOWN: the write may
+            // have reached the server. The pending marker below is what tells
+            // any surviving screen to reconcile.
+            var outcome = PlaylistEditOutcome.UNKNOWN
             try {
-                runCatching { SourceQueries.removeFromPlaylist(itemId, trackId, occurrence) }
-                    .onSuccess { success = true }
-                    .onFailure {
-                        Log.w(
-                            TAG,
-                            "remove item=$trackId occurrence=$occurrence from playlist=$itemId failed: ${it.message}"
+                outcome = try {
+                    SourceQueries.removeFromPlaylist(itemId, trackId, occurrence)
+                    PlaylistEditOutcome.SUCCESS
+                } catch (c: CancellationException) {
+                    // Keep structured cancellation intact; the finally below
+                    // still publishes UNKNOWN.
+                    throw c
+                } catch (t: Throwable) {
+                    val classified = classify(t)
+                    Log.w(
+                        TAG,
+                        "remove item=$trackId occurrence=$occurrence from playlist=$itemId" +
+                            " failed ($classified): ${t.message}"
+                    )
+                    _state.update { state ->
+                        state.copy(
+                            editError = when (classified) {
+                                PlaylistEditOutcome.UNKNOWN -> UNKNOWN_EDIT_MESSAGE
+                                else -> "Couldn't remove from playlist: ${t.message}"
+                            }
                         )
-                        _state.update { state ->
-                            state.copy(editError = "Couldn't remove from playlist: ${it.message}")
-                        }
                     }
+                    classified
+                }
             } finally {
                 // Even a cancelled (old-profile) mutation must end its
                 // pending marker; reset() has already invalidated its token in
                 // that case, so this cannot notify the new session.
-                mutations.finishPlaylistEdit(itemId, token, success)
+                mutations.finishPlaylistEdit(itemId, token, outcome)
             }
         }
     }
 
     /**
-     * Applies a completed edit: a failed write changed nothing, so keep its
-     * error instead of reloading (and re-showing the pre-edit list as if it
-     * were fresh); a successful one refetches the post-edit order.
+     * A 4xx means the server refused before committing, and the local
+     * precondition failures ([IllegalStateException]/[IllegalArgumentException])
+     * are raised before any write, so both leave the visible list valid.
+     * Everything else — I/O, timeout, 5xx, a response lost after the write —
+     * may have committed and must be reconciled against the server.
+     */
+    private fun classify(error: Throwable): PlaylistEditOutcome = when {
+        error is HttpException ->
+            if (error.code() in 400..499) PlaylistEditOutcome.FAILED else PlaylistEditOutcome.UNKNOWN
+        error is IllegalArgumentException || error is IllegalStateException -> PlaylistEditOutcome.FAILED
+        else -> PlaylistEditOutcome.UNKNOWN
+    }
+
+    /**
+     * Applies a completed edit.
+     *
+     * SUCCESS refetches the post-edit order; FAILED changed nothing, so keep
+     * its error without reloading (a reload would re-show the pre-edit list as
+     * if it were fresh). UNKNOWN may have committed: keep removal disabled and
+     * force a reconciling read. [load] clears `editInFlight` only when that
+     * read succeeds, so a failed refresh leaves the banner's Retry in charge.
      */
     private fun observePlaylistChanges() {
         viewModelScope.launch {
             app.container.mutations.observePlaylistChanges()
                 .filter { it.playlistId == itemId }
                 .collect { completed ->
-                    if (completed.success) {
-                        load(force = true)
-                    } else {
-                        _state.update { it.copy(editInFlight = false) }
+                    when (completed.outcome) {
+                        PlaylistEditOutcome.SUCCESS -> load(force = true)
+                        PlaylistEditOutcome.FAILED ->
+                            _state.update { it.copy(editInFlight = false) }
+                        PlaylistEditOutcome.UNKNOWN -> {
+                            _state.update {
+                                it.copy(
+                                    editInFlight = true,
+                                    editError = it.editError ?: UNKNOWN_EDIT_MESSAGE
+                                )
+                            }
+                            load(force = true)
+                        }
                     }
                 }
         }

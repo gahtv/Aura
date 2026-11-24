@@ -312,12 +312,29 @@ private fun CollectionContent(
                 // prefer them until the next edit asks for user attention.
                 val inlineError = state.editError ?: state.error
                 if (inlineError != null && shownTracks != null) {
-                    androidx.tv.material3.Text(
-                        inlineError,
-                        color = colors.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(bottom = AuraSpacing.xs)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = AuraSpacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(AuraSpacing.sm)
+                    ) {
+                        androidx.tv.material3.Text(
+                            inlineError,
+                            color = colors.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        // Only a refresh that is still owed gets a Retry:
+                        // after UNKNOWN (or a failed reconciliation) removal
+                        // stays disabled until a load proves the new order.
+                        // Ordinary load errors keep their ErrorPane retry.
+                        if (state.editInFlight) {
+                            androidx.tv.material3.Button(onClick = { viewModel.retry() }) {
+                                androidx.tv.material3.Text("Retry")
+                            }
+                        }
+                    }
                 }
 
                 when {

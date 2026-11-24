@@ -2,6 +2,7 @@ package com.hans.aura.data
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import java.io.IOException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -11,6 +12,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -139,6 +141,39 @@ class PlaylistRemovalTest {
         assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "", 0) }.exceptionOrNull() is IllegalArgumentException)
         assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "A", -1) }.exceptionOrNull() is IllegalArgumentException)
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `a lost write response surfaces as IO failure and evicts the list`() = runBlocking {
+        LibraryCache.put("col:p", listOf(JellyfinItem(id = "A", type = "Audio")))
+        assertNotNull("precondition: the stale list is cached", LibraryCache.peek("col:p"))
+
+        playlist("A", "A", "B")
+        allEntries("A", "A", "B")
+        // Malformed status line: the request is read, but no valid response
+        // reaches the client. ProtocolException is an IOException and, unlike
+        // EOF, is not retried by OkHttp, so this is deterministic.
+        server.enqueue(MockResponse().setStatus("BOGUS"))
+
+        val error = runCatching { SourceQueries.removeFromPlaylist("p", "A", 1) }.exceptionOrNull()
+        assertTrue("expected an IO failure, got $error", error is IOException)
+        assertNull("a lost response must evict col:<playlistId>", LibraryCache.peek("col:p"))
+    }
+
+    @Test
+    fun `a write with an unknown outcome evicts the cached playlist`() = runBlocking {
+        LibraryCache.put("col:p", listOf(JellyfinItem(id = "A", type = "Audio")))
+        assertNotNull("precondition: the stale list is cached", LibraryCache.peek("col:p"))
+
+        playlist("A", "A", "B")
+        allEntries("A", "A", "B")
+        server.enqueue(MockResponse().setResponseCode(500))
+        assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "A", 1) }
+            .exceptionOrNull() is HttpException)
+
+        // A 5xx may hide a committed edit: the next read must reconcile with
+        // the server instead of serving the pre-edit order.
+        assertNull("unknown outcome must evict col:<playlistId>", LibraryCache.peek("col:p"))
     }
 
     @Test

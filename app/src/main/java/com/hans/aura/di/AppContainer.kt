@@ -12,6 +12,7 @@ import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.MediaRepository
 import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
+import com.hans.aura.data.PlaylistWrites
 import com.hans.aura.data.Prefs
 import com.hans.aura.remote.MirrorServer
 import kotlinx.coroutines.CoroutineScope
@@ -23,11 +24,23 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 /**
- * Published once the last overlapping edit of [playlistId] finishes.
- * [success] lets observers skip the refetch after a failed write: the server
- * list did not change, so a reload would only mask the error.
+ * Result of one playlist edit, as far as Aura can know it.
+ *
+ * [FAILED] means the server rejected the write (4xx) or a local precondition
+ * stopped it before any request: the server list is unchanged.
+ * [UNKNOWN] means the write was attempted but its response was lost
+ * (I/O error, timeout, 5xx, cancellation after send): the edit may or may not
+ * have committed, so the cached order is no longer trustworthy.
  */
-data class PlaylistEditCompleted(val playlistId: String, val success: Boolean)
+enum class PlaylistEditOutcome { SUCCESS, FAILED, UNKNOWN }
+
+/**
+ * Published once the last overlapping edit of [playlistId] finishes.
+ * [outcome] lets observers skip the refetch after a definite failure (the
+ * server list did not change, so a reload would only mask the error) while
+ * still reconciling after an unknown outcome.
+ */
+data class PlaylistEditCompleted(val playlistId: String, val outcome: PlaylistEditOutcome)
 
 /**
  * Scope for mutations a screen starts but must not own.
@@ -81,11 +94,11 @@ class SessionMutations {
     }
 
     /**
-     * Ends the edit started with [token], publishing whether the write
-     * [success]ed once the last overlapping edit completes. A token from an
-     * earlier session (or an unknown/cleared entry) is ignored.
+     * Ends the edit started with [token], publishing how it [outcome]d once
+     * the last overlapping edit completes. A token from an earlier session
+     * (or an unknown/cleared entry) is ignored.
      */
-    fun finishPlaylistEdit(playlistId: String, token: Long, success: Boolean) {
+    fun finishPlaylistEdit(playlistId: String, token: Long, outcome: PlaylistEditOutcome) {
         var completed = false
         synchronized(lock) {
             val remaining = pending[playlistId]
@@ -98,7 +111,7 @@ class SessionMutations {
                 }
             }
         }
-        if (completed) _playlistChanges.tryEmit(PlaylistEditCompleted(playlistId, success))
+        if (completed) _playlistChanges.tryEmit(PlaylistEditCompleted(playlistId, outcome))
     }
 
     /** True while an edit of [playlistId] is still in flight in this session. */
@@ -150,6 +163,12 @@ class AppContainer(context: Context) {
     /** Retrofit-backed Jellyfin client (auth store, api, device id). */
     val jellyfin: JellyfinClient
 
+    /**
+     * Serializes every Aura write to the same playlist (removal's
+     * read-modify-write, adds, moves). See [PlaylistWrites].
+     */
+    val playlistWrites = PlaylistWrites()
+
     /** Browse/query facade ViewModels and screens should prefer. */
     val media: MediaRepository
 
@@ -178,7 +197,7 @@ class AppContainer(context: Context) {
         MirrorServer.init(appContext)
 
         jellyfin = JellyfinClient(appContext)
-        media = MediaRepository(jellyfin, { jellyfin.auth.session })
+        media = MediaRepository(jellyfin, { jellyfin.auth.session }, playlistWrites)
         source = BackendFactory.create(jellyfin, media)
         // Hand the same instance to the call sites that live outside this graph
         // (the queue builder and the playback service).

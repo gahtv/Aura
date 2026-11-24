@@ -84,11 +84,13 @@ class ContextMenusPlaylistMoveTest {
 
         ContextMenus.performPlaylistMove(
             app,
+            // A menu built when the playlist had six rows: row 5 existed
+            // then, but the server list has shrunk before this action ran.
             ContextMenus.PlaylistMove(
                 playlistId = "p",
                 itemId = "A",
-                index = 0,
-                size = 1,
+                index = 3,
+                size = 6,
                 onMoved = { moved = true }
             ),
             5

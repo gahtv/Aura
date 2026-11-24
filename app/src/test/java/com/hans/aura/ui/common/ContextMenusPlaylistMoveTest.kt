@@ -11,6 +11,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -67,5 +68,33 @@ class ContextMenusPlaylistMoveTest {
         assertFalse("a pending edit must refuse the move", moved)
         assertEquals("the refused move must not reach the server", 0, server.requestCount)
         app.container.mutations.finishPlaylistEdit("p", token, PlaylistEditOutcome.FAILED)
+    }
+
+    @Test
+    fun `a move whose visible row vanished refreshes the stale screen`() = runBlocking {
+        // The server list no longer has row 5; the repository rejects the
+        // move before any write. The screen must still be refreshed so the
+        // user sees the current order instead of a silent no-op.
+        server.enqueue(
+            MockResponse().setBody(
+                """{"Items":[{"Id":"A","Type":"Audio","PlaylistItemId":"A"}]}"""
+            )
+        )
+        var moved = false
+
+        ContextMenus.performPlaylistMove(
+            app,
+            ContextMenus.PlaylistMove(
+                playlistId = "p",
+                itemId = "A",
+                index = 0,
+                size = 1,
+                onMoved = { moved = true }
+            ),
+            5
+        )
+
+        assertTrue("a rejected move must refresh the stale screen", moved)
+        assertEquals("only the reconciling read must reach the server", 1, server.requestCount)
     }
 }

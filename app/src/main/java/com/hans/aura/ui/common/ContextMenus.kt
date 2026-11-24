@@ -278,6 +278,11 @@ object ContextMenus {
             move.onMoved()
         }.onFailure {
             android.util.Log.w("AURA_QUEUE", "playlist move failed: ${it.message}")
+            // The row can be gone because the server order changed (external
+            // client or an edit that finished between the menu opening and
+            // this call). Refresh so the screen stops showing a stale order
+            // instead of logging the rejection into the void.
+            move.onMoved()
         }
     }
 

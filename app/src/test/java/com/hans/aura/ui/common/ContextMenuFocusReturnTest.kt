@@ -27,6 +27,14 @@ import com.hans.aura.playback.PlaybackService
 import com.hans.aura.ui.collection.trackRowFocusId
 import com.hans.aura.ui.player.PlayerConnection
 import com.hans.aura.ui.theme.AuraTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import com.hans.aura.data.JellyfinItem
+import com.hans.aura.data.MusicSource
+import com.hans.aura.data.MusicSources
+import com.hans.aura.model.Playlist
+import com.hans.aura.ui.collection.CollectionScreen
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -49,6 +57,7 @@ class ContextMenuFocusReturnTest {
     @After
     fun tearDown() {
         ContextMenuHost.close()
+        MusicSources.reset()
         app.jellyfin.auth.clear()
     }
 
@@ -86,6 +95,63 @@ class ContextMenuFocusReturnTest {
 
         compose.onAllNodesWithText("\u2022\u2022\u2022")[2].assertIsFocused()
         compose.onAllNodesWithText("\u2022\u2022\u2022")[0].assertIsNotFocused()
+    }
+
+    @Test
+    fun playlistScreenRestoresTheExactRepeatedEntry() {
+        app.jellyfin.auth.save(Session("http://127.0.0.1:9/", "user", "test", "token", "device"))
+        shadowOf(app).declareComponentUnbindable(ComponentName(app, PlaybackService::class.java))
+        val base = requireNotNull(MusicSources.current)
+        MusicSources.install(object : MusicSource by base {
+            override val id = "repeated-entry-focus-test"
+            override suspend fun cached(prefix: String): List<JellyfinItem>? = null
+            override fun cache(prefix: String, items: List<JellyfinItem>) {}
+            override suspend fun item(itemId: String): JellyfinItem? = null
+            override suspend fun albumBio(itemId: String): String? = null
+            override suspend fun atmosAlbumIds(): Set<String> = emptySet()
+            override suspend fun playlistItems(playlistId: String) = listOf("A", "B", "A").map {
+                JellyfinItem(id = it, name = "Song $it", type = "Audio", playlistItemId = it)
+            }
+        })
+        val player = PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session }
+        var focusTick by mutableIntStateOf(0)
+        compose.setContent {
+            AuraTheme {
+                Box {
+                    CollectionScreen(
+                        app = app,
+                        collection = Playlist(id = "p", name = "Mix"),
+                        player = player,
+                        onBack = {},
+                        focusTick = focusTick
+                    )
+                    ContextMenuHosts(app)
+                }
+            }
+        }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Song A").fetchSemanticsNodes().size == 2 }
+
+        // First "Song A" entry; the third row repeats its track id.
+        val firstA = compose.onAllNodesWithText("Song A")[0]
+        firstA.performSemanticsAction(SemanticsActions.RequestFocus)
+        firstA.assertIsFocused()
+
+        // The picker hands focus back to that entry...
+        firstA.performKeyInput { keyDown(Key.DirectionCenter) }
+        compose.mainClock.advanceTimeBy(600)
+        firstA.performKeyInput { keyUp(Key.DirectionCenter) }
+        openPickerThenPressBack()
+        compose.onAllNodesWithText("Song A")[0].assertIsFocused()
+        compose.onAllNodesWithText("Song A")[1].assertIsNotFocused()
+
+        // ...and so does BACK-restore after focus has left the list.
+        compose.onNodeWithText("Play").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onAllNodesWithText("Song A")[0].assertIsNotFocused()
+        compose.runOnIdle { focusTick++ }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(100)
+        compose.onAllNodesWithText("Song A")[0].assertIsFocused()
+        compose.onAllNodesWithText("Song A")[1].assertIsNotFocused()
     }
 
     private val keeper = FocusKeeper()

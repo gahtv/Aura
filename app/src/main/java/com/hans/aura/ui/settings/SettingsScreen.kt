@@ -402,9 +402,18 @@ private fun SettingsToggleRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(Modifier.padding(end = 16.dp)) {
+        // weight(1f): without it a long two-line subtitle measures at the full
+        // row width and pushes the Switch past the card's right border.
+        Column(Modifier.weight(1f).padding(end = 16.dp)) {
             androidx.tv.material3.Text(title, fontSize = 16.sp, color = TextPrimary)
-            androidx.tv.material3.Text(subtitle, fontSize = 12.sp, color = TextSecondary)
+            // bodySmall (12sp / 16sp line height): with only fontSize set, the
+            // wrapped lines inherited the default 24sp line height — a 24dp
+            // pitch that read as a blank band between the description lines.
+            androidx.tv.material3.Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
         }
         Switch(
             checked = checked,
@@ -476,7 +485,9 @@ private fun LibraryToggleRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(Modifier.padding(end = 16.dp)) {
+        // weight(1f): same fix as SettingsToggleRow — a long library name must
+        // wrap inside the card, not shove the Switch out of its box.
+        Column(Modifier.weight(1f).padding(end = 16.dp)) {
             androidx.tv.material3.Text(
                 library.name,
                 fontSize = 16.sp,

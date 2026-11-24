@@ -100,6 +100,8 @@ internal fun NowPlayingTopRow(
         )
         Spacer(Modifier.width(AuraSpacing.sm))
     }
+    // 24dp, and it now actually renders (a Box used to swallow this spacer).
+    // 32dp pushed the transport's bottom row (Radio) off-screen.
     Spacer(Modifier.height(AuraSpacing.lg))
 }
 

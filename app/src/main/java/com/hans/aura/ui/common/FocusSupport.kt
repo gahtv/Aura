@@ -63,12 +63,6 @@ suspend fun FocusRequester.requestFocusOnFrame(maxFrames: Int = 8): Boolean {
     return false
 }
 
-/** Set while a full-screen overlay (bio popup, playlist picker) is open —
- *  the now-playing bar hides so overlays sit on top and keep focus. */
-object OverlayVisibility {
-    var dialogOpen by mutableStateOf(false)
-}
-
 /** Tracks which item last held focus in a screen so BACK can restore it exactly. */
 class FocusKeeper {
     private val requesters = mutableMapOf<String, FocusRequester>()

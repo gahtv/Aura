@@ -2,7 +2,6 @@ package com.hans.aura.ui.common
 
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -11,12 +10,16 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.unit.dp
 import com.hans.aura.data.Fixtures
 import com.hans.aura.data.JellyfinItem
 import com.hans.aura.ui.shell.PlayingEqualizerIndicator
 import com.hans.aura.ui.theme.Accent
 import com.hans.aura.ui.theme.AuraTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,10 +55,11 @@ class Phase1VisualPolishTest {
     }
 
     @Test
-    fun trackRowRevealsInlineActionHintsOnlyWhenFocused() {
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    fun trackRowActionsAreAlwaysVisibleAndFocusable() {
         val track = Fixtures.domainTrack("Atmos Track")
         val keeper = FocusKeeper()
-        val otherFocus = FocusRequester()
+        var menuOpens = 0
         compose.setContent {
             AuraTheme {
                 Column {
@@ -66,7 +70,8 @@ class Phase1VisualPolishTest {
                         onClick = {},
                         focusKeeper = keeper,
                         favorite = false,
-                        onLongPress = {}
+                        onToggleFavorite = {},
+                        onLongPress = { menuOpens++ }
                     )
                     androidx.tv.material3.Button(
                         onClick = {},
@@ -78,16 +83,33 @@ class Phase1VisualPolishTest {
             }
         }
 
-        compose.onNodeWithText("\u2022\u2022\u2022").assertDoesNotExist()
-        compose.onNodeWithText("\u2665").assertDoesNotExist()
-
-        compose.runOnIdle { keeper.requesterFor(track.id).requestFocus() }
+        // The like and overflow pills live after the duration and are always
+        // composed: no focus-reveal, so nothing shifts when the row gains or
+        // loses focus (the old hint block slid the duration sideways).
         compose.onNodeWithText("\u2022\u2022\u2022").assertExists()
-        compose.onNodeWithText("\u2665").assertExists()
+        compose.onNodeWithContentDescription("Add to favorites").assertExists()
 
+        // Row content stays the primary D-pad target; the keeper still
+        // restores focus to it.
+        compose.runOnIdle { keeper.requesterFor(track.id).requestFocus() }
+        compose.onNodeWithText("Atmos Track").assertIsFocused()
+
+        // And the pills are REAL D-pad targets — the previous design kept them
+        // unreachable inside the clickable row. Right walks row -> like -> more.
+        compose.onNodeWithText("Atmos Track").performKeyInput { pressKey(Key.DirectionRight) }
+        compose.onNodeWithContentDescription("Add to favorites").assertIsFocused()
+        compose.onNodeWithContentDescription("Add to favorites").performKeyInput { pressKey(Key.DirectionRight) }
+        compose.onNodeWithText("\u2022\u2022\u2022").assertIsFocused()
+
+        // OK on the pill opens the menu (focus return through the real overlay
+        // is covered by ContextMenuFocusReturnTest).
+        compose.onNodeWithText("\u2022\u2022\u2022").performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.runOnIdle { assertEquals(1, menuOpens) }
+
+        // Leaving the row keeps both affordances on screen.
         compose.onNodeWithText("Other").performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.mainClock.advanceTimeBy(400)
-        compose.onNodeWithText("\u2022\u2022\u2022").assertDoesNotExist()
+        compose.onNodeWithText("\u2022\u2022\u2022").assertExists()
+        compose.onNodeWithContentDescription("Add to favorites").assertExists()
     }
 
     @Test

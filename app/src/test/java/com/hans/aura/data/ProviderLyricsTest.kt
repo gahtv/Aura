@@ -98,6 +98,30 @@ class ProviderLyricsTest {
     }
 
     @Test
+    fun `cached web lyrics skip the track metadata fetch`() = runTest {
+        Prefs.init(ApplicationProvider.getApplicationContext<Context>())
+        Prefs.lyricsWebFallback = true
+        var webCache: List<LyricLine>? = null
+        var lookups = 0
+        val fallback = JellyfinSource(client, MediaRepository(client, { client.auth.session }),
+            lookupLyrics = {
+                lookups++
+                listOf(LyricLine(1234L, "Web line", true)).also { webCache = it }
+            },
+            cachedWebLyrics = { webCache })
+        reply(404)
+        reply(200, """{"Id":"song","Name":"Song"}""")
+        repeat(3) {
+            assertEquals("Web line", fallback.lyricsTimed("song")?.single()?.text)
+            assertEquals(true, fallback.cachedWebLyricsFound("song"))
+        }
+        assertEquals(1, lookups)
+        assertEquals(2, server.requestCount)
+        assertRequest("GET", "/Audio/song/lyrics")
+        assertRequest("GET", "/Items/song?userId=user")
+    }
+
+    @Test
     fun `cached absence still allows web fallback`() = runTest {
         Prefs.init(ApplicationProvider.getApplicationContext<Context>())
         Prefs.lyricsWebFallback = true

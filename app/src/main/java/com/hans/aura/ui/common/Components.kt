@@ -2,11 +2,8 @@
 
 package com.hans.aura.ui.common
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -117,7 +115,7 @@ fun ArtworkCard(
                     Modifier.focusRequester(focusKeeper.requesterFor(item.id))
                 } else Modifier
             )
-            .contextMenuKeys(onLongPress)
+            .contextMenuKeys(onLongPress, focusKeeper?.requesterFor(item.id))
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) {
@@ -250,7 +248,17 @@ private fun subtitleOf(item: MediaItem): String = when (item) {
     is Genre -> ""
 }
 
-/** One track row: index/title left, artist, duration right. */
+/**
+ * One track row: index/title left, artist, then the duration and the trailing
+ * action pills (like, overflow "•••", remove) right.
+ *
+ * The row splits focus into two SIBLING slots instead of one clickable whole:
+ * the main area up to the duration plays the track, and each trailing pill is
+ * a real D-pad target. The previous design revealed a non-focusable
+ * "♥ •••" hint BEFORE the duration while a second, also non-focusable heart
+ * sat after it — two hearts, neither D-pad-reachable — and the hint appearing
+ * shifted the duration sideways on every focus move.
+ */
 @Composable
 fun TrackRow(
     index: Int,
@@ -265,10 +273,16 @@ fun TrackRow(
     // Liked state (null = draw no heart). Kept after every existing parameter
     // so no call site's trailing lambda can bind to it by accident.
     favorite: Boolean? = null,
-    onToggleFavorite: (() -> Unit)? = null
+    onToggleFavorite: (() -> Unit)? = null,
+    // Focus identity for the keeper, BACK-restore and menu return. Defaults to
+    // the track id; lists that can repeat a track pass a per-entry id.
+    focusId: String = track.id
 ) {
     val colors = MaterialTheme.colorScheme
-    var focused by remember { mutableStateOf(false) }
+    // Either focus slot highlights the row as a whole.
+    var contentFocused by remember { mutableStateOf(false) }
+    var actionsFocused by remember { mutableStateOf(false) }
+    val focused = contentFocused || actionsFocused
     val bg by animateColorAsState(
         when {
             isCurrent -> colors.secondaryContainer
@@ -282,119 +296,171 @@ fun TrackRow(
             .fillMaxWidth()
             .height(AuraSizes.trackRowHeight)
             .background(bg)
-            .then(
-                if (focusKeeper != null) {
-                    Modifier.focusRequester(focusKeeper.requesterFor(track.id))
-                } else Modifier
-            )
-            .contextMenuKeys(onLongPress)
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onFocused?.invoke(track.id)
-            }
-            .clickable { onClick() }
             .padding(horizontal = AuraSpacing.lg),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left accent bar marks keyboard focus on rows.
-        if (focused) {
-            Box(
-                Modifier
-                    .width(AuraSizes.rowAccentBarWidth)
-                    .height(AuraSizes.rowAccentBarHeight)
-                    .background(colors.primary)
-            )
-            Spacer(Modifier.width(AuraSpacing.md))
-        }
-        androidx.tv.material3.Text(
-            text = if (isCurrent) "\u25B6" else index.toString(),
-            color = if (isCurrent) colors.onSecondaryContainer else TextSecondary,
-            fontSize = AuraTypography.bodySmall,
-            modifier = Modifier.width(AuraSizes.trackIndexWidth)
-        )
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.tv.material3.Text(
-                    track.name,
-                    color = if (isCurrent) colors.onSecondaryContainer else TextPrimary,
-                    fontSize = AuraTypography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
+        // Main D-pad target: everything up to and including the duration. The
+        // action pills below are SIBLINGS, never children — focus search does
+        // not descend into a clickable parent, so nested controls were the
+        // reason the old hearts could not be focused.
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    if (focusKeeper != null) {
+                        Modifier.focusRequester(focusKeeper.requesterFor(focusId))
+                    } else Modifier
                 )
-                if (atmos) {
-                    Spacer(Modifier.width(AuraSpacing.xs))
-                    AtmosChip()
+                .contextMenuKeys(onLongPress, focusKeeper?.requesterFor(focusId))
+                .onFocusChanged {
+                    contentFocused = it.isFocused
+                    if (it.isFocused) onFocused?.invoke(focusId)
                 }
-            }
-            if (track.artistNames.isNotBlank()) {
-                androidx.tv.material3.Text(
-                    track.artistNames,
-                    color = TextSecondary,
-                    fontSize = AuraTypography.caption,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-        // Focus-revealed inline action hints (strictly non-focusable so D-pad
-        // focus stays on the row itself).
-        AnimatedVisibility(
-            visible = focused && (favorite != null || onToggleFavorite != null || onLongPress != null),
-            enter = fadeIn(AuraMotion.scheme.fastEffectsSpec()),
-            exit = fadeOut(AuraMotion.scheme.fastEffectsSpec())
+                .clickable { onClick() },
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(AuraSpacing.xs),
-                modifier = Modifier.padding(start = AuraSpacing.sm)
-            ) {
-                if (favorite != null || onToggleFavorite != null) {
+            // Left accent bar marks keyboard focus on rows.
+            if (focused) {
+                Box(
+                    Modifier
+                        .width(AuraSizes.rowAccentBarWidth)
+                        .height(AuraSizes.rowAccentBarHeight)
+                        .background(colors.primary)
+                )
+                Spacer(Modifier.width(AuraSpacing.md))
+            }
+            androidx.tv.material3.Text(
+                text = if (isCurrent) "\u25B6" else index.toString(),
+                color = if (isCurrent) colors.onSecondaryContainer else TextSecondary,
+                fontSize = AuraTypography.bodySmall,
+                modifier = Modifier.width(AuraSizes.trackIndexWidth)
+            )
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.tv.material3.Text(
-                        text = "\u2665",
-                        color = if (favorite == true) colors.primary else TextSecondary,
-                        fontSize = AuraTypography.label
+                        track.name,
+                        color = if (isCurrent) colors.onSecondaryContainer else TextPrimary,
+                        fontSize = AuraTypography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    if (atmos) {
+                        Spacer(Modifier.width(AuraSpacing.xs))
+                        AtmosChip()
+                    }
                 }
-                if (onLongPress != null) {
+                if (track.artistNames.isNotBlank()) {
                     androidx.tv.material3.Text(
-                        text = "\u2022\u2022\u2022",
+                        track.artistNames,
                         color = TextSecondary,
-                        fontSize = AuraTypography.label,
-                        modifier = Modifier
-                            .clip(AuraShapes.badge)
-                            .background(AuraColors.FocusedFillSubtle)
-                            .padding(horizontal = AuraSpacing.xs, vertical = 2.dp)
+                        fontSize = AuraTypography.caption,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
+            androidx.tv.material3.Text(
+                formatDuration(track.durationMs),
+                color = TextSecondary,
+                fontSize = AuraTypography.label,
+                modifier = Modifier.padding(start = AuraSpacing.lg)
+            )
         }
+        // Trailing actions, after the track length. Always composed so the row
+        // never shifts when focus arrives or leaves.
+        Row(
+            modifier = Modifier
+                .onFocusChanged {
+                    actionsFocused = it.hasFocus
+                    // Pills share the row's focus identity so BACK restores to
+                    // THIS track — the content slot is the restore target.
+                    if (it.hasFocus) onFocused?.invoke(focusId)
+                }
+                .padding(start = AuraSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AuraSpacing.xs)
+        ) {
+            // Filled accent = liked, hollow grey = not. Interactive wherever a
+            // toggle callback exists (Library tracks); an indicator-only row
+            // keeps the long-press menu as its favourite path.
+            if (favorite != null || onToggleFavorite != null) {
+                HeartToggle(
+                    favorite = favorite == true,
+                    onClick = onToggleFavorite,
+                    interactive = onToggleFavorite != null
+                )
+            }
+            if (onLongPress != null) {
+                TrackRowOverflowButton(onClick = onLongPress)
+            }
+            if (onRemove != null) {
+                TrackRowRemoveButton(onClick = onRemove)
+            }
+        }
+    }
+}
+
+/**
+ * Trailing "more actions" pill for a track row: opens the same context menu
+ * as the row's long-press. A real focus target in the app's cursor language.
+ */
+@Composable
+private fun TrackRowOverflowButton(onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    var focused by remember { mutableStateOf(false) }
+    // Registered as the menu invoker so closing the menu returns focus here.
+    val self = remember { FocusRequester() }
+    Box(
+        Modifier
+            .focusRequester(self)
+            .clip(AuraShapes.badge)
+            .background(if (focused) colors.secondaryContainer else AuraColors.FocusedFillSubtle)
+            .border(
+                width = if (focused) AuraSizes.focusBorder else 0.dp,
+                color = if (focused) AuraColors.CursorRing else Color.Transparent,
+                shape = AuraShapes.badge
+            )
+            // House rule: the focus flag BEFORE the click target.
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClickLabel = "More actions") {
+                ContextMenuHost.lastInvoker = self
+                onClick()
+            }
+            .padding(horizontal = AuraSpacing.sm, vertical = AuraSpacing.xxs)
+    ) {
         androidx.tv.material3.Text(
-            formatDuration(track.durationMs),
-            color = TextSecondary,
-            fontSize = AuraTypography.label,
-            modifier = Modifier.padding(start = AuraSpacing.lg)
+            "\u2022\u2022\u2022",
+            color = if (focused) colors.onSecondaryContainer else TextSecondary,
+            fontSize = AuraTypography.label
         )
-        // Heart sits at the trailing edge, after the duration: filled accent =
-        // liked, hollow grey = not.
-        if (favorite != null) {
-            Spacer(Modifier.width(AuraSpacing.xs))
-            HeartToggle(
-                favorite = favorite,
-                interactive = false
+    }
+}
+
+/** Trailing remove pill for playlist/queue rows, matching the overflow pill. */
+@Composable
+private fun TrackRowRemoveButton(onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        Modifier
+            .clip(AuraShapes.badge)
+            .background(if (focused) colors.secondaryContainer else Color.Transparent)
+            .border(
+                width = if (focused) AuraSizes.focusBorder else 0.dp,
+                color = if (focused) AuraColors.CursorRing else Color.Transparent,
+                shape = AuraShapes.badge
             )
-        }
-        if (onRemove != null) {
-            androidx.compose.material3.Icon(
-                painter = androidx.compose.ui.res.painterResource(R.drawable.ic_close),
-                contentDescription = "Remove",
-                tint = TextSecondary,
-                modifier = Modifier
-                    .padding(start = AuraSpacing.md)
-                    .size(AuraSizes.iconBadge)
-                    .clickable { onRemove() }
-            )
-        }
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClickLabel = "Remove") { onClick() }
+            .padding(AuraSpacing.xs)
+    ) {
+        androidx.compose.material3.Icon(
+            painter = androidx.compose.ui.res.painterResource(R.drawable.ic_close),
+            contentDescription = null,
+            tint = if (focused) colors.onSecondaryContainer else TextSecondary,
+            modifier = Modifier.size(AuraSizes.iconBadge)
+        )
     }
 }
 

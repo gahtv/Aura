@@ -3,10 +3,13 @@
 package com.hans.aura.ui.home
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -130,13 +133,16 @@ fun HomeScreen(
     }
     val itemsById = remember(state) {
         buildMap {
+            // quickAccess included: a focused quick tile must drive the hero
+            // preview exactly like a focused shelf card does.
             listOf(
                 state.recentlyPlayed,
                 state.recentArtists,
                 state.recentAlbums,
                 state.atmosAlbums,
                 state.artists,
-                state.playlists
+                state.playlists,
+                state.quickAccess
             ).forEach { list ->
                 list?.forEach { put(it.id, it) }
             }
@@ -154,6 +160,10 @@ fun HomeScreen(
     val motionWindow by remember(listState) {
         derivedStateOf { listMotionWindow(listState.layoutInfo) }
     }
+    // The hero showcases only while quick access holds focus (or nothing has
+    // been focused yet). Selecting the home-screen rows collapses it upward
+    // and fades it out; highlighting any quick tile brings it right back.
+    val heroShown = focusedShelfKey == null || focusedShelfKey == "quickAccess"
 
     fun trackMenu(track: MediaItem) {
         if (track !is Track) return
@@ -191,6 +201,7 @@ fun HomeScreen(
     fun onItemFocused(id: String, shelf: String) {
         focusedCardId = id
         focusedShelfKey = shelf
+        // Live preview: every highlighted quick tile re-targets the hero.
         itemsById[id.removePrefix("qa:")]?.let { previewItem = it }
     }
 
@@ -227,17 +238,6 @@ fun HomeScreen(
                         onRetry = { viewModel.retry() },
                         modifier = Modifier.height(200.dp)
                     )
-                }
-            }
-
-            if (activePreview != null) {
-                homeItem(key = "hero", contentType = "hero") { _, _ ->
-                    HomeLivePreviewHero(
-                        item = activePreview,
-                        serverUrl = serverUrl,
-                        isAtmos = activePreview.id in atmosAlbumIds || (activePreview as? Track)?.albumId in atmosAlbumIds
-                    )
-                    Spacer(Modifier.height(AuraSpacing.md))
                 }
             }
 
@@ -368,6 +368,36 @@ fun HomeScreen(
                     (!savedCardAvailable && !state.loading)),
             cancelled = !state.loading && quickAccessItems.isEmpty() &&
                 itemsById.values.none { keepForHome(it) })
+        // Hero, pinned to the very top while quick access holds focus. A
+        // structural pin, not scroll choreography: inside the LazyColumn it
+        // fought bring-into-view races and could end up mid-viewport. When the
+        // user selects the home-screen rows it collapses upward (reads as
+        // scrolling away with the grid) and the rows get the full height;
+        // highlighting any quick tile expands it right back. No scroll effect
+        // is needed: the grid is the list's first item, so bring-into-view
+        // lands the list at the top by itself.
+        AnimatedVisibility(
+            visible = heroShown,
+            enter = expandVertically(
+                animationSpec = AuraMotion.scheme.defaultSpatialSpec(),
+                expandFrom = Alignment.Top
+            ) + fadeIn(AuraMotion.scheme.defaultEffectsSpec()),
+            exit = shrinkVertically(
+                animationSpec = AuraMotion.scheme.defaultSpatialSpec(),
+                shrinkTowards = Alignment.Top
+            ) + fadeOut(AuraMotion.scheme.defaultEffectsSpec())
+        ) {
+            Column {
+                if (activePreview != null) {
+                    HomeLivePreviewHero(
+                        item = activePreview,
+                        serverUrl = serverUrl,
+                        isAtmos = activePreview.id in atmosAlbumIds || (activePreview as? Track)?.albumId in atmosAlbumIds
+                    )
+                    Spacer(Modifier.height(AuraSpacing.md))
+                }
+            }
+        }
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             itemsIndexed(rows, key = { _, row -> row.key }, contentType = { _, row -> row.contentType }) { index, row ->
                 row.content(this, index, keeperForShelf(row.key))
@@ -434,7 +464,11 @@ private fun HomeLivePreviewHero(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = AuraSpacing.screenHorizontal)
-                .height(184.dp)
+                // 200dp fits the worst case — eyebrow + DD+ ATMOS badge, a
+                // TWO-line headlineLarge title and the artist line (~188dp) —
+                // with margin. At 184dp a long title pushed the "ALBUM · 2025"
+                // row out through the top of the banner.
+                .height(200.dp)
                 .clip(AuraShapes.cardHero)
                 .background(Brush.horizontalGradient(listOf(wash, colors.surface)))
                 .border(AuraSizes.hairline, AuraColors.FocusedFillSubtle, AuraShapes.cardHero)
@@ -611,7 +645,7 @@ private fun QuickAccessTile(
                 else Modifier.border(AuraSizes.hairline, AuraColors.FocusedFillSubtle, AuraShapes.quickTile)
             )
             .focusRequester(focusKeeper.requesterFor("qa:${item.id}"))
-            .contextMenuKeys(onLongPress)
+            .contextMenuKeys(onLongPress, focusKeeper.requesterFor("qa:${item.id}"))
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocused()

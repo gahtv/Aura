@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -76,16 +75,25 @@ data class ContextMenuSpec(
 object ContextMenuHost {
     var current by mutableStateOf<ContextMenuSpec?>(null)
     var pickerTracks by mutableStateOf<List<Track>?>(null)
+    // The focusable that long-pressed the menu open (its OWN requester, the
+    // row/card focusKeeper entry). Dismissal hands focus straight back to it:
+    // cleared focus used to fall to the nav rail, which expands on focus
+    // (user-reported now that the rail stays pinned while overlays are up).
+    var lastInvoker: FocusRequester? = null
+    // The menu's invoker, carried over when an action replaces the menu with
+    // the playlist picker: closing the picker hands focus back to it too.
+    var pickerInvoker: FocusRequester? = null
 
     fun open(spec: ContextMenuSpec) {
         android.util.Log.d("AURA_MENU", "host.open \"${spec.title}\" actions=${spec.actions.map { it.label }}")
         current = spec
     }
-    fun openPicker(tracks: List<Track>) {
+    fun openPicker(tracks: List<Track>, invoker: FocusRequester? = null) {
         android.util.Log.d("AURA_MENU", "picker open for ${tracks.size} track(s): ${tracks.map { it.name }}")
+        pickerInvoker = invoker
         pickerTracks = tracks
     }
-    fun close() { current = null; pickerTracks = null }
+    fun close() { current = null; pickerTracks = null; lastInvoker = null; pickerInvoker = null }
 }
 
 /**
@@ -95,10 +103,20 @@ object ContextMenuHost {
  * without emitting repeats. Plain presses pass through to click handling; the
  * release after a hold is consumed so the menu doesn't ALSO trigger the click.
  */
-fun Modifier.contextMenuKeys(onLongPress: (() -> Unit)?): Modifier = composed {
+fun Modifier.contextMenuKeys(
+    onLongPress: (() -> Unit)?,
+    // The long-pressed node's own focus requester (its focusKeeper entry).
+    // Recorded when the long-press fires so menu dismissal can hand focus
+    // straight back; null for non-menu long-presses (e.g. remove chips).
+    invoker: FocusRequester? = null
+): Modifier = composed {
     var fired by remember { mutableStateOf(false) }
     var holdJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    fun fire() {
+        if (invoker != null) ContextMenuHost.lastInvoker = invoker
+        onLongPress?.invoke()
+    }
     onPreviewKeyEvent { event ->
         if (onLongPress == null) return@onPreviewKeyEvent false
         val k = event.key
@@ -113,7 +131,7 @@ fun Modifier.contextMenuKeys(onLongPress: (() -> Unit)?): Modifier = composed {
                     holdJob = scope.launch {
                         kotlinx.coroutines.delay(500)
                         fired = true
-                        onLongPress?.invoke()
+                        fire()
                     }
                     false
                 }
@@ -121,7 +139,7 @@ fun Modifier.contextMenuKeys(onLongPress: (() -> Unit)?): Modifier = composed {
                     // Real remote hold: repeats confirm the hold immediately.
                     holdJob?.cancel()
                     fired = true
-                    onLongPress?.invoke()
+                    fire()
                     true
                 }
                 else -> true // swallow further repeats while the menu is up
@@ -142,7 +160,6 @@ fun Modifier.contextMenuKeys(onLongPress: (() -> Unit)?): Modifier = composed {
 @Composable
 fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
     BackHandler { onDismiss() }
-    OverlayVisibility.dialogOpen = true
     val firstFocus = remember { FocusRequester() }
     // The hold that opened the menu may still be in progress: its release (and
     // any remaining key repeats) would land on the focused first action and
@@ -164,7 +181,6 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
     LaunchedEffect(Unit) {
         firstFocus.requestFocusOnFrame()
     }
-    DisposableEffect(Unit) { onDispose { OverlayVisibility.dialogOpen = false } }
 
     Box(Modifier.fillMaxSize().background(AuraColors.Scrim).then(swallowOk)) {
         Column(
@@ -209,20 +225,41 @@ fun ContextMenuOverlay(spec: ContextMenuSpec, onDismiss: () -> Unit) {
  * AppRoot-level hosts: the long-press menu itself and the playlist picker it
  * can open ("Add to playlist" reuses the existing picker dialog). Rendered as
  * the last child of the root Box so they draw over everything, incl. the
- * now-playing pill in the top bar.
+ * now-playing pill in the top bar. Closing either hands focus back to the
+ * node that long-pressed the menu open, so cleared focus never falls through
+ * to the nav rail — and a screen pushed from a menu action (e.g. "View
+ * artist") sees the same entry state as a normal push from a focused card.
  */
 @Composable
 fun ContextMenuHosts(app: AuraApp) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    fun restoreInvoker(invoker: FocusRequester?) {
+        if (invoker == null) return
+        // Claim the invoker BEFORE the overlay leaves composition. A direct
+        // grant bypasses the menu's exit trap, so the disposal focus search
+        // finds an already-focused node and never falls through to the rail
+        // — which expands on focus, even for a single frame.
+        val granted = try { invoker.requestFocus() } catch (_: IllegalStateException) { false }
+        if (!granted) scope.launch { invoker.requestFocusOnFrame() }
+    }
     ContextMenuHost.current?.let { spec ->
-        ContextMenuOverlay(spec) { ContextMenuHost.current = null }
+        ContextMenuOverlay(spec) {
+            val invoker = ContextMenuHost.lastInvoker
+            ContextMenuHost.lastInvoker = null
+            restoreInvoker(invoker)
+            ContextMenuHost.current = null
+        }
     }
     ContextMenuHost.pickerTracks?.let { tracks ->
-        OverlayVisibility.dialogOpen = true
-        DisposableEffect(Unit) { onDispose { OverlayVisibility.dialogOpen = false } }
         com.hans.aura.ui.playlist.PlaylistPickerDialog(
             app = app,
             tracksToAdd = tracks,
-            onDismiss = { ContextMenuHost.pickerTracks = null }
+            onDismiss = {
+                val invoker = ContextMenuHost.pickerInvoker
+                ContextMenuHost.pickerInvoker = null
+                restoreInvoker(invoker)
+                ContextMenuHost.pickerTracks = null
+            }
         )
     }
 }

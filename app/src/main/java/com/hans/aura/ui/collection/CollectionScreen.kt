@@ -141,6 +141,7 @@ private fun CollectionContent(
     var focusedTrackId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val atmosFiltered = shown is Album && com.hans.aura.data.AtmosFilter.on
     val shownTracks = if (atmosFiltered) tracks?.let { it.filter { track -> com.hans.aura.data.AtmosFilter.keep(track) } } else tracks
+    val entryOccurrences = remember(shownTracks) { shownTracks?.let(::entryOccurrences) }
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedTrackId, focusKeeper,
         ready = !shownTracks.isNullOrEmpty(),
         cancelled = shownTracks.isNullOrEmpty() && (shownTracks != null || state.error != null))
@@ -381,6 +382,9 @@ private fun CollectionContent(
                                 return@itemsIndexed
                             }
                             val (i, number, track) = row as TracklistRow.Track
+                            // A playlist can repeat a song: each entry gets its
+                            // own focus id so focus returns to the exact entry.
+                            val occurrence = entryOccurrences?.getOrNull(i) ?: 0
                             // A removal in flight owns the list until its
                             // refresh lands: no further occurrence may be
                             // resolved against the pre-edit order.
@@ -389,7 +393,7 @@ private fun CollectionContent(
                                     {
                                         viewModel.removeFromPlaylist(
                                             trackId = track.id,
-                                            occurrence = shownTracks.take(i).count { it.id == track.id }
+                                            occurrence = occurrence
                                         )
                                     }
                                 } else null
@@ -401,6 +405,7 @@ private fun CollectionContent(
                                 onClick = { player.playQueue(shownTracks, i, resume = true) },
                                 focusKeeper = focusKeeper,
                                 onFocused = { focusedTrackId = it },
+                                focusId = trackRowFocusId(track.id, occurrence),
                                 onRemove = removeFromPlaylist,
                                 onLongPress = {
                                     com.hans.aura.ui.common.ContextMenuHost.open(
@@ -473,6 +478,16 @@ private fun DiscHeader(number: Int, first: Boolean) {
         )
     }
 }
+
+/** For each entry, how many earlier entries share its track id (one pass). */
+internal fun entryOccurrences(tracks: List<Track>): IntArray {
+    val seen = HashMap<String, Int>()
+    return IntArray(tracks.size) { i -> seen.merge(tracks[i].id, 1, Int::plus)!! - 1 }
+}
+
+/** First entry keeps the plain track id; later repeats of it get their own. */
+internal fun trackRowFocusId(trackId: String, occurrence: Int): String =
+    if (occurrence == 0) trackId else "$trackId#$occurrence"
 
 internal fun subtitle(collection: CollectionItem, tracks: List<Track>?): String {
     val noun = if (collection is Playlist) "track" else "song"

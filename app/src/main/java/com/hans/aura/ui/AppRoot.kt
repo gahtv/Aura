@@ -42,7 +42,6 @@ import com.hans.aura.ui.collection.CollectionScreen
 import com.hans.aura.ui.common.ContextMenuHosts
 import com.hans.aura.ui.common.FocusHandoffHost
 import com.hans.aura.ui.common.NavRequests
-import com.hans.aura.ui.common.OverlayVisibility
 import com.hans.aura.ui.common.LocalArtworkTransition
 import com.hans.aura.ui.common.LocalArtworkVisibility
 import com.hans.aura.ui.common.LocalDestinationActive
@@ -223,9 +222,12 @@ fun AppRoot() {
     val tabStateHolder = rememberSaveableStateHolder()
 
     FocusHandoffHost(Modifier.fillMaxSize().background(Canvas)) {
-        val showRail = nav.top != Screen.NowPlaying && !OverlayVisibility.dialogOpen
+        // The rail is pinned everywhere except Now Playing (user decision):
+        // overlays no longer hide it — their own focus traps keep D-pad focus
+        // inside the dialog, so suppressing the rail was redundant.
+        val showRail = nav.top != Screen.NowPlaying
         fun destinationInset(screen: Screen) =
-            if (screen == Screen.NowPlaying || OverlayVisibility.dialogOpen) 0.dp else collapsedRailWidth
+            if (screen == Screen.NowPlaying) 0.dp else collapsedRailWidth
         NavigationRailLayout(
             showRail = showRail,
             insetContent = false,

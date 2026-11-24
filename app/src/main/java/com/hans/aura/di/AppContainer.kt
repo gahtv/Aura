@@ -18,6 +18,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 /**
  * Scope for mutations a screen starts but must not own.
@@ -32,14 +35,72 @@ import kotlinx.coroutines.cancel
  * One scope per signed-in session: [reset] cancels everything still in flight
  * and starts a fresh scope, so a mutation started for the old profile can
  * never land after a profile switch or sign-out.
+ *
+ * It also publishes playlist edit lifecycles. A playlist reopened while an
+ * earlier edit is still in flight must not trust `LibraryCache` (the eviction
+ * has not happened yet), and the screen showing the old list must refetch once
+ * the edit completes. [beginPlaylistEdit] / [finishPlaylistEdit] track that,
+ * [playlistEditPending] answers the reopen question synchronously, and
+ * [observePlaylistChanges] is the completion stream.
  */
 class SessionMutations {
     private val lock = Any()
     private var supervisor = SupervisorJob()
     private var current = CoroutineScope(supervisor + Dispatchers.Default)
 
+    /**
+     * Session generation, bumped by [reset]. Tokens handed out by
+     * [beginPlaylistEdit] carry the generation they started in, so a
+     * cancelled old-profile mutation whose `finally` runs late can never
+     * clear a new session's pending entry or publish a change event into it.
+     */
+    private var generation = 0L
+
+    /** In-flight edit count per playlist id. */
+    private val pending = mutableMapOf<String, Int>()
+
+    private val _playlistChanges = MutableSharedFlow<String>(extraBufferCapacity = 16)
+
     /** Scope owned by the current session; cancelled by [reset]. */
     val scope: CoroutineScope get() = synchronized(lock) { current }
+
+    /**
+     * Marks an edit of [playlistId] as in flight and returns the token that
+     * [finishPlaylistEdit] must pass back. Call before launching the write.
+     */
+    fun beginPlaylistEdit(playlistId: String): Long = synchronized(lock) {
+        pending[playlistId] = (pending[playlistId] ?: 0) + 1
+        generation
+    }
+
+    /**
+     * Ends the edit started with [token]. The playlist change event is
+     * published once the last overlapping edit completes; a token from an
+     * earlier session (or an unknown/cleared entry) is ignored.
+     */
+    fun finishPlaylistEdit(playlistId: String, token: Long) {
+        var completed = false
+        synchronized(lock) {
+            val remaining = pending[playlistId]
+            if (token == generation && remaining != null) {
+                if (remaining > 1) {
+                    pending[playlistId] = remaining - 1
+                } else {
+                    pending.remove(playlistId)
+                    completed = true
+                }
+            }
+        }
+        if (completed) _playlistChanges.tryEmit(playlistId)
+    }
+
+    /** True while an edit of [playlistId] is still in flight in this session. */
+    fun playlistEditPending(playlistId: String): Boolean = synchronized(lock) {
+        (pending[playlistId] ?: 0) > 0
+    }
+
+    /** Playlist ids whose last in-flight edit completed (no replay, no stale sessions). */
+    fun observePlaylistChanges(): Flow<String> = _playlistChanges.asSharedFlow()
 
     /** Cancels in-flight mutations and starts a fresh session scope. */
     fun reset() {
@@ -47,6 +108,11 @@ class SessionMutations {
             supervisor.cancel()
             supervisor = SupervisorJob()
             current = CoroutineScope(supervisor + Dispatchers.Default)
+            // Pending edits belong to the old session; their late finish()
+            // calls now fail the generation check instead of notifying the
+            // new session.
+            generation++
+            pending.clear()
         }
     }
 }

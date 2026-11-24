@@ -41,6 +41,24 @@ class MediaRepository(
 
     private fun api(): JellyfinApi = jellyfin.api
 
+    /**
+     * Deletes exactly the playlist entry [entryId].
+     *
+     * Deliberately no pre-read: the entry id came from the row the user
+     * clicked, and resolving it server-side is the whole point. If the entry
+     * is already gone the server rejects the write and nothing else is
+     * touched — unlike the occurrence path, a stale caller can never delete a
+     * different copy of the same track.
+     */
+    suspend fun removePlaylistEntry(playlistId: String, entryId: String) = withContext(Dispatchers.IO) {
+        require(playlistId.isNotBlank()) { "Missing playlist id" }
+        require(entryId.isNotBlank()) { "Missing playlist entry id" }
+        val response = api().removeFromPlaylist(playlistId, entryId)
+        if (!response.isSuccessful) throw HttpException(response)
+        LibraryCache.evict("col:$playlistId")
+        LibraryCache.clearDiskLists()
+    }
+
     suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) = withContext(Dispatchers.IO) {
         require(itemId.isNotBlank()) { "Missing playlist item id" }
         require(occurrence >= 0) { "Invalid playlist occurrence" }

@@ -360,7 +360,13 @@ private fun CollectionContent(
                             }
                             val (i, number, track) = row as TracklistRow.Track
                             val removeFromPlaylist: (() -> Unit)? = if (collection is Playlist) {
-                                { viewModel.removeFromPlaylist(track.id, shownTracks.take(i).count { it.id == track.id }) }
+                                {
+                                    viewModel.removeFromPlaylist(
+                                        trackId = track.id,
+                                        occurrence = shownTracks.take(i).count { it.id == track.id },
+                                        playlistItemId = track.playlistItemId
+                                    )
+                                }
                             } else null
                             TrackRow(
                                 index = number,

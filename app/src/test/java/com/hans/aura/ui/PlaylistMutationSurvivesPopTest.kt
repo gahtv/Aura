@@ -15,9 +15,9 @@ import com.hans.aura.ui.collection.CollectionViewModel
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -136,28 +136,59 @@ class PlaylistMutationSurvivesPopTest {
     /**
      * A session change (profile switch / sign-out) is the one thing that is
      * allowed to stop an in-flight mutation: reset() cancels the old scope and
-     * hands out a fresh one, so the stale profile can never commit.
+     * hands out a fresh one, so the stale profile can never commit. The write
+     * is suspended on a latch rather than a timer, so the cancellation point
+     * is the same one a real repository call hits.
      */
     @Test
-    fun `reset cancels the in-flight mutation scope and replaces it`() = runBlocking {
+    fun `reset cancels a latch suspended mutation and leaves a working scope`() = runBlocking {
         val mutations = app.container.mutations
         val oldScope = mutations.scope
         val started = CountDownLatch(1)
+        val suspended = CountDownLatch(1)
+        val release = CountDownLatch(1)
         val finished = AtomicBoolean(false)
+        val token = mutations.beginPlaylistEdit("playlist")
+        assertTrue(mutations.playlistEditPending("playlist"))
         val job = oldScope.launch {
             started.countDown()
-            delay(60_000)
+            // A latch stands in for the server round-trip: cancellation must
+            // win while the coroutine is genuinely suspended in the write.
+            withContext(Dispatchers.IO) {
+                suspended.countDown()
+                release.await(10, TimeUnit.SECONDS)
+            }
             finished.set(true)
         }
         assertTrue("mutation must start", started.await(5, TimeUnit.SECONDS))
+        assertTrue("mutation must suspend in the write", suspended.await(5, TimeUnit.SECONDS))
 
         mutations.reset()
 
+        // Release the fake server only after reset: the continuation still
+        // must not resume into the old profile's tail.
+        release.countDown()
         withTimeout(5_000) { job.join() }
         assertTrue("reset must cancel the old scope's job", job.isCancelled)
         assertFalse("a cancelled mutation must not run its tail", finished.get())
         assertFalse(oldScope.isActive)
         assertNotSame(oldScope, mutations.scope)
         assertTrue(mutations.scope.isActive)
+        assertFalse("reset must clear pending edits", mutations.playlistEditPending("playlist"))
+
+        // A stale token from the old session must not touch the new one.
+        val newToken = mutations.beginPlaylistEdit("playlist")
+        mutations.finishPlaylistEdit("playlist", token)
+        assertTrue(
+            "an old-session finish must not clear the new session's pending edit",
+            mutations.playlistEditPending("playlist")
+        )
+        mutations.finishPlaylistEdit("playlist", newToken)
+        assertFalse(mutations.playlistEditPending("playlist"))
+
+        // The replacement scope is not just alive, it runs work.
+        val ran = CompletableDeferred<Unit>()
+        mutations.scope.launch { ran.complete(Unit) }
+        withTimeout(5_000) { ran.await() }
     }
 }

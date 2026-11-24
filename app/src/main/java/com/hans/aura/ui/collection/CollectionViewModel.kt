@@ -15,6 +15,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -43,11 +45,25 @@ class CollectionViewModel(
     private var loadJob: Job? = null
 
     init {
+        // Subscribe before deciding whether to trust the cache: a playlist
+        // reopened while an earlier edit is still in flight must catch that
+        // edit's completion even if it lands right after this point.
+        if (collection is Playlist) observePlaylistChanges()
         viewModelScope.launch {
-            val tracks = SourceQueries.cachedTracks(DetailPresenter.collectionCacheKey(itemId))
-            _state.update { it.copy(tracks = tracks) }
+            val pendingEdit = collection is Playlist &&
+                app.container.mutations.playlistEditPending(itemId)
+            // While an edit is pending the cache still holds the pre-edit
+            // list (eviction happens only after the server applied it).
+            // Seeding it would let the user act on rows that no longer map to
+            // the server list, so show Loading and force a fetch instead.
+            val cached = if (pendingEdit) {
+                null
+            } else {
+                SourceQueries.cachedTracks(DetailPresenter.collectionCacheKey(itemId))
+            }
+            _state.update { it.copy(tracks = cached) }
             if (collection is Playlist) scanAtmos()
-            load(force = false)
+            load(force = pendingEdit)
         }
     }
 
@@ -55,18 +71,53 @@ class CollectionViewModel(
 
     fun refresh() = load(force = true)
 
-    fun removeFromPlaylist(trackId: String, occurrence: Int) {
+    fun removeFromPlaylist(trackId: String, occurrence: Int, playlistItemId: String? = null) {
+        val mutations = app.container.mutations
+        // Target the exact entry the user clicked when the row carries one:
+        // an ordinal computed from a stale list could resolve to a different
+        // duplicate server-side. The entry-id path fails harmlessly if the
+        // entry is already gone.
+        val token = mutations.beginPlaylistEdit(itemId)
         // Session scope, not viewModelScope: popping this playlist's NavEntry
         // clears the ViewModelStore and cancelling the write (or the cache
         // eviction after the server already applied it) leaves a stale list.
         // The state updates are harmless once cleared; load() is a no-op then.
-        app.container.mutations.scope.launch {
-            runCatching { SourceQueries.removeFromPlaylist(itemId, trackId, occurrence) }
-                .onSuccess { load(force = true) }
-                .onFailure {
-                    Log.w(TAG, "remove item=$trackId occurrence=$occurrence from playlist=$itemId failed: ${it.message}")
-                    _state.update { state -> state.copy(error = "Couldn't remove from playlist: ${it.message}") }
+        mutations.scope.launch {
+            try {
+                runCatching {
+                    SourceQueries.removeFromPlaylist(
+                        playlistId = itemId,
+                        itemId = trackId,
+                        occurrence = occurrence,
+                        entryId = playlistItemId
+                    )
                 }
+                    .onSuccess { load(force = true) }
+                    .onFailure {
+                        Log.w(
+                            TAG,
+                            "remove item=$trackId occurrence=$occurrence entry=$playlistItemId " +
+                                "from playlist=$itemId failed: ${it.message}"
+                        )
+                        _state.update { state ->
+                            state.copy(error = "Couldn't remove from playlist: ${it.message}")
+                        }
+                    }
+            } finally {
+                // Even a cancelled (old-profile) mutation must end its
+                // pending marker; reset() has already invalidated its token in
+                // that case, so this cannot notify the new session.
+                mutations.finishPlaylistEdit(itemId, token)
+            }
+        }
+    }
+
+    /** Refetches this playlist whenever a pending edit of it completes. */
+    private fun observePlaylistChanges() {
+        viewModelScope.launch {
+            app.container.mutations.observePlaylistChanges()
+                .filter { it == itemId }
+                .collect { load(force = true) }
         }
     }
 

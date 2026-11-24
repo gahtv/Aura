@@ -128,16 +128,18 @@ private fun CollectionContent(
     val currentId by player.current.collectAsState()
     val audioPlaying by player.isPlaying.collectAsState()
     val motionPlaying = audioPlaying || currentId == null
-    val atmosAlbumIds = if (collection is Playlist) state.atmosAlbumIds else emptySet()
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-
+    // A restored back-stack entry only carries id + name + kind; the ViewModel
+    // re-hydrates the full item, so type/overview/art checks follow [shown]
+    // (the loaded item once it arrives) rather than the stub.
     val shown = state.fullItem ?: collection
+    val atmosAlbumIds = if (shown is Playlist) state.atmosAlbumIds else emptySet()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     val contentFocus = remember { FocusRequester() }
     val playButtonFocus = remember { FocusRequester() }
     val focusKeeper = remember { com.hans.aura.ui.common.FocusKeeper() }
     var focusedTrackId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    val atmosFiltered = collection is Album && com.hans.aura.data.AtmosFilter.on
+    val atmosFiltered = shown is Album && com.hans.aura.data.AtmosFilter.on
     val shownTracks = if (atmosFiltered) tracks?.let { it.filter { track -> com.hans.aura.data.AtmosFilter.keep(track) } } else tracks
     com.hans.aura.ui.common.RestoreFocusOnBack(focusTick, contentFocus, focusedTrackId, focusKeeper,
         ready = !shownTracks.isNullOrEmpty(),
@@ -214,9 +216,9 @@ private fun CollectionContent(
                     Spacer(Modifier.height(AuraSpacing.md))
                 }
                 androidx.tv.material3.Text(
-                    when (collection) {
+                    when (shown) {
                         is Playlist -> "Playlist"
-                        is Album -> collection.year?.toString() ?: "Album"
+                        is Album -> shown.year?.toString() ?: "Album"
                         is com.hans.aura.model.Genre -> "Album"
                     },
                     fontSize = 13.sp,
@@ -233,7 +235,7 @@ private fun CollectionContent(
                 Spacer(Modifier.height(AuraSpacing.xs))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.tv.material3.Text(
-                        subtitle(collection, tracks),
+                        subtitle(shown, tracks),
                         fontSize = 14.sp,
                         color = colors.onSurfaceVariant,
                         modifier = Modifier.weight(1f, fill = false)
@@ -282,7 +284,7 @@ private fun CollectionContent(
                             label = "Shuffle",
                             onClick = { tracks?.let { player.playQueue(it.shuffled(), 0, resume = false) } }
                         ))
-                        if (collection !is Playlist) {
+                        if (shown !is Playlist) {
                             add(ConnectedAction(label = "Radio", onClick = {
                                 scope.launch {
                                     Mixes.playMix(
@@ -360,7 +362,7 @@ private fun CollectionContent(
                             .focusProperties { left = playButtonFocus },
                         contentPadding = PaddingValues(bottom = AuraSizes.bottomBarClearance)
                     ) {
-                        val multiDisc = collection is Album && tracks.orEmpty().spansSeveralDiscs()
+                        val multiDisc = shown is Album && tracks.orEmpty().spansSeveralDiscs()
                         val rows = tracklistRows(shownTracks, multiDisc)
                         itemsIndexed(
                             items = rows,
@@ -383,7 +385,7 @@ private fun CollectionContent(
                             // refresh lands: no further occurrence may be
                             // resolved against the pre-edit order.
                             val removeFromPlaylist: (() -> Unit)? =
-                                if (collection is Playlist && !state.editInFlight) {
+                                if (shown is Playlist && !state.editInFlight) {
                                     {
                                         viewModel.removeFromPlaylist(
                                             trackId = track.id,
@@ -412,7 +414,7 @@ private fun CollectionContent(
                                             // edit is in flight that list is
                                             // already changing, so offer no
                                             // moves until the refresh lands.
-                                            playlistMove = if (collection is Playlist && !state.editInFlight) {
+                                            playlistMove = if (shown is Playlist && !state.editInFlight) {
                                                 com.hans.aura.ui.common.ContextMenus.PlaylistMove(
                                                     playlistId = collection.id,
                                                     itemId = track.id,
@@ -434,8 +436,8 @@ private fun CollectionContent(
         val shownBio = bio
         if (showBio && shownBio != null) {
             com.hans.aura.ui.common.BioDialog(
-                title = collection.name,
-                subtitle = (collection as? Album)?.albumArtist,
+                title = shown.name,
+                subtitle = (shown as? Album)?.albumArtist,
                 text = shownBio,
                 onDismiss = { showBio = false }
             )

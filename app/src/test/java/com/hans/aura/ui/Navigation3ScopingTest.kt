@@ -8,6 +8,7 @@ import androidx.compose.ui.test.ComposeUiTestConfig
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -19,8 +20,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.hans.aura.model.Album
+import com.hans.aura.model.Artwork
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
+import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import androidx.test.core.app.ApplicationProvider
@@ -39,6 +44,8 @@ import com.hans.aura.playback.PlaybackService
 import com.hans.aura.ui.nav.NavSpec
 import com.hans.aura.ui.nav.NavState
 import com.hans.aura.ui.nav.Screen
+import com.hans.aura.ui.nav.StackEntry
+import com.hans.aura.ui.nav.rememberNavState
 import com.hans.aura.ui.theme.AuraTheme
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -209,6 +216,76 @@ class Navigation3ScopingTest {
         assertTrue(nav.top is Screen.Collection)
         nav.back()
         assertEquals(Screen.Albums, nav.top)
+    }
+
+    // ---------------------------------------------------------------------
+    // Step 4: process-death restore.
+    // ---------------------------------------------------------------------
+
+    /**
+     * The back stack is persisted through `rememberNavBackStack`. Restoring
+     * saved instance state (what happens after the system kills the app) must
+     * bring the exact entries - ids included - back, keep duplicate pushes
+     * distinct, and continue new entry ids above the restored maximum.
+     */
+    @Test
+    fun backStackSurvivesProcessDeathWithSlimItemKeys() {
+        val restoration = StateRestorationTester(compose)
+        var nav: NavState? = null
+        restoration.setContent {
+            AuraTheme {
+                nav = rememberNavState()
+                androidx.compose.foundation.layout.Column {
+                    androidx.tv.material3.Text(
+                        "stack=" + nav!!.stack.joinToString(">") { NavSpec.key(it) }
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        val albumWithArt = Album(
+            id = "a",
+            name = "Album A",
+            artwork = Artwork(itemId = "a", tag = "tag-a")
+        )
+        compose.runOnIdle {
+            nav!!.push(Screen.Collection(albumWithArt))
+            nav!!.push(Screen.Artist(FixturesArtistX))
+            nav!!.push(Screen.Collection(albumWithArt))
+        }
+        waitForText("stack=home>col:a>artist:x>col:a")
+        val idsBefore = compose.runOnIdle { nav!!.entries.map { it.id } }
+        assertEquals(4, idsBefore.distinct().size)
+
+        restoration.emulateSavedInstanceStateRestore()
+        waitForText("stack=home>col:a>artist:x>col:a")
+        compose.runOnIdle {
+            val restored = requireNotNull(nav)
+            assertEquals(idsBefore, restored.entries.map { it.id })
+            // Only id + name + kind are saved; the full item is re-hydrated by
+            // the destination ViewModel after a restore.
+            val collection = restored.entries.last().screen as Screen.Collection
+            assertEquals("Album A", collection.item.name)
+            assertTrue(collection.item.artwork == null)
+
+            restored.push(Screen.Collection(Album(id = "b", name = "Album B")))
+            assertEquals(idsBefore.max() + 1, restored.entries.last().id)
+        }
+        waitForText("stack=home>col:a>artist:x>col:a>col:b")
+    }
+
+    /** A restored stack resumes ids above the highest id it brought back. */
+    @Test
+    fun restoredBackingListContinuesEntryIdsAboveTheRestoredMaximum() {
+        val nav = NavState(
+            NavBackStack<NavKey>(
+                StackEntry(4L, Screen.Home),
+                StackEntry(9L, Screen.Collection(FixturesAlbumA))
+            )
+        )
+        nav.push(Screen.Artist(FixturesArtistX))
+        assertEquals(10L, nav.topEntry.id)
     }
 
     // ---------------------------------------------------------------------

@@ -3,6 +3,10 @@
 -keep interface com.hans.aura.data.JellyfinApi { *; }
 -keep class com.hans.aura.data.** { *; }
 
+# Back-stack entries are persisted by class name (rememberNavBackStack uses a
+# reflective NavKey serializer), so keep the nav package intact.
+-keep class com.hans.aura.ui.nav.** { *; }
+
 # kotlinx.serialization generated serializers
 -keep,includedescriptorclasses class com.hans.aura.**$$serializer { *; }
 -keepclassmembers class com.hans.aura.** {

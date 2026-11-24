@@ -35,6 +35,9 @@ import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
 import com.hans.aura.model.Playlist
 import com.hans.aura.ui.collection.CollectionScreen
+import com.hans.aura.ui.collection.entryOccurrences
+import java.util.concurrent.CopyOnWriteArrayList
+import org.junit.Assert.assertEquals
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -57,6 +60,7 @@ class ContextMenuFocusReturnTest {
     @After
     fun tearDown() {
         ContextMenuHost.close()
+        app.container.mutations.reset()
         MusicSources.reset()
         app.jellyfin.auth.clear()
     }
@@ -101,18 +105,7 @@ class ContextMenuFocusReturnTest {
     fun playlistScreenRestoresTheExactRepeatedEntry() {
         app.jellyfin.auth.save(Session("http://127.0.0.1:9/", "user", "test", "token", "device"))
         shadowOf(app).declareComponentUnbindable(ComponentName(app, PlaybackService::class.java))
-        val base = requireNotNull(MusicSources.current)
-        MusicSources.install(object : MusicSource by base {
-            override val id = "repeated-entry-focus-test"
-            override suspend fun cached(prefix: String): List<JellyfinItem>? = null
-            override fun cache(prefix: String, items: List<JellyfinItem>) {}
-            override suspend fun item(itemId: String): JellyfinItem? = null
-            override suspend fun albumBio(itemId: String): String? = null
-            override suspend fun atmosAlbumIds(): Set<String> = emptySet()
-            override suspend fun playlistItems(playlistId: String) = listOf("A", "B", "A").map {
-                JellyfinItem(id = it, name = "Song $it", type = "Audio", playlistItemId = it)
-            }
-        })
+        installPlaylist(listOf("A", "B", "A"))
         val player = PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session }
         var focusTick by mutableIntStateOf(0)
         compose.setContent {
@@ -152,6 +145,66 @@ class ContextMenuFocusReturnTest {
         compose.mainClock.advanceTimeBy(100)
         compose.onAllNodesWithText("Song A")[0].assertIsFocused()
         compose.onAllNodesWithText("Song A")[1].assertIsNotFocused()
+    }
+
+    @Test
+    fun playlistScreenRemovesTheClickedRepeatedEntry() {
+        app.jellyfin.auth.save(Session("http://127.0.0.1:9/", "user", "test", "token", "device"))
+        shadowOf(app).declareComponentUnbindable(ComponentName(app, PlaybackService::class.java))
+        val removals = installPlaylist(listOf("A", "B", "A", "C", "A"))
+        val player = PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session }
+        compose.setContent {
+            AuraTheme {
+                Box {
+                    CollectionScreen(
+                        app = app,
+                        collection = Playlist(id = "p", name = "Mix"),
+                        player = player,
+                        onBack = {}
+                    )
+                    ContextMenuHosts(app)
+                }
+            }
+        }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Song A").fetchSemanticsNodes().size == 3 }
+
+        // Middle copy of A: row 3, second occurrence.
+        val middleA = compose.onAllNodesWithText("Song A")[1]
+        middleA.performSemanticsAction(SemanticsActions.RequestFocus)
+        middleA.performKeyInput { keyDown(Key.DirectionCenter) }
+        compose.mainClock.advanceTimeBy(600)
+        middleA.performKeyInput { keyUp(Key.DirectionCenter) }
+        compose.onNodeWithText("Remove from playlist").performSemanticsAction(SemanticsActions.OnClick)
+
+        compose.waitUntil(5_000) { removals.isNotEmpty() }
+        assertEquals(listOf("A" to 1), removals.toList())
+    }
+
+    @Test
+    fun entryOccurrencesCountEarlierCopiesOfTheSameTrack() {
+        val tracks = listOf("A", "B", "A", "C", "A", "B").map { Fixtures.domainTrack(it) }
+        assertEquals(listOf(0, 0, 1, 0, 2, 1), entryOccurrences(tracks).toList())
+    }
+
+    /** Installs a source serving [ids] as playlist "p"; returns recorded removals. */
+    private fun installPlaylist(ids: List<String>): MutableList<Pair<String, Int>> {
+        val removals = CopyOnWriteArrayList<Pair<String, Int>>()
+        val base = requireNotNull(MusicSources.current)
+        MusicSources.install(object : MusicSource by base {
+            override val id = "repeated-entry-focus-test"
+            override suspend fun cached(prefix: String): List<JellyfinItem>? = null
+            override fun cache(prefix: String, items: List<JellyfinItem>) {}
+            override suspend fun item(itemId: String): JellyfinItem? = null
+            override suspend fun albumBio(itemId: String): String? = null
+            override suspend fun atmosAlbumIds(): Set<String> = emptySet()
+            override suspend fun playlistItems(playlistId: String) = ids.map {
+                JellyfinItem(id = it, name = "Song $it", type = "Audio", playlistItemId = it)
+            }
+            override suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) {
+                removals.add(itemId to occurrence)
+            }
+        })
+        return removals
     }
 
     private val keeper = FocusKeeper()

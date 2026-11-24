@@ -9,6 +9,8 @@ import com.hans.aura.data.JellyfinItem
 import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
+import com.hans.aura.data.PlaylistEditException
+import com.hans.aura.data.PlaylistEditOutcome
 import com.hans.aura.data.Session
 import com.hans.aura.data.SourceQueries
 import com.hans.aura.model.Playlist
@@ -211,10 +213,39 @@ class PlaylistEntryRefreshTest {
             viewModel.state.value.tracks?.map { it.id } == listOf("A", "B") &&
                 !viewModel.state.value.editInFlight
         }
-        assertNotNull(
-            "the edit message survives the successful reconciliation",
+        assertNull(
+            "the transient refreshing message must go once the list is re-read",
             viewModel.state.value.editError
         )
+        store.clear()
+    }
+
+    @Test
+    fun `a pre-write failure is definite and does not reconcile`() = runBlocking {
+        val fake = PlaylistFakeSource(originalSource, PLAYLIST, listOf("A", "B"))
+        MusicSources.install(fake)
+
+        val store = ViewModelStore()
+        val viewModel = newViewModel(store)
+        withTimeout(5_000) { viewModel.state.first { it.tracks != null } }
+        val readsBefore = fake.playlistReads.get()
+
+        // The data layer saw the initial GET fail: no write was sent, so the
+        // list on screen is still exactly what the server has.
+        fake.removalFailure = PlaylistEditException(
+            PlaylistEditOutcome.FAILED,
+            IOException("timeout during the pre-write read")
+        )
+        viewModel.removeFromPlaylist("A", 0)
+
+        withTimeout(5_000) { viewModel.state.first { it.editError != null && !it.editInFlight } }
+        assertEquals("a definite failure must not publish a reload", readsBefore, fake.playlistReads.get())
+        assertEquals(listOf("A", "B"), viewModel.state.value.tracks!!.map { it.id })
+        assertTrue(
+            "the definitive failure stays visible",
+            viewModel.state.value.editError!!.startsWith("Couldn't remove from playlist")
+        )
+        assertFalse(app.container.mutations.playlistEditPending(PLAYLIST))
         store.clear()
     }
 
@@ -283,6 +314,10 @@ class PlaylistEntryRefreshTest {
             viewModel.state.value.tracks?.map { it.id } == listOf("A", "B") &&
                 !viewModel.state.value.editInFlight
         }
+        assertNull(
+            "the retry's successful load clears the transient refreshing message",
+            viewModel.state.value.editError
+        )
         store.clear()
     }
 

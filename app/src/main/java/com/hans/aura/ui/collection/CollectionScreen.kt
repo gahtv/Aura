@@ -407,7 +407,12 @@ private fun CollectionContent(
                                             onOpenArtist = onOpenArtist,
                                             onOpenCollection = null,
                                             onRemoveFromPlaylist = removeFromPlaylist,
-                                            playlistMove = if (collection is Playlist) {
+                                            // A move resolves a visible row
+                                            // against the server list; while an
+                                            // edit is in flight that list is
+                                            // already changing, so offer no
+                                            // moves until the refresh lands.
+                                            playlistMove = if (collection is Playlist && !state.editInFlight) {
                                                 com.hans.aura.ui.common.ContextMenus.PlaylistMove(
                                                     playlistId = collection.id,
                                                     itemId = track.id,

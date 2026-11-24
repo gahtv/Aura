@@ -26,8 +26,13 @@ import org.robolectric.RobolectricTestRunner
  *
  * The dispatcher below delays the removal's PUT and records arrival times for
  * both requests: with the gate, the add cannot reach the server until the
- * removal call has returned; without it, the add arrives while the PUT is
- * still sleeping.
+ * removal's response has been dispatched; without it, the add arrives while
+ * the PUT is still sleeping.
+ *
+ * The removal-completion timestamp is taken inside the dispatcher, where the
+ * server can observe it. A client-side timestamp set after the removal call
+ * returns races the queued add: releasing the lock wakes the add immediately,
+ * so it can reach the server before that caller records completion.
  */
 @RunWith(RobolectricTestRunner::class)
 class PlaylistWriteSerializationTest {
@@ -39,7 +44,9 @@ class PlaylistWriteSerializationTest {
     private val updateStarted = CountDownLatch(1)
     private val addArrived = CountDownLatch(1)
     private val otherAddArrived = CountDownLatch(1)
-    private val updateReturnedAt = AtomicLong(0)
+
+    /** Set in the dispatcher, immediately before the removal's 204 is sent. */
+    private val removalResponseAt = AtomicLong(0)
     private val addArrivedAt = AtomicLong(0)
     private val otherAddArrivedAt = AtomicLong(0)
 
@@ -69,7 +76,9 @@ class PlaylistWriteSerializationTest {
                         // Long enough that an ungated add would definitely
                         // arrive while this response is still held open.
                         Thread.sleep(1_000)
-                        updateReturnedAt.set(System.nanoTime())
+                        // Observable by the server: the rewrite is applied and
+                        // this is the response that releases the gate.
+                        removalResponseAt.set(System.nanoTime())
                         MockResponse().setResponseCode(204)
                     }
 
@@ -103,11 +112,7 @@ class PlaylistWriteSerializationTest {
 
     @Test
     fun `an add queues behind a duplicate removal of the same playlist`() = runBlocking {
-        val removalDoneAt = AtomicLong(0)
-        val removal = async(Dispatchers.IO) {
-            repository.removeFromPlaylist("p", "A", 1)
-            removalDoneAt.set(System.nanoTime())
-        }
+        val removal = async(Dispatchers.IO) { repository.removeFromPlaylist("p", "A", 1) }
         assertTrue("removal must reach its write", updateStarted.await(5, TimeUnit.SECONDS))
 
         val add = async(Dispatchers.IO) { repository.addToPlaylist("p", listOf("C")) }
@@ -116,22 +121,14 @@ class PlaylistWriteSerializationTest {
         add.await()
 
         assertTrue(
-            "the add reached the server before the removal (and its lock) finished",
-            addArrivedAt.get() > removalDoneAt.get()
-        )
-        assertTrue(
-            "the add may only be sent after the delayed rewrite response",
-            addArrivedAt.get() > updateReturnedAt.get()
+            "the add may only be sent after the removal's response is dispatched",
+            addArrivedAt.get() > removalResponseAt.get()
         )
     }
 
     @Test
     fun `an add to a different playlist is not blocked by a removal`() = runBlocking {
-        val removalDoneAt = AtomicLong(0)
-        val removal = async(Dispatchers.IO) {
-            repository.removeFromPlaylist("p", "A", 1)
-            removalDoneAt.set(System.nanoTime())
-        }
+        val removal = async(Dispatchers.IO) { repository.removeFromPlaylist("p", "A", 1) }
         assertTrue("removal must reach its write", updateStarted.await(5, TimeUnit.SECONDS))
 
         val add = async(Dispatchers.IO) { repository.addToPlaylist("q", listOf("C")) }
@@ -139,12 +136,8 @@ class PlaylistWriteSerializationTest {
         add.await()
         removal.await()
         assertTrue(
-            "another playlist's write waited for the removal",
-            otherAddArrivedAt.get() < removalDoneAt.get()
-        )
-        assertTrue(
             "the unrelated add arrived before the removal's delayed response",
-            otherAddArrivedAt.get() < updateReturnedAt.get()
+            otherAddArrivedAt.get() < removalResponseAt.get()
         )
     }
 }

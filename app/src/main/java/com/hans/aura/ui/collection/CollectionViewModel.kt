@@ -5,8 +5,9 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hans.aura.AuraApp
+import com.hans.aura.data.PlaylistEditException
+import com.hans.aura.data.PlaylistEditOutcome
 import com.hans.aura.data.SourceQueries
-import com.hans.aura.di.PlaylistEditOutcome
 import com.hans.aura.model.Album
 import com.hans.aura.model.CollectionItem
 import com.hans.aura.model.Playlist
@@ -38,7 +39,11 @@ data class CollectionUiState(
     val atmosAlbumIds: Set<String> = emptySet(),
     /** A playlist edit is in flight: removal stays disabled until its refresh lands. */
     val editInFlight: Boolean = false,
-    /** Last playlist-edit failure; survives successful reloads, unlike [error]. */
+    /**
+     * Last playlist-edit failure. Definitive messages survive successful
+     * reloads, unlike [error]; the transient "may not have completed" note
+     * clears as soon as a reload confirms the new order.
+     */
     val editError: String? = null
 ) {
     fun shown(fallback: CollectionItem): CollectionItem = fullItem ?: fallback
@@ -136,13 +141,16 @@ class CollectionViewModel(
     }
 
     /**
-     * A 4xx means the server refused before committing, and the local
-     * precondition failures ([IllegalStateException]/[IllegalArgumentException])
-     * are raised before any write, so both leave the visible list valid.
-     * Everything else — I/O, timeout, 5xx, a response lost after the write —
-     * may have committed and must be reconciled against the server.
+     * The data layer decides whether the write was attempted
+     * ([PlaylistEditException]); only untyped failures (a non-Jellyfin source)
+     * fall back to the old inference: a 4xx refused before committing and the
+     * local precondition failures ([IllegalStateException]/
+     * [IllegalArgumentException]) happen before any write, so both leave the
+     * visible list valid. Everything else — I/O, timeout, 5xx, a response lost
+     * after the write — may have committed and must be reconciled.
      */
     private fun classify(error: Throwable): PlaylistEditOutcome = when {
+        error is PlaylistEditException -> error.outcome
         error is HttpException ->
             if (error.code() in 400..499) PlaylistEditOutcome.FAILED else PlaylistEditOutcome.UNKNOWN
         error is IllegalArgumentException || error is IllegalStateException -> PlaylistEditOutcome.FAILED
@@ -201,6 +209,13 @@ class CollectionViewModel(
                         it.copy(
                             tracks = tracks,
                             error = null,
+                            // The reconciliation this message asked for has
+                            // landed, and the list now on screen is the truth.
+                            // Definitive failures (a rejection or a stale
+                            // ordinal) stay visible instead.
+                            editError = it.editError.takeUnless { message ->
+                                message == UNKNOWN_EDIT_MESSAGE
+                            },
                             // A second edit may have started while this fetch
                             // ran; keep removal disabled until its refresh.
                             editInFlight = app.container.mutations.playlistEditPending(itemId)

@@ -12,6 +12,7 @@ import com.hans.aura.data.LibraryCache
 import com.hans.aura.data.MediaRepository
 import com.hans.aura.data.MusicSource
 import com.hans.aura.data.MusicSources
+import com.hans.aura.data.PlaylistEditOutcome
 import com.hans.aura.data.PlaylistWrites
 import com.hans.aura.data.Prefs
 import com.hans.aura.remote.MirrorServer
@@ -22,17 +23,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-
-/**
- * Result of one playlist edit, as far as Aura can know it.
- *
- * [FAILED] means the server rejected the write (4xx) or a local precondition
- * stopped it before any request: the server list is unchanged.
- * [UNKNOWN] means the write was attempted but its response was lost
- * (I/O error, timeout, 5xx, cancellation after send): the edit may or may not
- * have committed, so the cached order is no longer trustworthy.
- */
-enum class PlaylistEditOutcome { SUCCESS, FAILED, UNKNOWN }
 
 /**
  * Published once the last overlapping edit of [playlistId] finishes.

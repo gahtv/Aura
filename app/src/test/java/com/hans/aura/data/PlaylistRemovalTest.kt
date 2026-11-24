@@ -69,6 +69,20 @@ class PlaylistRemovalTest {
         assertEquals("/Playlists/p", request.path)
     }
 
+    private fun assertEditFailure(
+        error: Throwable?,
+        outcome: PlaylistEditOutcome,
+        causeType: Class<out Throwable>
+    ) {
+        assertTrue("expected a PlaylistEditException, got $error", error is PlaylistEditException)
+        val edit = error as PlaylistEditException
+        assertEquals(outcome, edit.outcome)
+        assertTrue(
+            "expected a ${causeType.simpleName} cause, got ${edit.cause}",
+            causeType.isInstance(edit.cause)
+        )
+    }
+
     @Test
     fun `single copy refetches then deletes the fresh entry identity`() = runBlocking {
         playlist("A", "B")
@@ -110,6 +124,7 @@ class PlaylistRemovalTest {
             "This playlist has tracks you can't see, so one copy can't be removed safely",
             error?.message
         )
+        assertEditFailure(error, PlaylistEditOutcome.FAILED, IllegalStateException::class.java)
         assertRefetch()
         assertUnfilteredRead()
         assertEquals(2, server.requestCount)
@@ -119,7 +134,11 @@ class PlaylistRemovalTest {
     fun `unavailable unfiltered entries prevent writing`() = runBlocking {
         playlist("A", "A")
         server.enqueue(MockResponse().setResponseCode(403))
-        assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "A", 1) }.exceptionOrNull() is HttpException)
+        assertEditFailure(
+            runCatching { SourceQueries.removeFromPlaylist("p", "A", 1) }.exceptionOrNull(),
+            PlaylistEditOutcome.FAILED,
+            HttpException::class.java
+        )
         assertRefetch()
         assertUnfilteredRead()
         assertEquals(2, server.requestCount)
@@ -130,7 +149,7 @@ class PlaylistRemovalTest {
         for (ids in listOf(arrayOf("A", "B"), emptyArray())) {
             playlist(*ids)
             val error = runCatching { SourceQueries.removeFromPlaylist("p", "A", 1) }.exceptionOrNull()
-            assertTrue(error is IllegalStateException)
+            assertEditFailure(error, PlaylistEditOutcome.FAILED, IllegalStateException::class.java)
             assertRefetch()
         }
         assertEquals(2, server.requestCount)
@@ -138,13 +157,34 @@ class PlaylistRemovalTest {
 
     @Test
     fun `invalid row identity fails without any request`() = runBlocking {
-        assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "", 0) }.exceptionOrNull() is IllegalArgumentException)
-        assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "A", -1) }.exceptionOrNull() is IllegalArgumentException)
+        assertEditFailure(
+            runCatching { SourceQueries.removeFromPlaylist("p", "", 0) }.exceptionOrNull(),
+            PlaylistEditOutcome.FAILED,
+            IllegalArgumentException::class.java
+        )
+        assertEditFailure(
+            runCatching { SourceQueries.removeFromPlaylist("p", "A", -1) }.exceptionOrNull(),
+            PlaylistEditOutcome.FAILED,
+            IllegalArgumentException::class.java
+        )
         assertEquals(0, server.requestCount)
     }
 
     @Test
-    fun `a lost write response surfaces as IO failure and evicts the list`() = runBlocking {
+    fun `a lost read response is a definite failure and keeps the cache`() = runBlocking {
+        LibraryCache.put("col:p", listOf(JellyfinItem(id = "A", type = "Audio")))
+        // Malformed status line, same as below: the GET reaches the server but
+        // no write does, so the visible list is still valid.
+        server.enqueue(MockResponse().setStatus("BOGUS"))
+
+        val error = runCatching { SourceQueries.removeFromPlaylist("p", "A", 0) }.exceptionOrNull()
+        assertEditFailure(error, PlaylistEditOutcome.FAILED, IOException::class.java)
+        assertEquals("only the pre-read may be sent", 1, server.requestCount)
+        assertNotNull("no write was attempted: col:<playlistId> stays valid", LibraryCache.peek("col:p"))
+    }
+
+    @Test
+    fun `a lost write response surfaces as an unknown edit and evicts the list`() = runBlocking {
         LibraryCache.put("col:p", listOf(JellyfinItem(id = "A", type = "Audio")))
         assertNotNull("precondition: the stale list is cached", LibraryCache.peek("col:p"))
 
@@ -156,7 +196,7 @@ class PlaylistRemovalTest {
         server.enqueue(MockResponse().setStatus("BOGUS"))
 
         val error = runCatching { SourceQueries.removeFromPlaylist("p", "A", 1) }.exceptionOrNull()
-        assertTrue("expected an IO failure, got $error", error is IOException)
+        assertEditFailure(error, PlaylistEditOutcome.UNKNOWN, IOException::class.java)
         assertNull("a lost response must evict col:<playlistId>", LibraryCache.peek("col:p"))
     }
 
@@ -168,8 +208,11 @@ class PlaylistRemovalTest {
         playlist("A", "A", "B")
         allEntries("A", "A", "B")
         server.enqueue(MockResponse().setResponseCode(500))
-        assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "A", 1) }
-            .exceptionOrNull() is HttpException)
+        assertEditFailure(
+            runCatching { SourceQueries.removeFromPlaylist("p", "A", 1) }.exceptionOrNull(),
+            PlaylistEditOutcome.UNKNOWN,
+            HttpException::class.java
+        )
 
         // A 5xx may hide a committed edit: the next read must reconcile with
         // the server instead of serving the pre-edit order.
@@ -177,15 +220,23 @@ class PlaylistRemovalTest {
     }
 
     @Test
-    fun `failed reads and both failed writes propagate`() = runBlocking {
+    fun `failed reads and both failed writes propagate as typed failures`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(403))
-        assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "A", 0) }.exceptionOrNull() is HttpException)
+        assertEditFailure(
+            runCatching { SourceQueries.removeFromPlaylist("p", "A", 0) }.exceptionOrNull(),
+            PlaylistEditOutcome.FAILED,
+            HttpException::class.java
+        )
         assertRefetch()
         for (ids in listOf(arrayOf("A"), arrayOf("A", "A"))) {
             playlist(*ids)
             if (ids.size > 1) allEntries(*ids)
             server.enqueue(MockResponse().setResponseCode(403))
-            assertTrue(runCatching { SourceQueries.removeFromPlaylist("p", "A", 0) }.exceptionOrNull() is HttpException)
+            assertEditFailure(
+                runCatching { SourceQueries.removeFromPlaylist("p", "A", 0) }.exceptionOrNull(),
+                PlaylistEditOutcome.FAILED,
+                HttpException::class.java
+            )
             assertRefetch()
             if (ids.size > 1) assertUnfilteredRead()
             server.takeRequest()

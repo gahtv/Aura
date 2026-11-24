@@ -4,6 +4,34 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
+ * Result of one playlist edit, as far as Aura can know it.
+ *
+ * [FAILED] means the server rejected the write (4xx), or a read/local
+ * precondition stopped it before any write request was sent: the server list
+ * is unchanged, so the visible order is still valid.
+ * [UNKNOWN] means a write was attempted but its response was lost (I/O error,
+ * timeout, 5xx, cancellation after send): the edit may or may not have
+ * committed, so the cached order is no longer trustworthy.
+ * [SUCCESS] means the server accepted the write.
+ */
+enum class PlaylistEditOutcome { SUCCESS, FAILED, UNKNOWN }
+
+/**
+ * A playlist edit failure that carries whether the server can have applied it.
+ *
+ * The data layer is the only place that knows which request is the write, so
+ * it decides [outcome] there instead of making the UI infer it from an
+ * exception type: a timeout during the initial GET never reached the server
+ * ([FAILED]), while a timeout after the write was sent may have ([UNKNOWN]).
+ * [message] is the underlying failure's message so callers can keep showing
+ * it verbatim.
+ */
+class PlaylistEditException(
+    val outcome: PlaylistEditOutcome,
+    cause: Throwable
+) : Exception(cause.message, cause)
+
+/**
  * Serializes Aura's own writes to one playlist.
  *
  * A duplicate removal is a read-modify-write: it fetches the playlist, then

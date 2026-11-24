@@ -57,8 +57,9 @@ Report correctness bugs before style issues.
 
 ### Sign-in, session and secrets (`data/AuthStore.kt`, `ui/shell/SessionActions.kt`)
 - Sign-out and server changes go through `SessionActions.endSession`, and profile
-  switches go through `SessionActions.switchSession`. Both follow the same order: stop
-  playback, release the controller, cancel pending mutations, clear registries and caches
+  switches go through `SessionActions.switchSession`. Both follow the same order:
+  `PlayerConnection.teardown()` (clear the queue registry, stop playback, release the
+  controller and service), then cancel pending mutations, clear the session caches
   (`LibraryCache`, `Favorites`, `PagedLibrary`, `AtmosCatalog`, `ArtworkSeedCache`), and
   only then change credentials. A new session-scoped cache must be cleared in **both**
   functions.

@@ -167,7 +167,6 @@ fun GenreScreen(
     focusTick: Int = 0,
     initialFocus: Boolean = false,
     viewModel: GenreAlbumsViewModel = viewModel(
-        key = "genre:$genreName:${app.jellyfin.auth.session?.userId ?: "anon"}",
         factory = viewModelFactory { initializer { GenreAlbumsViewModel(app, genreName) } }
     )
 ) {

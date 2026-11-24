@@ -18,9 +18,16 @@ class MainActivity : ComponentActivity() {
         // LAN mirror link: /state + /navigate for remote controls (ui/MirrorLink.kt).
         MirrorLink.start()
         MirrorLink.bind(this)
-        // Debug deep links: adb am start --es aura_debug_screen <name>
-        handleDebugIntent(intent)
-        AppIntents.postFromIntent(intent)
+        // A recreated Activity (rotation, process-death restore) inherits the
+        // original launch intent. Dispatching it again would re-apply an
+        // ACTION_VIEW deep link over the restored back stack, so launch extras
+        // are only consumed on a fresh launch. onNewIntent (am start into a
+        // running app) still always dispatches.
+        if (shouldDispatchLaunchIntent(savedInstanceState)) {
+            // Debug deep links: adb am start --es aura_debug_screen <name>
+            handleDebugIntent(intent)
+            AppIntents.postFromIntent(intent)
+        }
         setContent {
             AuraTheme {
                 AppRoot()
@@ -59,3 +66,11 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 }
+
+/**
+ * Launch-intent policy for [MainActivity.onCreate]. A null saved state means a
+ * fresh launch, the only case where the launch intent (system deep link or
+ * debug extras) may be applied; a restored Activity must keep its restored
+ * back stack untouched.
+ */
+internal fun shouldDispatchLaunchIntent(savedState: Bundle?): Boolean = savedState == null

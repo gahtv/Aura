@@ -114,7 +114,8 @@ class SourceQueriesTest {
                 else 200 to """{"Items":[{"Id":"track","PlaylistItemId":"entry-one"}]}"""
             }
             vm.removeFromPlaylist("track", 0)
-            withTimeout(3_000) { vm.state.first { it.error != null } }
+            // Removal failures are edit errors now, kept apart from load errors.
+            withTimeout(3_000) { vm.state.first { it.editError != null } }
             assertEquals(original, vm.state.value.tracks)
             assertEquals(2, requests.size)
         } finally {

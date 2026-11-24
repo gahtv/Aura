@@ -63,10 +63,15 @@ object ContextMenus {
     }
 
     /**
-     * A playlist row that can be reordered server-side. The move endpoint is
+     * A playlist row that can be reordered server-side. [index] is the row in
+     * the list the user is looking at; the repository resolves it against a
+     * fresh read under the playlist write gate, because a queued removal can
+     * shift the server order after this menu was built. Jellyfin has no
+     * conditional move, so an external client can still shift it between that
+     * read and the write. The move endpoint is
      * POST /Playlists/{playlistId}/Items/{itemId}/Move/{newIndex} (204 on
      * success) and, like every Retrofit Response, never throws on 4xx/5xx — so
-     * the code is checked before the cache is evicted and the list refreshed.
+     * the code is checked before the list is refreshed.
      */
     data class PlaylistMove(
         val playlistId: String,
@@ -238,11 +243,14 @@ object ContextMenus {
     }
 
     /**
-     * Server-side playlist reorder. Retrofit's Response never throws on 4xx/5xx,
-     * so the status code decides whether the move happened: on failure the row
-     * order and the 24h cache stay untouched (and the log carries the code) —
-     * blindly evicting + refreshing would silently show the OLD order while
-     * looking like success.
+     * Server-side playlist reorder. The destination row is resolved by the
+     * repository under the playlist write gate, never from the cached list
+     * this menu was built against.
+     *
+     * The pending check is repeated at execution time: the screen hides moves
+     * while an edit is in flight, but a menu opened just before the edit
+     * started can still invoke this action. Refusing here keeps the ordinal
+     * from being resolved against a list the server has already changed.
      */
     private fun movePlaylistItem(
         app: AuraApp,
@@ -250,20 +258,35 @@ object ContextMenus {
         move: PlaylistMove,
         newIndex: Int
     ) {
-        scope.launch {
-            runCatching {
-                val serverIndex = SourceQueries.playlistMoveIndex(move.playlistId, newIndex)
-                    ?: error("Playlist row no longer exists")
-                app.container.media.movePlaylistItem(move.playlistId, move.itemId, serverIndex)
-            }.onSuccess {
-                android.util.Log.d(
-                    "AURA_QUEUE",
-                    "playlist move playlist=${move.playlistId} item=${move.itemId} newIndex=$newIndex"
-                )
-                move.onMoved()
-            }.onFailure {
-                android.util.Log.w("AURA_QUEUE", "playlist move failed: ${it.message}")
-            }
+        scope.launch { performPlaylistMove(app, move, newIndex) }
+    }
+
+    /** Visible for tests: the action's body, with the execution-time refusal. */
+    internal suspend fun performPlaylistMove(app: AuraApp, move: PlaylistMove, newIndex: Int) {
+        if (app.container.mutations.playlistEditPending(move.playlistId)) {
+            android.util.Log.w(
+                "AURA_QUEUE",
+                "playlist move skipped: edit pending playlist=${move.playlistId}"
+            )
+            return
+        }
+        runCatching {
+            app.container.media.movePlaylistItemToVisibleIndex(
+                move.playlistId, move.itemId, newIndex
+            )
+        }.onSuccess {
+            android.util.Log.d(
+                "AURA_QUEUE",
+                "playlist move playlist=${move.playlistId} item=${move.itemId} row=$newIndex"
+            )
+            move.onMoved()
+        }.onFailure {
+            android.util.Log.w("AURA_QUEUE", "playlist move failed: ${it.message}")
+            // The row can be gone because the server order changed (external
+            // client or an edit that finished between the menu opening and
+            // this call). Refresh so the screen stops showing a stale order
+            // instead of logging the rejection into the void.
+            move.onMoved()
         }
     }
 

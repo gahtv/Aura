@@ -1,7 +1,7 @@
 package com.hans.aura.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -31,6 +31,11 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
+import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import androidx.navigation3.ui.NavDisplay
 import com.hans.aura.AuraApp
 import com.hans.aura.ui.collection.ArtistScreen
 import com.hans.aura.ui.collection.CollectionScreen
@@ -85,6 +90,10 @@ fun AppRoot() {
     val app = LocalContext.current.applicationContext as AuraApp
     val sessionViewModels = viewModel { SessionViewModels() }
     var signedIn by remember { mutableStateOf(app.jellyfin.auth.isSignedIn) }
+    // Bumped when a profile switch lands so this composable recomposes and the
+    // session key below re-reads the now-active session. It is deliberately NOT
+    // part of key(...): a counter restarts at 0 after process death / Activity
+    // recreation, so the same profile's saved back stack would not be found.
     var sessionGeneration by remember { mutableIntStateOf(0) }
 
     if (!signedIn) {
@@ -92,7 +101,21 @@ fun AppRoot() {
         return
     }
 
-    key(sessionGeneration) {
+    // Composition key of the signed-in subtree. The session identity (server +
+    // user) is recreation-stable, so after process death / Activity recreation
+    // with the same profile rememberNavBackStack finds this profile's saved
+    // stack again. A switch to another profile changes the key and disposes the
+    // old subtree (nav stack + saveable state): the new profile starts on Home,
+    // and signing out drops the old stack so it cannot come back on sign-in.
+    val session = app.jellyfin.auth.session
+    val sessionKey = remember(sessionGeneration, session) {
+        SessionKey(
+            serverUrl = session?.serverUrl.orEmpty(),
+            userId = session?.userId.orEmpty()
+        )
+    }
+
+    key(sessionKey) {
     val sessionOwner = sessionViewModels.owner
     val player = remember { PlayerConnection(app, app.jellyfin) { app.jellyfin.auth.session } }
     val nav = rememberNavState()
@@ -145,16 +168,16 @@ fun AppRoot() {
 
     // Nav breadcrumb: logcat `adb logcat -s AURA_NAV` shows exactly which
     // screen is up, so adb-driven verification doesn't need screenshots.
-    LaunchedEffect(nav.stack) {
+    LaunchedEffect(nav.entries.toList()) {
         android.util.Log.d(
             "AURA_NAV",
             "top=${NavSpec.key(nav.top)} stack=${nav.stack.joinToString(">") { NavSpec.key(it) }}"
         )
     }
 
-    // System BACK pops our navigation stack (device back button / remote BACK).
-    // On a root tab other than Home, BACK goes Home instead of exiting the app.
-    BackHandler(enabled = nav.stack.size > 1 || nav.top != Screen.Home, onBack = nav::back)
+    // NavDisplay handles BACK whenever entries.size > 1 (pop). On a single-entry
+    // root tab other than Home, BACK returns to Home instead of exiting the app.
+    BackHandler(enabled = nav.entries.size == 1 && nav.top != Screen.Home, onBack = nav::resetToHome)
 
     // First playback of a session auto-opens Now Playing; BACK returns to
     // whatever screen started it. Later track changes don't re-push.
@@ -193,10 +216,10 @@ fun AppRoot() {
     // Keep the screen awake while music plays (no screensaver mid-album).
     KeepScreenOnWhilePlaying(player)
 
-    // Per-screen-entry saveable state: scrolling/focus/text survive BACK. Key
-    // includes the stack index + screen identity so a new push at the same
-    // index never inherits an older screen's state.
-    val stateHolder = rememberSaveableStateHolder()
+    // Session-scoped saveable state for rail tab roots (Home, Library, Search,
+    // Settings) so switching tabs preserves scroll/focus. Pushed destinations
+    // use NavDisplay's SaveableStateHolderNavEntryDecorator and are freed on pop.
+    val tabStateHolder = rememberSaveableStateHolder()
 
     FocusHandoffHost(Modifier.fillMaxSize().background(Canvas)) {
         // The rail is pinned everywhere except Now Playing (user decision):
@@ -220,52 +243,79 @@ fun AppRoot() {
         ) {
             SharedTransitionLayout {
                 val artworkCorners = remember { mutableMapOf<String, ArtworkCorners>() }
-                AnimatedContent(
+                val navTransition = {
+                    fadeIn(AuraMotion.scheme.fastEffectsSpec()) togetherWith
+                        fadeOut(AuraMotion.scheme.fastEffectsSpec())
+                }
+                NavDisplay(
+                    backStack = nav.entries,
                     modifier = Modifier.fillMaxSize(),
-                    targetState = nav.stack.lastIndex to nav.top,
-                    contentKey = { (index, screen) -> "$index:${NavSpec.key(screen)}" },
-                    transitionSpec = {
-                        fadeIn(AuraMotion.scheme.fastEffectsSpec()) togetherWith
-                            fadeOut(AuraMotion.scheme.fastEffectsSpec())
-                    },
-                    label = "destination"
-                ) { (index, screen) ->
-                    val active = index == nav.stack.lastIndex && screen == nav.top
-                    var entryFocusTick by remember { mutableIntStateOf(nav.focusTick) }
-                    var entryPendingFocus by remember { mutableStateOf(nav.pendingFocus) }
-                    if (active) {
-                        entryFocusTick = nav.focusTick
-                        entryPendingFocus = nav.pendingFocus
-                    }
-                    stateHolder.SaveableStateProvider(key = "$index:${NavSpec.key(screen)}") {
-                        val artworkSource = rememberSaveable { mutableStateOf<Long?>(null) }
-                        CompositionLocalProvider(
-                            LocalViewModelStoreOwner provides sessionOwner,
-                            LocalArtworkTransition provides this@SharedTransitionLayout,
-                            LocalArtworkVisibility provides this@AnimatedContent,
-                            LocalDestinationActive provides active,
-                            LocalArtworkSource provides artworkSource,
-                            LocalArtworkCorners provides artworkCorners
+                    onBack = nav::pop,
+                    entryDecorators = listOf(
+                        rememberSaveableStateHolderNavEntryDecorator(),
+                        rememberViewModelStoreNavEntryDecorator(viewModelStoreOwner = sessionOwner)
+                    ),
+                    sharedTransitionScope = this@SharedTransitionLayout,
+                    transitionSpec = { navTransition() },
+                    popTransitionSpec = { navTransition() },
+                    predictivePopTransitionSpec = { navTransition() },
+                    entryProvider = { entry ->
+                        val contentKey = if (NavSpec.isSessionScopedTabRoot(entry.screen)) {
+                            NavSpec.key(entry.screen)
+                        } else {
+                            "${entry.id}:${NavSpec.key(entry.screen)}"
+                        }
+                        NavEntry(
+                            key = entry,
+                            contentKey = contentKey
                         ) {
-                            Box(Modifier.fillMaxSize().padding(start = destinationInset(screen))) {
-                                DestinationFocusGate(active) {
-                                    DestinationHost(
-                                        app = app,
-                                        player = player,
-                                        nav = nav,
-                                        top = screen,
-                                        focusTick = entryFocusTick,
-                                        pendingFocus = entryPendingFocus,
-                                        endSession = exitSession,
-                                        onSwitchProfile = onSwitchProfile,
-                                        refreshKey = sessionViewModels.refreshKey,
-                                        onRefreshKey = sessionViewModels::bumpRefreshKey
-                                    )
+                            val screen = entry.screen
+                            val active = entry == nav.topEntry
+                            var entryFocusTick by remember { mutableIntStateOf(nav.focusTick) }
+                            var entryPendingFocus by remember { mutableStateOf(nav.pendingFocus) }
+                            if (active) {
+                                entryFocusTick = nav.focusTick
+                                entryPendingFocus = nav.pendingFocus
+                            }
+                            val renderDestination: @Composable () -> Unit = {
+                                val artworkSource = rememberSaveable { mutableStateOf<Long?>(null) }
+                                CompositionLocalProvider(
+                                    LocalArtworkTransition provides this@SharedTransitionLayout,
+                                    LocalArtworkVisibility provides LocalNavAnimatedContentScope.current,
+                                    LocalDestinationActive provides active,
+                                    LocalArtworkSource provides artworkSource,
+                                    LocalArtworkCorners provides artworkCorners
+                                ) {
+                                    Box(Modifier.fillMaxSize().padding(start = destinationInset(screen))) {
+                                        DestinationFocusGate(active) {
+                                            DestinationHost(
+                                                app = app,
+                                                player = player,
+                                                nav = nav,
+                                                top = screen,
+                                                focusTick = entryFocusTick,
+                                                pendingFocus = entryPendingFocus,
+                                                endSession = exitSession,
+                                                onSwitchProfile = onSwitchProfile,
+                                                refreshKey = sessionViewModels.refreshKey,
+                                                onRefreshKey = sessionViewModels::bumpRefreshKey
+                                            )
+                                        }
+                                    }
                                 }
+                            }
+                            if (NavSpec.isSessionScopedTabRoot(screen)) {
+                                tabStateHolder.SaveableStateProvider(key = NavSpec.key(screen)) {
+                                    CompositionLocalProvider(LocalViewModelStoreOwner provides sessionOwner) {
+                                        renderDestination()
+                                    }
+                                }
+                            } else {
+                                renderDestination()
                             }
                         }
                     }
-                }
+                )
             }
         }
         // Long-press context menus + their playlist picker, always on top.
@@ -277,6 +327,17 @@ fun AppRoot() {
     }
     }
 }
+
+/**
+ * Recreation-stable identity of the signed-in session, used as the composition
+ * key for the whole signed-in subtree. Both fields survive process death, so
+ * the same profile rebuilds the same key (and restores its back stack), while
+ * a different profile gets a different key (and a fresh stack on Home).
+ */
+private data class SessionKey(
+    val serverUrl: String,
+    val userId: String
+)
 
 private class SessionViewModels : ViewModel() {
     var owner = newOwner()
@@ -456,7 +517,7 @@ private fun DestinationHost(
 @Composable
 private fun KeepScreenOnWhilePlaying(player: PlayerConnection) {
     val isPlayingNow by player.isPlaying.collectAsState()
-    val activity = LocalContext.current as? android.app.Activity
+    val activity = LocalActivity.current
     LaunchedEffect(isPlayingNow) {
         activity?.window?.let { w ->
             if (isPlayingNow) {

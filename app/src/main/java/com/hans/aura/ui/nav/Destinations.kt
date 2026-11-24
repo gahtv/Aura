@@ -1,5 +1,11 @@
 package com.hans.aura.ui.nav
 
+import androidx.navigation3.runtime.NavKey
+import com.hans.aura.model.Album
+import com.hans.aura.model.Genre as MediaGenre
+import com.hans.aura.model.Playlist
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import com.hans.aura.model.Artist as MediaArtist
 import com.hans.aura.model.CollectionItem
 import com.hans.aura.model.MediaItem
@@ -8,64 +14,136 @@ import com.hans.aura.model.MediaItem
  * Every destination the app can show. Screens carry only their payload; all
  * per-screen metadata (saveable-state key, remote vocabulary, debug alias,
  * library kind) lives in [ScreenMeta] so no mapping is duplicated.
+ *
+ * Screens are [Serializable] because the back stack is persisted across
+ * process death by `rememberNavBackStack`. Item screens save only id + type +
+ * name: the full [CollectionItem]/[MediaArtist] stays in memory via
+ * [Transient] and is re-hydrated by the destination's ViewModel after a
+ * restore. Persisting the whole item would risk `TransactionTooLargeException`
+ * (long overviews, image tags) with a deep stack.
  */
-internal sealed interface Screen {
+@Serializable
+internal sealed interface Screen : NavKey {
     val meta: ScreenMeta
 
+    @Serializable
     data object Home : Screen {
         override val meta = ScreenMeta.HOME
     }
 
+    @Serializable
     data object Artists : Screen {
         override val meta = ScreenMeta.ARTISTS
     }
 
+    @Serializable
     data object Albums : Screen {
         override val meta = ScreenMeta.ALBUMS
     }
 
+    @Serializable
     data object Tracks : Screen {
         override val meta = ScreenMeta.TRACKS
     }
 
+    @Serializable
     data object Liked : Screen {
         override val meta = ScreenMeta.LIKED
     }
 
+    @Serializable
     data object Playlists : Screen {
         override val meta = ScreenMeta.PLAYLISTS
     }
 
+    @Serializable
     data object Search : Screen {
         override val meta = ScreenMeta.SEARCH
     }
 
+    @Serializable
     data object Settings : Screen {
         override val meta = ScreenMeta.SETTINGS
     }
 
+    @Serializable
     data object NowPlaying : Screen {
         override val meta = ScreenMeta.NOWPLAYING
     }
 
+    @Serializable
     data object Queue : Screen {
         override val meta = ScreenMeta.QUEUE
     }
 
+    @Serializable
     data object Genres : Screen {
         override val meta = ScreenMeta.GENRES
     }
 
+    @Serializable
     data class Genre(val name: String) : Screen {
         override val meta = ScreenMeta.GENRE
     }
 
-    data class Collection(val item: CollectionItem) : Screen {
+    @Serializable
+    data class Collection(
+        val id: String,
+        val name: String,
+        val kind: CollectionKind,
+        @Transient private val fullItem: CollectionItem? = null
+    ) : Screen {
         override val meta = ScreenMeta.COLLECTION
+
+        constructor(item: CollectionItem) : this(
+            id = item.id,
+            name = item.name,
+            kind = CollectionKind.of(item),
+            fullItem = item
+        )
+
+        /** Full item for an in-process push; a display stub after a restore. */
+        val item: CollectionItem get() = fullItem ?: kind.stub(id, name)
     }
 
-    data class Artist(val item: MediaArtist) : Screen {
+    @Serializable
+    data class Artist(
+        val id: String,
+        val name: String,
+        @Transient private val fullItem: MediaArtist? = null
+    ) : Screen {
         override val meta = ScreenMeta.ARTIST
+
+        constructor(item: MediaArtist) : this(
+            id = item.id,
+            name = item.name,
+            fullItem = item
+        )
+
+        /** Full artist for an in-process push; a stub after a restore. */
+        val item: MediaArtist get() = fullItem ?: MediaArtist(id = id, name = name)
+    }
+}
+
+/** Persisted kind of a [Screen.Collection]; the ViewModel loads the rest. */
+@Serializable
+internal enum class CollectionKind {
+    ALBUM,
+    PLAYLIST,
+    GENRE;
+
+    fun stub(id: String, name: String): CollectionItem = when (this) {
+        ALBUM -> Album(id = id, name = name)
+        PLAYLIST -> Playlist(id = id, name = name)
+        GENRE -> MediaGenre(id = id, name = name)
+    }
+
+    companion object {
+        fun of(item: CollectionItem): CollectionKind = when (item) {
+            is Album -> ALBUM
+            is Playlist -> PLAYLIST
+            is MediaGenre -> GENRE
+        }
     }
 }
 
@@ -148,6 +226,25 @@ internal object NavSpec {
     }
 
     fun isRootRoute(screen: Screen): Boolean = screen.meta in rootRoutes
+
+    /**
+     * Tab roots whose ViewModels and scroll/focus state stay scoped to the
+     * signed-in session so switching rail tabs does not reload or lose place.
+     * Pushed destinations (Collection, Artist, Genre, Queue, NowPlaying) are
+     * scoped per NavDisplay entry and cleared on pop.
+     */
+    fun isSessionScopedTabRoot(screen: Screen): Boolean = when (screen) {
+        Screen.Home,
+        Screen.Artists,
+        Screen.Albums,
+        Screen.Tracks,
+        Screen.Liked,
+        Screen.Playlists,
+        Screen.Genres,
+        Screen.Search,
+        Screen.Settings -> true
+        else -> false
+    }
 
     /** True when a remote route needs an item fetched before it can be shown. */
     fun routeNeedsItem(route: String?): Boolean =

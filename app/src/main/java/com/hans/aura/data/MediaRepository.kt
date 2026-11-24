@@ -34,7 +34,14 @@ import retrofit2.HttpException
  */
 class MediaRepository(
     private val jellyfin: JellyfinClient,
-    private val sessionProvider: () -> Session? = { jellyfin.auth.session }
+    private val sessionProvider: () -> Session? = { jellyfin.auth.session },
+    /**
+     * Per-playlist write gate. The container passes the single app-wide
+     * instance so every caller (detail screen, add dialogs, context menus)
+     * serializes against the same lock; the default keeps independent
+     * constructions (tests, detached repositories) working.
+     */
+    private val playlistWrites: PlaylistWrites = PlaylistWrites()
 ) {
     private val _playlistRevisions = MutableStateFlow<Map<String, Long>>(emptyMap())
     internal val playlistRevisions = _playlistRevisions.asStateFlow()
@@ -42,25 +49,65 @@ class MediaRepository(
     private fun api(): JellyfinApi = jellyfin.api
 
     suspend fun removeFromPlaylist(playlistId: String, itemId: String, occurrence: Int) = withContext(Dispatchers.IO) {
-        require(itemId.isNotBlank()) { "Missing playlist item id" }
-        require(occurrence >= 0) { "Invalid playlist occurrence" }
-        val items = api().getPlaylistItems(playlistId, checkNotNull(userId()) { "Not signed in" }).items
-        val matches = items.indices.filter { items[it].id == itemId }
-        val index = checkNotNull(matches.getOrNull(occurrence)) { "Playlist entry no longer exists" }
-        val response = if (matches.size == 1) {
-            val entryId = checkNotNull(items[index].playlistItemId?.takeIf { it.isNotBlank() }) {
-                "Missing playlist entry id"
+        // The read and the write are one critical section: an add or a move
+        // committing in between would be erased by the full-list rewrite.
+        // Only Aura's writes are covered (see [PlaylistWrites]); the server
+        // has no conditional update to guard against external clients.
+        playlistWrites.withPlaylist(playlistId) {
+            // Everything up to `write` is a read or a local check. If any of it
+            // fails, no request that can change the server was sent, so the
+            // visible list is still valid: classify it FAILED explicitly
+            // instead of letting the UI guess from the exception type.
+            val write: suspend () -> retrofit2.Response<Unit> = try {
+                require(itemId.isNotBlank()) { "Missing playlist item id" }
+                require(occurrence >= 0) { "Invalid playlist occurrence" }
+                val items = api().getPlaylistItems(playlistId, checkNotNull(userId()) { "Not signed in" }).items
+                val matches = items.indices.filter { items[it].id == itemId }
+                val index = checkNotNull(matches.getOrNull(occurrence)) { "Playlist entry no longer exists" }
+                if (matches.size == 1) {
+                    val entryId = checkNotNull(items[index].playlistItemId?.takeIf { it.isNotBlank() }) {
+                        "Missing playlist entry id"
+                    }
+                    suspend { api().removeFromPlaylist(playlistId, entryId) }
+                } else {
+                    check(api().getPlaylist(playlistId).itemIds.size <= items.size) {
+                        "This playlist has tracks you can't see, so one copy can't be removed safely"
+                    }
+                    val ids = items.filterIndexed { i, _ -> i != index }.map { it.id }
+                    suspend { api().updatePlaylist(playlistId, PlaylistItemsUpdate(ids = ids)) }
+                }
+            } catch (c: CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                throw PlaylistEditException(PlaylistEditOutcome.FAILED, t)
             }
-            api().removeFromPlaylist(playlistId, entryId)
-        } else {
-            check(api().getPlaylist(playlistId).itemIds.size <= items.size) {
-                "This playlist has tracks you can't see, so one copy can't be removed safely"
+            // Once the write is attempted the outcome is no longer knowable
+            // from an exception: a lost response may hide a committed edit.
+            // Evict before rethrowing so the next read reconciles with the
+            // server instead of serving the pre-edit list.
+            val response = try {
+                write()
+            } catch (c: CancellationException) {
+                evictPlaylistLists(playlistId)
+                throw c
+            } catch (t: Throwable) {
+                evictPlaylistLists(playlistId)
+                throw PlaylistEditException(PlaylistEditOutcome.UNKNOWN, t)
             }
-            api().updatePlaylist(playlistId, PlaylistItemsUpdate(
-                ids = items.filterIndexed { i, _ -> i != index }.map { it.id }
-            ))
+            evictPlaylistLists(playlistId)
+            if (!response.isSuccessful) {
+                // A 4xx did not commit; a 5xx may have.
+                val outcome = if (response.code() in 400..499) {
+                    PlaylistEditOutcome.FAILED
+                } else {
+                    PlaylistEditOutcome.UNKNOWN
+                }
+                throw PlaylistEditException(outcome, HttpException(response))
+            }
         }
-        if (!response.isSuccessful) throw HttpException(response)
+    }
+
+    private fun evictPlaylistLists(playlistId: String) {
         LibraryCache.evict("col:$playlistId")
         LibraryCache.clearDiskLists()
     }
@@ -549,18 +596,56 @@ class MediaRepository(
 
     suspend fun addToPlaylist(playlistId: String, trackIds: List<String>) = withContext(Dispatchers.IO) {
         val uid = checkNotNull(userId()) { "Not signed in" }
-        val resp = api().addToPlaylist(playlistId, trackIds.joinToString(","), uid)
-        if (!resp.isSuccessful) throw HttpException(resp)
-        LibraryCache.evict("col:$playlistId")
-        LibraryCache.evict("home_playlists:$uid")
-        LibraryCache.clearDiskLists()
+        // Queued behind a duplicate removal's read-modify-write so the rewrite
+        // cannot erase this add.
+        playlistWrites.withPlaylist(playlistId) {
+            val resp = api().addToPlaylist(playlistId, trackIds.joinToString(","), uid)
+            if (!resp.isSuccessful) throw HttpException(resp)
+            LibraryCache.evict("col:$playlistId")
+            LibraryCache.evict("home_playlists:$uid")
+            LibraryCache.clearDiskLists()
+        }
     }
 
-    suspend fun movePlaylistItem(playlistId: String, itemId: String, newIndex: Int) = withContext(Dispatchers.IO) {
-        val resp = api().movePlaylistItem(playlistId, itemId, newIndex)
-        if (!resp.isSuccessful) throw HttpException(resp)
-        LibraryCache.evict("col:$playlistId")
-        LibraryCache.clearDiskLists()
+    /**
+     * Moves [itemId] to [visibleIndex] in the playlist as the screen shows it
+     * (Audio rows only).
+     *
+     * The destination is resolved against a fresh server read *inside* the
+     * playlist write gate, not against the screen's list or the cache: a
+     * duplicate removal queued before this call rewrites the whole playlist
+     * and would otherwise leave the visible row pointing at a stale absolute
+     * index. Jellyfin has no conditional move, so an external client can still
+     * change the list between this read and the move; Aura's own writes are
+     * serialized by [PlaylistWrites].
+     *
+     * @throws IllegalStateException when no Audio row exists at [visibleIndex]
+     * (the playlist changed while the menu was open).
+     * @throws HttpException when the server rejects the move.
+     */
+    suspend fun movePlaylistItemToVisibleIndex(
+        playlistId: String,
+        itemId: String,
+        visibleIndex: Int
+    ) = withContext(Dispatchers.IO) {
+        playlistWrites.withPlaylist(playlistId) {
+            require(itemId.isNotBlank()) { "Missing playlist item id" }
+            require(visibleIndex >= 0) { "Invalid playlist row" }
+            val items = api().getPlaylistItems(playlistId, checkNotNull(userId()) { "Not signed in" }).items
+            val serverIndex = checkNotNull(
+                items.withIndex().filter { it.value.type == "Audio" }.getOrNull(visibleIndex)
+            ) { "Playlist row no longer exists" }.index
+            // Evict on every outcome: a 5xx or a lost response may hide a
+            // committed move, and a 4xx cannot have changed the order.
+            val response = try {
+                api().movePlaylistItem(playlistId, itemId, serverIndex)
+            } catch (t: Throwable) {
+                evictPlaylistLists(playlistId)
+                throw t
+            }
+            evictPlaylistLists(playlistId)
+            if (!response.isSuccessful) throw HttpException(response)
+        }
     }
 
     suspend fun toggleFavorite(item: MediaItem): Boolean? = withContext(Dispatchers.IO) {

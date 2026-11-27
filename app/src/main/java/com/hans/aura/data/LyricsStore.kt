@@ -144,7 +144,7 @@ object LyricsStore {
             if (runLength == 2 && target != null && leadLine != null && leadLine.text.isNotBlank() &&
                 line.text.isNotBlank() && (line.voice == null || line.voice == leadLine.voice)
             ) {
-                paired[target] = paired[target].copy(translation = LyricAdlib(sublineSegments(line)))
+                paired[target] = paired[target].copy(translation = LyricAdlib(sublineSegments(line), line.endMs))
                 row += Placed(entry, runLength, null)
             } else {
                 paired += line
@@ -165,7 +165,7 @@ object LyricsStore {
                     subline.copy(segments = subline.segments.map { segment ->
                         segment.copy(startMs = segment.startMs?.let { shifted(it, offsetMs) },
                             endMs = segment.endMs?.let { shifted(it, offsetMs) })
-                    })
+                    }, endMs = subline.endMs?.let { shifted(it, offsetMs) })
                 }
             )
         }.filterNot { isHeader(it.text) }.sortedBy { it.startMs }

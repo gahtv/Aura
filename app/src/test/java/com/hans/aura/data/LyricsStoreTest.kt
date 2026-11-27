@@ -116,6 +116,17 @@ class LyricsStoreTest {
     }
 
     @Test
+    fun `same stamp translation keeps its own line end`() {
+        val lead = LyricsStore.parseLrcText("[00:10]Hello\n[00:10]<00:10>Bon<00:11>jour<00:12>").single()
+        assertEquals(12000L, lead.translation?.endMs)
+        // A lyric offset shifts the translation end along with its word cues.
+        val shifted = LyricsStore.parseLrcText("[offset:-1000]\n[00:10]Hello\n[00:10]<00:10>Bon<00:11>jour<00:12>").single()
+        val translation = requireNotNull(shifted.translation)
+        assertEquals(13000L, translation.segments.last().endMs)
+        assertEquals(13000L, translation.endMs)
+    }
+
+    @Test
     fun `same voice translations keep cue timing and offset while unsynced lines block pairing`() = runBlocking {
         val response = LyricsResponse(metadata = LyricMetadataDto(offset = 10000000), lyrics = listOf(
             LyricLineDto("v1: Lead", 50000000),

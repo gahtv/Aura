@@ -51,13 +51,31 @@ empty row. For example, this creates a 22–34 second instrumental break:
 
 Line ends can also come from enhanced LRC's closing `<mm:ss.xx>` after its last
 word, Jellyfin's final word cue `End`, or TTML paragraph `end`/`dur` (falling back
-to the final word span's end). An earlier overlapping vocal or timed adlib keeps
-the break from starting until it ends.
+to the final word span's end). An earlier overlapping vocal or a timed adlib,
+translation or romanization keeps the break from starting until it ends (an
+open-ended one, or a lead without an end, runs at least to the next line's start), and a
+backing vocal cued before its lead ends the intro or break at that cue: the pane then
+follows the upcoming line and fills that sub-line without highlighting either lead.
 
 Without an explicit end, a line is treated as lasting until the next line starts:
 a large distance between timestamps alone does not imply an instrumental break.
 Such lyrics can still show intro dots before the first line. There are no inferred
 outro dots, and empty or unsynced lyrics do not produce break dots.
+
+## Overlapping lines
+
+Playback highlights and auto-follows the current (latest started) line, but an
+earlier line rests only once it has actually finished: while its explicit end
+time (line end or the latest end of any word, such as a held syllable) is still
+ahead of the playback position, it keeps its word-by-word highlight at the
+smaller inactive size — including several such lines at once, whether or not
+they are still on screen. Lines
+without an explicit end count as finished when the next line starts, and
+instrumental-break dots suspend overlapping highlights while they run.
+While its lead overlaps, a backing vocal, translation or romanization whose
+timed parts all have an end (their own, a container's, or the translation
+line's) follows only its own window; one with an open-ended timed part follows
+the lead.
 
 ## Playback adjustments
 

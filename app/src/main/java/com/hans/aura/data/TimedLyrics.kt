@@ -51,17 +51,54 @@ internal fun TimedLyricLine.toLyricLine() =
 internal fun List<TimedWord>.sungEnd(): Long? =
     lastOrNull()?.endMs?.let { last -> maxOf(last, maxOf { it.endMs ?: last }) }
 
+/**
+ * Latest known end of anything sung on a line: its explicit [LyricLine.endMs] or any word's own end,
+ * even when the final word has none (a held syllable can outlast later open-ended words), or null
+ * when nothing on the line has an end. Allocation-free so it can run per playback frame.
+ */
+internal fun LyricLine.effectiveEndMs(): Long? {
+    var latest = endMs
+    for (word in words) {
+        val wordEnd = word.endMs ?: continue
+        if (latest == null || wordEnd > latest) latest = wordEnd
+    }
+    return latest
+}
+
 data class AdlibSegment(val text: String, val startMs: Long? = null, val endMs: Long? = null)
 
 /** Any lyric sub-line (adlib, translation or romanization), with optional independent timing. */
-data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null) {
+/**
+ * [endMs] is the latest known end of the sub-line. [openEnded] marks a timed segment that has no end
+ * even after container limits, so the sub-line as a whole has no bounded window.
+ */
+data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null, val openEnded: Boolean = false) {
     val text: String = segments.joinToString("") { it.text }
-    private val startMs = segments.mapNotNull { it.startMs }.minOrNull()
+    internal val startMs = segments.mapNotNull { it.startMs }.minOrNull()
     val isTimed: Boolean get() = startMs != null
 
-    internal fun karaokeFills(positionMs: Long, leadIsCurrent: Boolean): List<KaraokeFill> {
+    /** End of this sub-line's own window, or null when some timed segment is open-ended. */
+    private val boundedEndMs: Long? = when {
+        openEnded -> null
+        endMs != null -> endMs
+        else -> segments.filter { it.startMs != null }
+            .takeIf { timed -> timed.isNotEmpty() && timed.all { it.endMs != null } }
+            ?.maxOf { it.endMs!! }
+    }
+
+    /**
+     * [leadIsCurrent] keeps every timed segment live while the lead is the followed line. While the
+     * lead only overlaps a newer line ([leadIsOverlapping]), a sub-line whose timed segments are all
+     * bounded follows just its own window, and one with an open-ended segment keeps following the lead.
+     */
+    internal fun karaokeFills(
+        positionMs: Long,
+        leadIsCurrent: Boolean,
+        leadIsOverlapping: Boolean = false
+    ): List<KaraokeFill> {
         val overlapping = endMs != null && startMs != null && positionMs in startMs until endMs
-        val active = leadIsCurrent || overlapping
+        val ownEnd = boundedEndMs
+        val active = leadIsCurrent || overlapping || (leadIsOverlapping && (ownEnd == null || positionMs < ownEnd))
         var offset = 0
         return segments.flatMap { segment ->
             val start = segment.startMs
@@ -84,7 +121,10 @@ fun wordFillFraction(word: TimedWord, endMs: Long, positionMs: Long): Float = wh
     else -> ((positionMs.toDouble() - word.startMs) / (endMs.toDouble() - word.startMs)).toFloat().coerceIn(0f, 1f)
 }
 
-/** Ends use explicit end, then next word start, then the earlier of next line start and a one-second cap. */
+/**
+ * Ends use explicit word end, then next word start, then the line's own end, then the earlier of
+ * next line start and a one-second cap. A next line start at or before the word start is ignored.
+ */
 fun karaokeFills(line: TimedLyricLine, positionMs: Long, nextLineStartMs: Long? = null): List<KaraokeFill> {
     val words = line.words.filter { it.text.isNotBlank() }
     fun fallback() = listOf(KaraokeFill(0, line.text.length,
@@ -99,7 +139,9 @@ fun karaokeFills(line: TimedLyricLine, positionMs: Long, nextLineStartMs: Long? 
         val start = offsets[cursor]
         cursor += length
         val cap = word.startMs + 1000L
-        val end = word.endMs ?: words.getOrNull(index + 1)?.startMs ?: minOf(nextLineStartMs ?: cap, cap)
+        val lineEnd = line.endMs?.takeIf { it > word.startMs }
+        val nextStart = nextLineStartMs?.takeIf { it > word.startMs }
+        val end = word.endMs ?: words.getOrNull(index + 1)?.startMs ?: lineEnd ?: minOf(nextStart ?: cap, cap)
         KaraokeFill(start, offsets[cursor - 1] + 1, wordFillFraction(word, end, positionMs))
     }
 }

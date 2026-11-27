@@ -69,4 +69,83 @@ class TimedLyricsTest {
         assertEquals(listOf(KaraokeFill(0, 8, 1f)), karaokeFills(line.copy(words = listOf(TimedWord(500, "Other"))), 500))
         assertEquals(listOf(KaraokeFill(0, 0, 0f)), karaokeFills(line.copy(text = ""), 0))
     }
+
+    @Test
+    fun `overlapping line final word fills toward explicit line end past next line start`() {
+        val line = TimedLyricLine(1000, "Hold on", words = listOf(
+            TimedWord(1000, "Hold"), TimedWord(2000, "on")), endMs = 5000)
+        assertEquals(0.5f, karaokeFills(line, 3500, 3000).last().fraction)
+        assertEquals(1f, karaokeFills(line, 5000, 3000).last().fraction)
+        assertEquals(0f, karaokeFills(line, 2000, 3000).last().fraction)
+    }
+
+    @Test
+    fun `next line start at or before word start falls back to the one second cap`() {
+        val line = TimedLyricLine(1000, "Hold on", words = listOf(
+            TimedWord(1000, "Hold"), TimedWord(2000, "on")))
+        assertEquals(0.5f, karaokeFills(line, 2500, 2000).last().fraction)
+        assertEquals(0.5f, karaokeFills(line, 2500, 1500).last().fraction)
+        assertEquals(0.25f, karaokeFills(line, 2250, 2000).last().fraction)
+        assertEquals(1f, karaokeFills(line, 3000, 2000).last().fraction)
+    }
+
+    @Test
+    fun `line end at or before word start is ignored`() {
+        val line = TimedLyricLine(1000, "Hold on", words = listOf(
+            TimedWord(1000, "Hold"), TimedWord(2000, "on")), endMs = 2000)
+        assertEquals(0.5f, karaokeFills(line, 2500, 2000).last().fraction)
+    }
+
+    @Test
+    fun `effective end prefers explicit line end or latest word end whichever is later`() {
+        assertEquals(5000L, LyricLine(0, "x", isSynced = true, endMs = 5000).effectiveEndMs())
+        assertEquals(4000L, LyricLine(0, "x", isSynced = true, words = listOf(
+            TimedWord(1000, "x", 4000))).effectiveEndMs())
+        assertEquals(4000L, LyricLine(0, "x", isSynced = true, endMs = 3000, words = listOf(
+            TimedWord(1000, "x", 4000))).effectiveEndMs())
+        assertEquals(6000L, LyricLine(0, "x", isSynced = true, endMs = 6000, words = listOf(
+            TimedWord(1000, "x", 4000))).effectiveEndMs())
+        assertEquals(null, LyricLine(0, "x", isSynced = true).effectiveEndMs())
+        assertEquals(null, LyricLine(0, "x", isSynced = true, words = listOf(
+            TimedWord(1000, "x"))).effectiveEndMs())
+    }
+
+    @Test
+    fun `effective end keeps a held word's end when the final word has none`() {
+        val line = LyricLine(2000, "Hold on", isSynced = true, words = listOf(
+            TimedWord(2000, "Hold", 6000), TimedWord(3000, "on")))
+        assertEquals(6000L, line.effectiveEndMs())
+        assertEquals(7000L, line.copy(endMs = 7000).effectiveEndMs())
+    }
+
+    @Test
+    fun `bounded sub-line on an overlapping lead follows only its own window`() {
+        val bounded = LyricAdlib(listOf(AdlibSegment("ooh", 3000, 4000)), 4000)
+        assertEquals(0.5f, bounded.karaokeFills(3500, leadIsCurrent = false, leadIsOverlapping = true).single().fraction)
+        assertEquals(0f, bounded.karaokeFills(5000, leadIsCurrent = false, leadIsOverlapping = true).single().fraction)
+        // The followed lead still keeps a finished sub-line filled.
+        assertEquals(1f, bounded.karaokeFills(5000, leadIsCurrent = true).single().fraction)
+    }
+
+    @Test
+    fun `open-ended later segment keeps following an overlapping lead past an earlier segment end`() {
+        val adlib = LyricAdlib(listOf(AdlibSegment("Oh", 3000, 4000), AdlibSegment(" yeah", 5000)), 4000, openEnded = true)
+        assertEquals(listOf(1f, 0.5f), adlib.karaokeFills(5500, leadIsCurrent = false, leadIsOverlapping = true).map { it.fraction })
+        assertEquals(listOf(0f, 0f), adlib.karaokeFills(5500, leadIsCurrent = false).map { it.fraction })
+    }
+
+    @Test
+    fun `sub-line without an end of its own is bounded by its segment ends`() {
+        val adlib = LyricAdlib(listOf(AdlibSegment("Bon", 3000, 4000), AdlibSegment("jour", 4000, 4500)))
+        assertEquals(listOf(1f, 0.5f), adlib.karaokeFills(4250, leadIsCurrent = false, leadIsOverlapping = true).map { it.fraction })
+        assertEquals(listOf(0f, 0f), adlib.karaokeFills(5000, leadIsCurrent = false, leadIsOverlapping = true).map { it.fraction })
+    }
+
+
+    @Test
+    fun `unbounded sub-line keeps following an overlapping lead`() {
+        val open = LyricAdlib(listOf(AdlibSegment("ooh", 3000)))
+        assertEquals(1f, open.karaokeFills(5000, leadIsCurrent = false, leadIsOverlapping = true).single().fraction)
+        assertEquals(0f, open.karaokeFills(5000, leadIsCurrent = false).single().fraction)
+    }
 }

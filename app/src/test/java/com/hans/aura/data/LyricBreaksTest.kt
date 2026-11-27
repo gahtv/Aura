@@ -41,6 +41,34 @@ class LyricBreaksTest {
     }
 
     @Test
+    fun `a trailing timed translation or romanization holds off the break`() {
+        val translation = LyricAdlib(listOf(AdlibSegment("Bon", 10_000, 13_000), AdlibSegment("jour", 13_000, 14_000)), 14_000)
+        val breaks = lyricBreaks(listOf(line(10_000, 12_000).copy(translation = translation), line(20_000)))
+        assertEquals(listOf(LyricBreak(-1, 0, 10_000), LyricBreak(0, 14_000, 20_000)), breaks)
+        val romanized = line(10_000, 12_000).copy(romanization = translation)
+        assertEquals(LyricBreak(0, 14_000, 20_000), lyricBreaks(listOf(romanized, line(20_000))).last())
+        val open = line(10_000, 12_000).copy(translation = LyricAdlib(listOf(AdlibSegment("Bon", 10_000))))
+        assertEquals(listOf(LyricBreak(-1, 0, 10_000)), lyricBreaks(listOf(open, line(20_000))))
+    }
+
+    @Test
+    fun `a backing vocal cued before its lead ends the intro and gap early`() {
+        val early = LyricAdlib(listOf(AdlibSegment("ooh", 18_000, 19_000)), 19_000)
+        val breaks = lyricBreaks(listOf(line(12_000, 13_000).copy(adlib = early.copy(listOf(AdlibSegment("la", 9_000, 10_000)), 10_000)),
+            line(20_000).copy(adlib = early)))
+        assertEquals(listOf(LyricBreak(-1, 0, 9_000), LyricBreak(0, 13_000, 18_000)), breaks)
+    }
+
+    @Test
+    fun `a held lead outlasts its open-ended translation's fallback`() {
+        val open = LyricAdlib(listOf(AdlibSegment("Bon", 2_000)))
+        val held = line(2_000, 15_000).copy(translation = open)
+        assertTrue(lyricBreaks(listOf(held, line(4_000, 6_000), line(16_000))).isEmpty())
+        val unended = line(2_000).copy(translation = LyricAdlib(listOf(AdlibSegment("Bon", 2_000, 15_000)), 15_000))
+        assertTrue(lyricBreaks(listOf(unended, line(4_000, 6_000), line(16_000))).isEmpty())
+    }
+
+    @Test
     fun `unsynced lyrics have no breaks`() {
         assertTrue(lyricBreaks(listOf(LyricLine(0, "a", isSynced = false))).isEmpty())
         assertTrue(lyricBreaks(emptyList()).isEmpty())

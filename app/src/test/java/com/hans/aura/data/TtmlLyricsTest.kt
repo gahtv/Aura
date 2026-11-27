@@ -301,6 +301,21 @@ class TtmlLyricsTest {
     }
 
     @Test
+    fun `intro dots end when a backing vocal is cued before its lead`() {
+        val lines = parse("""
+            <p begin="12s"><span begin="12s">Lead</span>
+                <span ttm:role="x-bg" begin="11.5s" end="13.4s"><span begin="11.6s">La</span><span begin="11.8s">la</span></span>
+            </p>
+            <p begin="12.9s">Next lead</p>
+        """)
+        val breaks = lyricBreaks(lines)
+        assertEquals(listOf(LyricBreak(-1, 0, 11600)), breaks)
+        assertTrue(breaks.none { 11700L in it })
+        val adlib = requireNotNull(lines.first().adlib)
+        assertEquals(0.5f, adlib.karaokeFills(11700, leadIsCurrent = false)[0].fraction, 0f)
+    }
+
+    @Test
     fun `explicit parallel timing resolves adlib offsets and duration like lead offsets`() {
         val line = parse("""
             <div begin="2s"><p begin="10s" timeContainer="par"><span begin="500ms">Lead</span>

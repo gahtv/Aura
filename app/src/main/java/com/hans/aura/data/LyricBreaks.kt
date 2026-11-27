@@ -30,19 +30,40 @@ const val MIN_LYRIC_BREAK_MS = 4_000L
 fun lyricBreaks(lines: List<LyricLine>, minGapMs: Long = MIN_LYRIC_BREAK_MS): List<LyricBreak> {
     if (lines.isEmpty() || !lines[0].isSynced) return emptyList()
     val breaks = mutableListOf<LyricBreak>()
-    if (lines[0].startMs >= minGapMs) breaks += LyricBreak(-1, 0L, lines[0].startMs)
+    val firstCue = lines[0].firstCueMs()
+    if (firstCue >= minGapMs) breaks += LyricBreak(-1, 0L, firstCue)
     var sungUntil = Long.MIN_VALUE
     for (i in 0 until lines.lastIndex) {
         val next = lines[i + 1]
         sungUntil = maxOf(sungUntil, lines[i].sungUntil() ?: next.startMs)
-        if (next.startMs - sungUntil >= minGapMs) breaks += LyricBreak(i, sungUntil, next.startMs)
+        val nextCue = next.firstCueMs()
+        if (nextCue - sungUntil >= minGapMs) breaks += LyricBreak(i, sungUntil, nextCue)
     }
     return breaks
 }
 
-/** An adlib trailing past its lead line keeps the break from starting; an open-ended timed one runs to the next line. */
-private fun LyricLine.sungUntil(): Long? {
-    val end = endMs ?: return null
-    val adlib = adlib ?: return end
-    return adlib.endMs?.let { maxOf(end, it) } ?: end.takeUnless { adlib.isTimed }
+/** A timed sub-line cued before its lead (such as a backing vocal) ends the break early. */
+private fun LyricLine.firstCueMs(): Long {
+    var first = startMs
+    for (sub in sublines()) sub.startMs?.let { if (it < first) first = it }
+    return first
 }
+
+/**
+ * A sub-line (adlib, translation or romanization) trailing past its lead keeps the break from
+ * starting; an open-ended timed one runs to the next line.
+ */
+private fun LyricLine.sungUntil(): Long? {
+    var until = endMs ?: return null
+    for (sub in sublines()) {
+        val subEnd = sub.endMs
+        until = when {
+            subEnd != null -> maxOf(until, subEnd)
+            sub.isTimed -> return null
+            else -> until
+        }
+    }
+    return until
+}
+
+private fun LyricLine.sublines() = listOfNotNull(adlib, translation, romanization)

@@ -51,8 +51,9 @@ empty row. For example, this creates a 22–34 second instrumental break:
 
 Line ends can also come from enhanced LRC's closing `<mm:ss.xx>` after its last
 word, Jellyfin's final word cue `End`, or TTML paragraph `end`/`dur` (falling back
-to the final word span's end). An earlier overlapping vocal or timed adlib keeps
-the break from starting until it ends.
+to the final word span's end). An earlier overlapping vocal or a timed adlib,
+translation or romanization keeps the break from starting until it ends, and a
+backing vocal cued before its lead ends the intro or break at that cue.
 
 Without an explicit end, a line is treated as lasting until the next line starts:
 a large distance between timestamps alone does not imply an instrumental break.

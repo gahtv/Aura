@@ -51,6 +51,10 @@ internal fun TimedLyricLine.toLyricLine() =
 internal fun List<TimedWord>.sungEnd(): Long? =
     lastOrNull()?.endMs?.let { last -> maxOf(last, maxOf { it.endMs ?: last }) }
 
+/** Known end time of a line from its explicit [LyricLine.endMs] or latest word end, or null if open-ended. */
+internal fun LyricLine.effectiveEndMs(): Long? =
+    listOfNotNull(endMs, words.sungEnd()).maxOrNull()
+
 data class AdlibSegment(val text: String, val startMs: Long? = null, val endMs: Long? = null)
 
 /** Any lyric sub-line (adlib, translation or romanization), with optional independent timing. */
@@ -84,7 +88,10 @@ fun wordFillFraction(word: TimedWord, endMs: Long, positionMs: Long): Float = wh
     else -> ((positionMs.toDouble() - word.startMs) / (endMs.toDouble() - word.startMs)).toFloat().coerceIn(0f, 1f)
 }
 
-/** Ends use explicit end, then next word start, then the earlier of next line start and a one-second cap. */
+/**
+ * Ends use explicit word end, then next word start, then the line's own end, then the earlier of
+ * next line start and a one-second cap. A next line start at or before the word start is ignored.
+ */
 fun karaokeFills(line: TimedLyricLine, positionMs: Long, nextLineStartMs: Long? = null): List<KaraokeFill> {
     val words = line.words.filter { it.text.isNotBlank() }
     fun fallback() = listOf(KaraokeFill(0, line.text.length,
@@ -99,7 +106,9 @@ fun karaokeFills(line: TimedLyricLine, positionMs: Long, nextLineStartMs: Long? 
         val start = offsets[cursor]
         cursor += length
         val cap = word.startMs + 1000L
-        val end = word.endMs ?: words.getOrNull(index + 1)?.startMs ?: minOf(nextLineStartMs ?: cap, cap)
+        val lineEnd = line.endMs?.takeIf { it > word.startMs }
+        val nextStart = nextLineStartMs?.takeIf { it > word.startMs }
+        val end = word.endMs ?: words.getOrNull(index + 1)?.startMs ?: lineEnd ?: minOf(nextStart ?: cap, cap)
         KaraokeFill(start, offsets[cursor - 1] + 1, wordFillFraction(word, end, positionMs))
     }
 }

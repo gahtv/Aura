@@ -59,6 +59,16 @@ a large distance between timestamps alone does not imply an instrumental break.
 Such lyrics can still show intro dots before the first line. There are no inferred
 outro dots, and empty or unsynced lyrics do not produce break dots.
 
+## Overlapping lines
+
+Playback highlights and auto-follows the current (latest started) line, but an
+earlier line rests only once it has actually finished: while its explicit end
+time (line end or latest word end) is still ahead of the playback position, it
+keeps its word-by-word highlight at the smaller inactive size — including
+several such lines at once, whether or not they are still on screen. Lines
+without an explicit end count as finished when the next line starts, and
+instrumental-break dots suspend overlapping highlights while they run.
+
 ## Playback adjustments
 
 Manual scrolling pauses auto-follow for 4 seconds. D-pad timing nudges while the

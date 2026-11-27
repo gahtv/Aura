@@ -83,6 +83,7 @@ import com.hans.aura.data.LyricsStore
 import com.hans.aura.data.MusicSources
 import com.hans.aura.data.Prefs
 import com.hans.aura.data.TimedLyricLine
+import com.hans.aura.data.effectiveEndMs
 import com.hans.aura.data.karaokeFills
 import com.hans.aura.data.lyricBreaks
 import com.hans.aura.data.toLyricLine
@@ -240,7 +241,7 @@ fun LyricsPane(
     }
     val breaks = remember(lines) { lyricBreaks(lines.orEmpty()) }
     val cursor by rememberLyricCursor(lines, breaks, effectivePosition)
-    val (currentLineIndex, activeBreak) = cursor
+    val (currentLineIndex, activeBreak, overlappingLines) = cursor
     val rows = remember(lines, breaks) { lyricRows(lines.orEmpty().size, breaks) }
     // During a break the dots take the current line's anchor slot.
     val followRow = activeBreak?.let { rows.indexOf(LyricRow.Break(it)) }
@@ -391,11 +392,18 @@ fun LyricsPane(
                     val secondaryVoice = multipleVoices && line.voice?.kind == LyricVoice.Kind.SECONDARY
                     // The line that just ended rests with the others through a break.
                     val isCurrent = i == currentLineIndex && activeBreak == null
+                    // An earlier line that is still being sung (its own end time
+                    // has not passed) keeps its highlight at the resting size,
+                    // while the current line alone stays the followed anchor.
+                    val isOverlapping = !isCurrent && i in overlappingLines && activeBreak == null
+                    val isActive = isCurrent || isOverlapping
                     // Line-only timestamps do not carry karaoke word timing.
-                    val timed = timedLines?.getOrNull(i)?.takeIf { isCurrent && it.words.isNotEmpty() }
+                    val timed = timedLines?.getOrNull(i)?.takeIf { isActive && it.words.isNotEmpty() }
                     Column(
                         Modifier
                             .fillMaxWidth()
+                            // Only the followed line gets the voice band, so the
+                            // anchor stays visually dominant over overlaps.
                             .then(if (multipleVoices && isCurrent) {
                                 Modifier.background(colors.secondaryContainer)
                             } else Modifier)
@@ -412,11 +420,13 @@ fun LyricsPane(
                     ) {
                         if (timed != null) {
                             KaraokeLine(timed, effectivePosition,
-                                loadedLines.getOrNull(i + 1)?.startMs, alignment, secondaryVoice = secondaryVoice)
+                                loadedLines.getOrNull(i + 1)?.startMs, alignment, secondaryVoice = secondaryVoice,
+                                fontSize = if (isCurrent) AuraTypography.headline else AuraTypography.title,
+                                fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal)
                         } else {
                             androidx.tv.material3.Text(
                                 AnnotatedString(line.text.ifBlank { "\u00A0" }),
-                                color = if (isCurrent) lineHighlight else TextPrimary,
+                                color = if (isActive) lineHighlight else TextPrimary,
                                 fontSize = if (isCurrent) AuraTypography.headline else AuraTypography.title,
                                 fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
                                 textAlign = alignment,
@@ -425,15 +435,15 @@ fun LyricsPane(
                         }
                         val adlib = line.adlib
                         if (adlib != null && adlib.text.isNotBlank()) {
-                            AdlibText(adlib, effectivePosition, isCurrent, alignment, secondaryVoice)
+                            AdlibText(adlib, effectivePosition, isActive, alignment, secondaryVoice)
                         }
                         val romanization = line.romanization
                         if (romanization != null && romanization.text.isNotBlank()) {
-                            AdlibText(romanization, effectivePosition, isCurrent, alignment, secondaryVoice)
+                            AdlibText(romanization, effectivePosition, isActive, alignment, secondaryVoice)
                         }
                         val translation = line.translation
                         if (translation != null && translation.text.isNotBlank()) {
-                            AdlibText(translation, effectivePosition, isCurrent, alignment, secondaryVoice)
+                            AdlibText(translation, effectivePosition, isActive, alignment, secondaryVoice)
                         }
                     }
                     // After the part's last line, so the current-line anchor stays on the text.
@@ -611,7 +621,13 @@ private sealed interface LyricRow {
     data class Break(val gap: LyricBreak) : LyricRow
 }
 
-internal data class LyricCursor(val lineIndex: Int, val activeBreak: LyricBreak?)
+internal data class LyricCursor(
+    val lineIndex: Int,
+    val activeBreak: LyricBreak?,
+    // Earlier lines (any of them, not just the previous one) whose sung window
+    // still covers the playback position; they stay word-by-word highlighted.
+    val overlappingLines: Set<Int> = emptySet()
+)
 
 @Composable
 internal fun rememberLyricCursor(
@@ -621,7 +637,11 @@ internal fun rememberLyricCursor(
 ): State<LyricCursor> = remember(lines, breaks, effectivePosition) {
     derivedStateOf(structuralEqualityPolicy()) {
         val position = effectivePosition()
-        LyricCursor(computeCurrentLine(lines, position), breaks.firstOrNull { position in it })
+        val activeBreak = breaks.firstOrNull { position in it }
+        val lineIndex = computeCurrentLine(lines, position)
+        // A break owns the clock: nothing else highlights while the dots run.
+        val overlapping = if (activeBreak == null) computeOverlappingLines(lines, position, lineIndex) else emptySet()
+        LyricCursor(lineIndex, activeBreak, overlapping)
     }
 }
 
@@ -703,6 +723,32 @@ fun computeCurrentLine(lines: List<LyricLine>?, positionMs: Long): Int {
     return idx
 }
 
+/**
+ * Earlier lines that are STILL being sung at [positionMs]: anything before the
+ * current line whose explicit end (line end or latest word end) has not passed.
+ * Scans every earlier index, so two, three or more previous lines can overlap
+ * at once, on or off screen; open-ended lines are treated as finished when the
+ * next line starts. Returns the shared empty set when nothing overlaps, so the
+ * common no-overlap playback path allocates nothing.
+ */
+internal fun computeOverlappingLines(
+    lines: List<LyricLine>?,
+    positionMs: Long,
+    currentLineIndex: Int = computeCurrentLine(lines, positionMs)
+): Set<Int> {
+    if (lines.isNullOrEmpty() || !lines[0].isSynced || currentLineIndex <= 0) return emptySet()
+    var overlapping: MutableSet<Int>? = null
+    for (i in 0 until currentLineIndex) {
+        val line = lines[i]
+        val endMs = line.effectiveEndMs() ?: continue
+        if (positionMs >= line.startMs && positionMs < endMs) {
+            if (overlapping == null) overlapping = mutableSetOf()
+            overlapping.add(i)
+        }
+    }
+    return overlapping ?: emptySet()
+}
+
 @Composable
 private fun KaraokeLine(
     line: TimedLyricLine,
@@ -716,7 +762,10 @@ private fun KaraokeLine(
     fills: (Long) -> List<KaraokeFill> = { karaokeFills(line, it, nextLineStartMs) }
 ) {
     val colors = MaterialTheme.colorScheme
-    var layout by remember(line) { mutableStateOf<TextLayoutResult?>(null) }
+    // Keyed on the style too: a line stepping down from the current headline
+    // size to the resting title size must not draw one frame with the old
+    // glyph boxes, or the fill clip lands off the shrunken text.
+    var layout by remember(line, fontSize, fontWeight) { mutableStateOf<TextLayoutResult?>(null) }
     val clipPath = remember { Path() }
     val offsetBoxes = remember(layout, line) {
         val res = layout ?: return@remember emptyList<Pair<androidx.compose.ui.geometry.Rect, ResolvedTextDirection>>()

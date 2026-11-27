@@ -69,4 +69,44 @@ class TimedLyricsTest {
         assertEquals(listOf(KaraokeFill(0, 8, 1f)), karaokeFills(line.copy(words = listOf(TimedWord(500, "Other"))), 500))
         assertEquals(listOf(KaraokeFill(0, 0, 0f)), karaokeFills(line.copy(text = ""), 0))
     }
+
+    @Test
+    fun `overlapping line final word fills toward explicit line end past next line start`() {
+        val line = TimedLyricLine(1000, "Hold on", words = listOf(
+            TimedWord(1000, "Hold"), TimedWord(2000, "on")), endMs = 5000)
+        assertEquals(0.5f, karaokeFills(line, 3500, 3000).last().fraction)
+        assertEquals(1f, karaokeFills(line, 5000, 3000).last().fraction)
+        assertEquals(0f, karaokeFills(line, 2000, 3000).last().fraction)
+    }
+
+    @Test
+    fun `next line start at or before word start falls back to the one second cap`() {
+        val line = TimedLyricLine(1000, "Hold on", words = listOf(
+            TimedWord(1000, "Hold"), TimedWord(2000, "on")))
+        assertEquals(0.5f, karaokeFills(line, 2500, 2000).last().fraction)
+        assertEquals(0.5f, karaokeFills(line, 2500, 1500).last().fraction)
+        assertEquals(0.25f, karaokeFills(line, 2250, 2000).last().fraction)
+        assertEquals(1f, karaokeFills(line, 3000, 2000).last().fraction)
+    }
+
+    @Test
+    fun `line end at or before word start is ignored`() {
+        val line = TimedLyricLine(1000, "Hold on", words = listOf(
+            TimedWord(1000, "Hold"), TimedWord(2000, "on")), endMs = 2000)
+        assertEquals(0.5f, karaokeFills(line, 2500, 2000).last().fraction)
+    }
+
+    @Test
+    fun `effective end prefers explicit line end or latest word end whichever is later`() {
+        assertEquals(5000L, LyricLine(0, "x", isSynced = true, endMs = 5000).effectiveEndMs())
+        assertEquals(4000L, LyricLine(0, "x", isSynced = true, words = listOf(
+            TimedWord(1000, "x", 4000))).effectiveEndMs())
+        assertEquals(4000L, LyricLine(0, "x", isSynced = true, endMs = 3000, words = listOf(
+            TimedWord(1000, "x", 4000))).effectiveEndMs())
+        assertEquals(6000L, LyricLine(0, "x", isSynced = true, endMs = 6000, words = listOf(
+            TimedWord(1000, "x", 4000))).effectiveEndMs())
+        assertEquals(null, LyricLine(0, "x", isSynced = true).effectiveEndMs())
+        assertEquals(null, LyricLine(0, "x", isSynced = true, words = listOf(
+            TimedWord(1000, "x"))).effectiveEndMs())
+    }
 }

@@ -35,7 +35,7 @@ fun lyricBreaks(lines: List<LyricLine>, minGapMs: Long = MIN_LYRIC_BREAK_MS): Li
     var sungUntil = Long.MIN_VALUE
     for (i in 0 until lines.lastIndex) {
         val next = lines[i + 1]
-        sungUntil = maxOf(sungUntil, lines[i].sungUntil() ?: next.startMs)
+        sungUntil = maxOf(sungUntil, lines[i].sungUntil(next.startMs))
         val nextCue = next.firstCueMs()
         if (nextCue - sungUntil >= minGapMs) breaks += LyricBreak(i, sungUntil, nextCue)
     }
@@ -43,25 +43,22 @@ fun lyricBreaks(lines: List<LyricLine>, minGapMs: Long = MIN_LYRIC_BREAK_MS): Li
 }
 
 /** A timed sub-line cued before its lead (such as a backing vocal) ends the break early. */
-private fun LyricLine.firstCueMs(): Long {
+internal fun LyricLine.firstCueMs(): Long {
     var first = startMs
     for (sub in sublines()) sub.startMs?.let { if (it < first) first = it }
     return first
 }
 
 /**
- * A sub-line (adlib, translation or romanization) trailing past its lead keeps the break from
- * starting; an open-ended timed one runs to the next line.
+ * The latest known end of the lead or any sub-line (adlib, translation or romanization); a lead
+ * without an end or an open-ended timed sub-line also runs to [nextStartMs].
  */
-private fun LyricLine.sungUntil(): Long? {
-    var until = endMs ?: return null
+private fun LyricLine.sungUntil(nextStartMs: Long): Long {
+    var until = endMs ?: nextStartMs
     for (sub in sublines()) {
         val subEnd = sub.endMs
-        until = when {
-            subEnd != null -> maxOf(until, subEnd)
-            sub.isTimed -> return null
-            else -> until
-        }
+        if (subEnd != null) until = maxOf(until, subEnd)
+        else if (sub.isTimed) until = maxOf(until, nextStartMs)
     }
     return until
 }

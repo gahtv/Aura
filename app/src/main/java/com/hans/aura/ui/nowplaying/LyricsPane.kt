@@ -85,6 +85,7 @@ import com.hans.aura.data.Prefs
 import com.hans.aura.data.TimedLyricLine
 import com.hans.aura.data.effectiveEndMs
 import com.hans.aura.data.karaokeFills
+import com.hans.aura.data.firstCueMs
 import com.hans.aura.data.lyricBreaks
 import com.hans.aura.data.toLyricLine
 import com.hans.aura.data.toTimedLyricLine
@@ -241,10 +242,11 @@ fun LyricsPane(
     }
     val breaks = remember(lines) { lyricBreaks(lines.orEmpty()) }
     val cursor by rememberLyricCursor(lines, breaks, effectivePosition)
-    val (currentLineIndex, activeBreak, overlappingLines) = cursor
+    val (currentLineIndex, activeBreak, overlappingLines, pendingLine) = cursor
     val rows = remember(lines, breaks) { lyricRows(lines.orEmpty().size, breaks) }
     // During a break the dots take the current line's anchor slot.
     val followRow = activeBreak?.let { rows.indexOf(LyricRow.Break(it)) }
+        ?: pendingLine?.let { rows.indexOf(LyricRow.Line(it)) }
         ?: rows.indexOf(LyricRow.Line(currentLineIndex.coerceAtLeast(0)))
     // Anchor about three standard line heights from the top; wrapped lyrics
     // and adlibs can take up more of the space above the current line.
@@ -391,7 +393,9 @@ fun LyricsPane(
                     val (alignment, lineHighlight) = lyricVoiceStyle(line.voice, multipleVoices, colors)
                     val secondaryVoice = multipleVoices && line.voice?.kind == LyricVoice.Kind.SECONDARY
                     // The line that just ended rests with the others through a break.
-                    val isCurrent = i == currentLineIndex && activeBreak == null
+                    val isCurrent = i == currentLineIndex && activeBreak == null && pendingLine == null
+                    // A sub-line cued before its lead (after a break or the intro) runs on as if its lead were current.
+                    val subLeadIsCurrent = isCurrent || i == pendingLine
                     // An earlier line that is still being sung (its own end time
                     // has not passed) keeps its highlight at the resting size,
                     // while the current line alone stays the followed anchor.
@@ -435,15 +439,15 @@ fun LyricsPane(
                         }
                         val adlib = line.adlib
                         if (adlib != null && adlib.text.isNotBlank()) {
-                            AdlibText(adlib, effectivePosition, isCurrent, isOverlapping, alignment, secondaryVoice)
+                            AdlibText(adlib, effectivePosition, subLeadIsCurrent, isOverlapping, alignment, secondaryVoice)
                         }
                         val romanization = line.romanization
                         if (romanization != null && romanization.text.isNotBlank()) {
-                            AdlibText(romanization, effectivePosition, isCurrent, isOverlapping, alignment, secondaryVoice)
+                            AdlibText(romanization, effectivePosition, subLeadIsCurrent, isOverlapping, alignment, secondaryVoice)
                         }
                         val translation = line.translation
                         if (translation != null && translation.text.isNotBlank()) {
-                            AdlibText(translation, effectivePosition, isCurrent, isOverlapping, alignment, secondaryVoice)
+                            AdlibText(translation, effectivePosition, subLeadIsCurrent, isOverlapping, alignment, secondaryVoice)
                         }
                     }
                     // After the part's last line, so the current-line anchor stays on the text.
@@ -626,7 +630,10 @@ internal data class LyricCursor(
     val activeBreak: LyricBreak?,
     // Earlier lines (any of them, not just the previous one) whose sung window
     // still covers the playback position; they stay word-by-word highlighted.
-    val overlappingLines: Set<Int> = emptySet()
+    val overlappingLines: Set<Int> = emptySet(),
+    // The next line, once a sub-line cued before its lead ends the intro or a break: it is
+    // followed without highlighting either the ended lead or the not-yet-started one.
+    val pendingLine: Int? = null
 )
 
 @Composable
@@ -642,7 +649,13 @@ internal fun rememberLyricCursor(
         val lineIndex = computeCurrentLine(lines, position)
         // A break owns the clock: nothing else highlights while the dots run.
         val overlapping = if (activeBreak == null) computeOverlappingLines(lines, position, lineIndex, overlapEnds) else emptySet()
-        LyricCursor(lineIndex, activeBreak, overlapping)
+        val next = lineIndex + 1
+        val pending = next.takeIf {
+            activeBreak == null && lines != null && next <= lines.lastIndex && lines[0].isSynced &&
+                position >= lines[next].firstCueMs() &&
+                (lineIndex == -1 || breaks.any { it.afterLine == lineIndex })
+        }
+        LyricCursor(lineIndex, activeBreak, overlapping, pending)
     }
 }
 

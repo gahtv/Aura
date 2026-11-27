@@ -60,6 +60,15 @@ class LyricBreaksTest {
     }
 
     @Test
+    fun `a held lead outlasts its open-ended translation's fallback`() {
+        val open = LyricAdlib(listOf(AdlibSegment("Bon", 2_000)))
+        val held = line(2_000, 15_000).copy(translation = open)
+        assertTrue(lyricBreaks(listOf(held, line(4_000, 6_000), line(16_000))).isEmpty())
+        val unended = line(2_000).copy(translation = LyricAdlib(listOf(AdlibSegment("Bon", 2_000, 15_000)), 15_000))
+        assertTrue(lyricBreaks(listOf(unended, line(4_000, 6_000), line(16_000))).isEmpty())
+    }
+
+    @Test
     fun `unsynced lyrics have no breaks`() {
         assertTrue(lyricBreaks(listOf(LyricLine(0, "a", isSynced = false))).isEmpty())
         assertTrue(lyricBreaks(emptyList()).isEmpty())

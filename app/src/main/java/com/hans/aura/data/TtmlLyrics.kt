@@ -26,6 +26,7 @@ internal object TtmlLyrics {
         private val segments = mutableListOf<AdlibSegment>()
         private var pendingSpace = false
         private var endMs: Long? = null
+        private var openEnded = false
         val inside: Boolean get() = timings.isNotEmpty()
 
         fun enter(depth: Int, begin: Double?, end: Double?, duration: Double?, containerEnd: Double = Double.POSITIVE_INFINITY) {
@@ -58,13 +59,15 @@ internal object TtmlLyrics {
                 if (start != null && timing.end.isFinite()) {
                     val end = timing.end.roundToLong()
                     endMs = maxOf(end, endMs ?: end)
+                } else if (start != null) {
+                    openEnded = true
                 }
             }
             pendingSpace = normalized.endsWith(' ')
         }
 
         fun toAdlib(): LyricAdlib? =
-            segments.takeIf { it.isNotEmpty() }?.let { LyricAdlib(it.toList(), endMs) }
+            segments.takeIf { it.isNotEmpty() }?.let { LyricAdlib(it.toList(), endMs, openEnded) }
     }
 
     private data class Rates(

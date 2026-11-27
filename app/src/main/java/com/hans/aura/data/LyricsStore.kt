@@ -144,7 +144,7 @@ object LyricsStore {
             if (runLength == 2 && target != null && leadLine != null && leadLine.text.isNotBlank() &&
                 line.text.isNotBlank() && (line.voice == null || line.voice == leadLine.voice)
             ) {
-                paired[target] = paired[target].copy(translation = LyricAdlib(sublineSegments(line)))
+                paired[target] = paired[target].copy(translation = LyricAdlib(sublineSegments(line), line.endMs))
                 row += Placed(entry, runLength, null)
             } else {
                 paired += line

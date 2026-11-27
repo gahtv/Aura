@@ -311,6 +311,32 @@ class TtmlLyricsTest {
     }
 
     @Test
+    fun `open-ended backing span after a bounded one follows an overlapping lead`() {
+        val lines = parse("""
+            <p begin="2s"><span begin="2s">Lead</span>
+                <span ttm:role="x-bg"><span begin="3s" end="4s">Oh</span> <span begin="5s">yeah</span></span></p>
+            <p begin="4.5s"><span begin="4.5s">Next</span></p>
+        """)
+        val adlib = requireNotNull(lines.first().adlib)
+        assertTrue(adlib.openEnded)
+        assertEquals(4000L, adlib.endMs)
+        assertEquals(listOf(1f, 0.5f), adlib.karaokeFills(5500, leadIsCurrent = false, leadIsOverlapping = true).map { it.fraction })
+    }
+
+    @Test
+    fun `backing span without an end is bounded by its container limit`() {
+        val line = parse("""
+            <div begin="2s"><p begin="10s" timeContainer="par"><span begin="500ms">Lead</span>
+                <span ttm:role="x-bg" begin="30f" dur="1s"><span>Oh</span> <span begin="500ms">yeah</span></span>
+            </p></div>
+        """).single()
+        val adlib = requireNotNull(line.adlib)
+        assertFalse(adlib.openEnded)
+        assertEquals(listOf(0.75f, 0.5f), adlib.karaokeFills(13750, leadIsCurrent = false, leadIsOverlapping = true).map { it.fraction })
+        assertEquals(listOf(0f, 0f), adlib.karaokeFills(14500, leadIsCurrent = false, leadIsOverlapping = true).map { it.fraction })
+    }
+
+    @Test
     fun `clock and offset times and plain paragraphs`() {
         val lines = parse("""<p begin="01:02.345" end="65s">Clock</p><p begin="12.5s"><span begin="12.501">Offset</span></p><p begin="500ms">Milliseconds</p>""")
         assertEquals(listOf(500L, 12500L, 62345L), lines.map { it.startMs })

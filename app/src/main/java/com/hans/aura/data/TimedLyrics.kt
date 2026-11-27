@@ -68,15 +68,28 @@ internal fun LyricLine.effectiveEndMs(): Long? {
 data class AdlibSegment(val text: String, val startMs: Long? = null, val endMs: Long? = null)
 
 /** Any lyric sub-line (adlib, translation or romanization), with optional independent timing. */
-data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null) {
+/**
+ * [endMs] is the latest known end of the sub-line. [openEnded] marks a timed segment that has no end
+ * even after container limits, so the sub-line as a whole has no bounded window.
+ */
+data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null, val openEnded: Boolean = false) {
     val text: String = segments.joinToString("") { it.text }
     private val startMs = segments.mapNotNull { it.startMs }.minOrNull()
     val isTimed: Boolean get() = startMs != null
 
+    /** End of this sub-line's own window, or null when some timed segment is open-ended. */
+    private val boundedEndMs: Long? = when {
+        openEnded -> null
+        endMs != null -> endMs
+        else -> segments.filter { it.startMs != null }
+            .takeIf { timed -> timed.isNotEmpty() && timed.all { it.endMs != null } }
+            ?.maxOf { it.endMs!! }
+    }
+
     /**
      * [leadIsCurrent] keeps every timed segment live while the lead is the followed line. While the
-     * lead only overlaps a newer line ([leadIsOverlapping]), a sub-line with its own [endMs] follows
-     * just its own window, and one without an end keeps following the lead.
+     * lead only overlaps a newer line ([leadIsOverlapping]), a sub-line whose timed segments are all
+     * bounded follows just its own window, and one with an open-ended segment keeps following the lead.
      */
     internal fun karaokeFills(
         positionMs: Long,
@@ -84,7 +97,8 @@ data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null)
         leadIsOverlapping: Boolean = false
     ): List<KaraokeFill> {
         val overlapping = endMs != null && startMs != null && positionMs in startMs until endMs
-        val active = leadIsCurrent || overlapping || (leadIsOverlapping && endMs == null)
+        val ownEnd = boundedEndMs
+        val active = leadIsCurrent || overlapping || (leadIsOverlapping && (ownEnd == null || positionMs < ownEnd))
         var offset = 0
         return segments.flatMap { segment ->
             val start = segment.startMs

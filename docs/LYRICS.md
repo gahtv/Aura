@@ -69,8 +69,10 @@ smaller inactive size — including several such lines at once, whether or not
 they are still on screen. Lines
 without an explicit end count as finished when the next line starts, and
 instrumental-break dots suspend overlapping highlights while they run.
-A backing vocal, translation or romanization with its own end follows only its
-own window while its lead overlaps; one without an end follows the lead.
+While its lead overlaps, a backing vocal, translation or romanization whose
+timed parts all have an end (their own, a container's, or the translation
+line's) follows only its own window; one with an open-ended timed part follows
+the lead.
 
 ## Playback adjustments
 

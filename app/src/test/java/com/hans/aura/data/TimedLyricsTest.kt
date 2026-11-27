@@ -128,6 +128,20 @@ class TimedLyricsTest {
     }
 
     @Test
+    fun `open-ended later segment keeps following an overlapping lead past an earlier segment end`() {
+        val adlib = LyricAdlib(listOf(AdlibSegment("Oh", 3000, 4000), AdlibSegment(" yeah", 5000)), 4000, openEnded = true)
+        assertEquals(listOf(1f, 0.5f), adlib.karaokeFills(5500, leadIsCurrent = false, leadIsOverlapping = true).map { it.fraction })
+        assertEquals(listOf(0f, 0f), adlib.karaokeFills(5500, leadIsCurrent = false).map { it.fraction })
+    }
+
+    @Test
+    fun `sub-line without an end of its own is bounded by its segment ends`() {
+        val adlib = LyricAdlib(listOf(AdlibSegment("Bon", 3000, 4000), AdlibSegment("jour", 4000, 4500)))
+        assertEquals(listOf(1f, 0.5f), adlib.karaokeFills(4250, leadIsCurrent = false, leadIsOverlapping = true).map { it.fraction })
+        assertEquals(listOf(0f, 0f), adlib.karaokeFills(5000, leadIsCurrent = false, leadIsOverlapping = true).map { it.fraction })
+    }
+
+    @Test
     fun `unbounded sub-line keeps following an overlapping lead`() {
         val open = LyricAdlib(listOf(AdlibSegment("ooh", 3000)))
         assertEquals(1f, open.karaokeFills(5000, leadIsCurrent = false, leadIsOverlapping = true).single().fraction)

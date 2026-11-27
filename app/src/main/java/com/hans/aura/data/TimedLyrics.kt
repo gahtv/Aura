@@ -51,9 +51,19 @@ internal fun TimedLyricLine.toLyricLine() =
 internal fun List<TimedWord>.sungEnd(): Long? =
     lastOrNull()?.endMs?.let { last -> maxOf(last, maxOf { it.endMs ?: last }) }
 
-/** Known end time of a line from its explicit [LyricLine.endMs] or latest word end, or null if open-ended. */
-internal fun LyricLine.effectiveEndMs(): Long? =
-    listOfNotNull(endMs, words.sungEnd()).maxOrNull()
+/**
+ * Latest known end of anything sung on a line: its explicit [LyricLine.endMs] or any word's own end,
+ * even when the final word has none (a held syllable can outlast later open-ended words), or null
+ * when nothing on the line has an end. Allocation-free so it can run per playback frame.
+ */
+internal fun LyricLine.effectiveEndMs(): Long? {
+    var latest = endMs
+    for (word in words) {
+        val wordEnd = word.endMs ?: continue
+        if (latest == null || wordEnd > latest) latest = wordEnd
+    }
+    return latest
+}
 
 data class AdlibSegment(val text: String, val startMs: Long? = null, val endMs: Long? = null)
 
@@ -63,9 +73,18 @@ data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null)
     private val startMs = segments.mapNotNull { it.startMs }.minOrNull()
     val isTimed: Boolean get() = startMs != null
 
-    internal fun karaokeFills(positionMs: Long, leadIsCurrent: Boolean): List<KaraokeFill> {
+    /**
+     * [leadIsCurrent] keeps every timed segment live while the lead is the followed line. While the
+     * lead only overlaps a newer line ([leadIsOverlapping]), a sub-line with its own [endMs] follows
+     * just its own window, and one without an end keeps following the lead.
+     */
+    internal fun karaokeFills(
+        positionMs: Long,
+        leadIsCurrent: Boolean,
+        leadIsOverlapping: Boolean = false
+    ): List<KaraokeFill> {
         val overlapping = endMs != null && startMs != null && positionMs in startMs until endMs
-        val active = leadIsCurrent || overlapping
+        val active = leadIsCurrent || overlapping || (leadIsOverlapping && endMs == null)
         var offset = 0
         return segments.flatMap { segment ->
             val start = segment.startMs

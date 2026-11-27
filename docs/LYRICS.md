@@ -63,11 +63,14 @@ outro dots, and empty or unsynced lyrics do not produce break dots.
 
 Playback highlights and auto-follows the current (latest started) line, but an
 earlier line rests only once it has actually finished: while its explicit end
-time (line end or latest word end) is still ahead of the playback position, it
-keeps its word-by-word highlight at the smaller inactive size — including
-several such lines at once, whether or not they are still on screen. Lines
+time (line end or the latest end of any word, such as a held syllable) is still
+ahead of the playback position, it keeps its word-by-word highlight at the
+smaller inactive size — including several such lines at once, whether or not
+they are still on screen. Lines
 without an explicit end count as finished when the next line starts, and
 instrumental-break dots suspend overlapping highlights while they run.
+A backing vocal, translation or romanization with its own end follows only its
+own window while its lead overlaps; one without an end follows the lead.
 
 ## Playback adjustments
 

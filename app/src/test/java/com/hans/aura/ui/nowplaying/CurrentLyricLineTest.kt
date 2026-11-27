@@ -76,6 +76,17 @@ class CurrentLyricLineTest {
     }
 
     @Test
+    fun `held word overlaps even when the final word has no end`() {
+        val lines = listOf(
+            line(2_000, null, words = listOf(TimedWord(2_000, "Hold", 6_000), TimedWord(3_000, "on"))),
+            line(4_000, null)
+        )
+        assertEquals(setOf(0), computeOverlappingLines(lines, 5_000))
+        assertEquals(setOf(0), computeOverlappingLines(lines, 5_000, ends = lineOverlapEnds(lines)))
+        assertEquals(emptySet<Int>(), computeOverlappingLines(lines, 6_000))
+    }
+
+    @Test
     fun `unsynced lyrics have no overlapping lines`() {
         val plain = LyricsStore.parseLrcText("First line\nSecond line")
         assertEquals(emptySet<Int>(), computeOverlappingLines(plain, 0L))

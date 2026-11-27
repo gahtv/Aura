@@ -109,4 +109,28 @@ class TimedLyricsTest {
         assertEquals(null, LyricLine(0, "x", isSynced = true, words = listOf(
             TimedWord(1000, "x"))).effectiveEndMs())
     }
+
+    @Test
+    fun `effective end keeps a held word's end when the final word has none`() {
+        val line = LyricLine(2000, "Hold on", isSynced = true, words = listOf(
+            TimedWord(2000, "Hold", 6000), TimedWord(3000, "on")))
+        assertEquals(6000L, line.effectiveEndMs())
+        assertEquals(7000L, line.copy(endMs = 7000).effectiveEndMs())
+    }
+
+    @Test
+    fun `bounded sub-line on an overlapping lead follows only its own window`() {
+        val bounded = LyricAdlib(listOf(AdlibSegment("ooh", 3000, 4000)), 4000)
+        assertEquals(0.5f, bounded.karaokeFills(3500, leadIsCurrent = false, leadIsOverlapping = true).single().fraction)
+        assertEquals(0f, bounded.karaokeFills(5000, leadIsCurrent = false, leadIsOverlapping = true).single().fraction)
+        // The followed lead still keeps a finished sub-line filled.
+        assertEquals(1f, bounded.karaokeFills(5000, leadIsCurrent = true).single().fraction)
+    }
+
+    @Test
+    fun `unbounded sub-line keeps following an overlapping lead`() {
+        val open = LyricAdlib(listOf(AdlibSegment("ooh", 3000)))
+        assertEquals(1f, open.karaokeFills(5000, leadIsCurrent = false, leadIsOverlapping = true).single().fraction)
+        assertEquals(0f, open.karaokeFills(5000, leadIsCurrent = false).single().fraction)
+    }
 }

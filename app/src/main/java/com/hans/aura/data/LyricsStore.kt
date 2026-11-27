@@ -165,7 +165,7 @@ object LyricsStore {
                     subline.copy(segments = subline.segments.map { segment ->
                         segment.copy(startMs = segment.startMs?.let { shifted(it, offsetMs) },
                             endMs = segment.endMs?.let { shifted(it, offsetMs) })
-                    })
+                    }, endMs = subline.endMs?.let { shifted(it, offsetMs) })
                 }
             )
         }.filterNot { isHeader(it.text) }.sortedBy { it.startMs }

@@ -1,5 +1,6 @@
 package com.hans.aura.data
 
+import com.hans.aura.ui.nowplaying.computeOverlappingLines
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -313,10 +314,12 @@ class TtmlLyricsTest {
     @Test
     fun `open-ended backing span after a bounded one follows an overlapping lead`() {
         val lines = parse("""
-            <p begin="2s"><span begin="2s">Lead</span>
+            <p begin="2s"><span begin="2s" end="8s">Lead</span>
                 <span ttm:role="x-bg"><span begin="3s" end="4s">Oh</span> <span begin="5s">yeah</span></span></p>
             <p begin="4.5s"><span begin="4.5s">Next</span></p>
         """)
+        // The held lead word keeps the first line overlapping on the playback path.
+        assertEquals(setOf(0), computeOverlappingLines(lines, 5500))
         val adlib = requireNotNull(lines.first().adlib)
         assertTrue(adlib.openEnded)
         assertEquals(4000L, adlib.endMs)

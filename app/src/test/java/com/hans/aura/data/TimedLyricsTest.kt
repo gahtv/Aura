@@ -142,6 +142,13 @@ class TimedLyricsTest {
     }
 
     @Test
+    fun `sub-line window does not fill during an instrumental break`() {
+        val translation = LyricAdlib(listOf(AdlibSegment("Bon", 10000, 13000), AdlibSegment("jour", 13000, 14000)), 14000)
+        assertEquals(listOf(1f, 0f), translation.karaokeFills(13000, leadIsCurrent = false).map { it.fraction })
+        assertEquals(listOf(0f, 0f), translation.karaokeFills(13000, leadIsCurrent = false, inBreak = true).map { it.fraction })
+    }
+
+    @Test
     fun `unbounded sub-line keeps following an overlapping lead`() {
         val open = LyricAdlib(listOf(AdlibSegment("ooh", 3000)))
         assertEquals(1f, open.karaokeFills(5000, leadIsCurrent = false, leadIsOverlapping = true).single().fraction)

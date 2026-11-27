@@ -435,15 +435,15 @@ fun LyricsPane(
                         }
                         val adlib = line.adlib
                         if (adlib != null && adlib.text.isNotBlank()) {
-                            AdlibText(adlib, effectivePosition, isCurrent, isOverlapping, alignment, secondaryVoice)
+                            AdlibText(adlib, effectivePosition, isCurrent, isOverlapping, activeBreak != null, alignment, secondaryVoice)
                         }
                         val romanization = line.romanization
                         if (romanization != null && romanization.text.isNotBlank()) {
-                            AdlibText(romanization, effectivePosition, isCurrent, isOverlapping, alignment, secondaryVoice)
+                            AdlibText(romanization, effectivePosition, isCurrent, isOverlapping, activeBreak != null, alignment, secondaryVoice)
                         }
                         val translation = line.translation
                         if (translation != null && translation.text.isNotBlank()) {
-                            AdlibText(translation, effectivePosition, isCurrent, isOverlapping, alignment, secondaryVoice)
+                            AdlibText(translation, effectivePosition, isCurrent, isOverlapping, activeBreak != null, alignment, secondaryVoice)
                         }
                     }
                     // After the part's last line, so the current-line anchor stays on the text.
@@ -824,6 +824,7 @@ private fun AdlibText(
     position: () -> Long,
     leadIsCurrent: Boolean,
     leadIsOverlapping: Boolean,
+    inBreak: Boolean,
     alignment: TextAlign,
     secondaryVoice: Boolean
 ) {
@@ -831,7 +832,7 @@ private fun AdlibText(
     if (adlib.isTimed) {
         KaraokeLine(TimedLyricLine(0L, adlib.text), position, null, alignment, secondaryVoice,
             fontSize = AuraTypography.body, fontWeight = null, modifier = modifier,
-            fills = { adlib.karaokeFills(it, leadIsCurrent, leadIsOverlapping) })
+            fills = { adlib.karaokeFills(it, leadIsCurrent, leadIsOverlapping, inBreak) })
     } else {
         androidx.tv.material3.Text(
             adlib.text,

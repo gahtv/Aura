@@ -90,15 +90,18 @@ data class LyricAdlib(val segments: List<AdlibSegment>, val endMs: Long? = null,
      * [leadIsCurrent] keeps every timed segment live while the lead is the followed line. While the
      * lead only overlaps a newer line ([leadIsOverlapping]), a sub-line whose timed segments are all
      * bounded follows just its own window, and one with an open-ended segment keeps following the lead.
+     * Nothing fills while an instrumental break ([inBreak]) owns the clock.
      */
     internal fun karaokeFills(
         positionMs: Long,
         leadIsCurrent: Boolean,
-        leadIsOverlapping: Boolean = false
+        leadIsOverlapping: Boolean = false,
+        inBreak: Boolean = false
     ): List<KaraokeFill> {
         val overlapping = endMs != null && startMs != null && positionMs in startMs until endMs
         val ownEnd = boundedEndMs
-        val active = leadIsCurrent || overlapping || (leadIsOverlapping && (ownEnd == null || positionMs < ownEnd))
+        val active = !inBreak &&
+            (leadIsCurrent || overlapping || (leadIsOverlapping && (ownEnd == null || positionMs < ownEnd)))
         var offset = 0
         return segments.flatMap { segment ->
             val start = segment.startMs
